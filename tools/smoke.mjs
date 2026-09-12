@@ -8,7 +8,9 @@ const BASE = process.argv[2] || 'http://127.0.0.1:8099/';
 const ROUTES = [
   ['markets', '#/'],
   ['coin', '#/coin/BTC'],
+  ['advice', '#/advice'],
   ['assistant', '#/ai'],
+  ['trader', '#/trader'],
   ['scanner', '#/scanner'],
   ['track record', '#/track'],
   ['futures', '#/futures'],

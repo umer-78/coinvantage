@@ -1,11 +1,15 @@
 // Gathers everything the assistant needs about a coin: live candles, signals on
 // several timeframes, the AI forecast, backtest, sentiment and the user's holdings.
-import { markets, findCoin, getCandles, getFearGreed } from '../api/market.js';
+import { markets, findCoin, getCandles, getFearGreed, INTERVAL_MS } from '../api/market.js';
 import { generateSignal, confluence, backtest } from '../lib/signals.js';
 import { summarizeForecast } from '../lib/predict.js';
 import { runForecast, runHistory } from '../lib/compute.js';
+import { timingOutlook, summarizeTiming, timingText } from '../lib/timing.js';
+import { adviseCoin, rankAdvice } from '../lib/advice.js';
+import { isStable } from '../api/market.js';
 import { horizonText } from '../format.js';
 import { load } from '../store.js';
+import { getNews, backendEnabled } from '../api/backend.js';
 
 const cache = new Map();
 export const DEFAULT_HORIZON = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
@@ -47,13 +51,95 @@ export async function analyzeCoin(symbol, { interval = '4h', withForecast = true
       .then((d) => runHistory(d.candles, { window: 45, horizons: [7, 30, 90], horizon: 30 }))
       .catch(() => null);
   }
+  // How long the move lasts and when it turns — the other half of "will it go up".
+  const timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
+  // Recent headlines for this coin. Context for the answer only — never an
+  // input to the price model, whose accuracy is measured on price data alone.
+  let news = hit?.news || null;
+  if (!news && backendEnabled()) {
+    news = await getNews({ coin: coin.symbol, limit: 6 }).catch(() => []);
+  }
   const fng = await getFearGreed().catch(() => null);
   const result = {
     coin, interval, candles: main.candles, source: main.source, signal, mtf, confluence: conf, backtest: bt,
-    forecast, history, horizon, horizonText: horizonText(interval, horizon), fearGreed: fng?.[0] || null, at: Date.now(),
+    forecast, history, timing, news, horizon, horizonText: horizonText(interval, horizon), fearGreed: fng?.[0] || null, at: Date.now(),
   };
   cache.set(key, result);
   return result;
+}
+
+// "Which coin should I buy?" needs the whole market, not one chart. Scans the
+// top coins and returns a ranked verdict for each, same engine as the advice page.
+const scanCache = new Map();
+export async function scanMarket({ interval = '4h', count = 20, onStep } = {}) {
+  const key = `${interval}:${count}`;
+  const hit = scanCache.get(key);
+  if (hit && Date.now() - hit.at < 180e3) return hit.rows;
+
+  const list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, count);
+  const rows = [];
+  let done = 0;
+  const queue = [...list];
+  const worker = async () => {
+    while (queue.length) {
+      const coin = queue.shift();
+      try {
+        const { candles } = await getCandles(coin, interval, 500);
+        rows.push({ coin, signal: generateSignal(candles, { interval }), candles });
+      } catch { /* skip */ }
+      onStep?.(`Scanning the market… ${++done}/${list.length}`);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+
+  // Forecast + timing only for the coins with a real technical signal — that
+  // keeps the answer fast without dropping anything that could be a pick.
+  const shortlist = rows.filter((r) => r.signal.ok).sort((a, b) => Math.abs(b.signal.score) - Math.abs(a.signal.score)).slice(0, 10);
+  const horizon = DEFAULT_HORIZON[interval] || 12;
+  for (const row of shortlist) {
+    onStep?.(`Forecasting ${row.coin.symbol}…`);
+    try {
+      const fc = await runForecast(row.candles, { horizon, fast: true, intervalMs: INTERVAL_MS[interval] });
+      row.forecast = fc;
+      row.timing = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[interval] }) : null;
+    } catch { /* advice still works from the signal alone */ }
+  }
+  for (const row of rows) {
+    row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing });
+    row.candles = null;
+  }
+  scanCache.set(key, { at: Date.now(), rows });
+  return rows;
+}
+
+/** Compact market picks for the analyst and the LLM. */
+export function marketContext(rows, interval) {
+  const { buys, avoid, wait, total } = rankAdvice(rows);
+  const shape = (r) => ({
+    coin: r.coin.symbol,
+    name: r.coin.name,
+    verdict: r.advice.verdict,
+    conviction: r.advice.conviction,
+    price: r.advice.price,
+    change24hPct: r.coin.change24h === null || r.coin.change24h === undefined ? null : +r.coin.change24h.toFixed(2),
+    buyBetween: r.advice.plan ? r.advice.plan.entryZone : null,
+    stopLoss: r.advice.plan ? r.advice.plan.stopLoss : null,
+    sellTargets: r.advice.plan ? r.advice.plan.takeProfits : null,
+    riskPct: r.advice.plan ? r.advice.plan.riskPct : null,
+    holdForBars: r.advice.timing?.rising ? r.advice.timing.bars : null,
+    expectedPeakPrice: r.advice.timing?.rising ? +r.advice.timing.targetPrice.toPrecision(6) : null,
+    turnsDownAfterBars: r.advice.timing?.turnBars ?? null,
+    waitFor: r.advice.waitFor?.[0] || null,
+    topReason: r.advice.reasons[0]?.text || null,
+  });
+  return {
+    interval,
+    horizonText: horizonText(interval, DEFAULT_HORIZON[interval] || 12),
+    scanned: total,
+    buys: buys.slice(0, 6).map(shape),
+    avoid: avoid.slice(0, 4).map(shape),
+    waitingCount: wait.length,
+  };
 }
 
 export async function portfolioSummary() {
@@ -78,6 +164,11 @@ export function analystContext(a, portfolio) {
     confluence: a.confluence,
     backtest: a.backtest,
     forecast: summarizeForecast(a.forecast),
+    timing: summarizeTiming(a.timing),
+    timingSentence: a.timing?.ok && a.timing.shaped
+      ? timingText(a.timing, (bars) => horizonText(a.interval, bars), (v) => v.toLocaleString('en-US', { maximumFractionDigits: 2 }))
+      : null,
+    news: (a.news || []).slice(0, 5).map((n) => ({ title: n.title, source: n.source, at: n.published_at })),
     history: a.history?.ok ? { ...a.history.summary, verdictText: a.history.verdict.text, seasonMonth: a.history.season?.current || null } : null,
     horizonText: a.horizonText,
     fearGreed: a.fearGreed,
@@ -95,6 +186,8 @@ export function llmData(a) {
     signal: s.ok ? { verdict: s.text, score: s.score, plan: s.plan && { side: s.plan.side, entryZone: s.plan.entryZone, stopLoss: s.plan.stopLoss, takeProfits: s.plan.takeProfits }, supports: s.levels.supports, resistances: s.levels.resistances, rsi: s.indicators.rsi && +s.indicators.rsi.toFixed(1) } : null,
     timeframes: Object.fromEntries(Object.entries(a.mtf).map(([iv, x]) => [iv, x?.ok ? x.text : null])),
     aiForecast: summarizeForecast(a.forecast) && { horizon: a.horizonText, ...summarizeForecast(a.forecast) },
+    moveTiming: summarizeTiming(a.timing),
+    recentHeadlines: (a.news || []).slice(0, 5).map((n) => `${n.source}: ${n.title}`),
     multiYearHistory: a.history?.ok ? a.history.summary : null,
     fearGreed: a.fearGreed && `${a.fearGreed.value} (${a.fearGreed.classification})`,
   };

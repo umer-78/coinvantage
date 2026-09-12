@@ -2,7 +2,7 @@
 // otherwise the manual payment instructions the admin set.
 import { $, icon, toast } from '../ui.js';
 import { esc } from '../format.js';
-import { auth, sb, isPremium, getAppSettings, getPosts, callFn } from '../api/backend.js';
+import { auth, sb, isPremium, isAdmin, getAppSettings, getPosts, callFn } from '../api/backend.js';
 import { openAuth } from './auth.js';
 
 export const title = 'Premium';
@@ -35,7 +35,9 @@ export async function render(el) {
   el.innerHTML = `
     <div class="page-head"><div><h1>Premium</h1><p>The analysis stays free. Premium pays for the parts that run on a server while your browser is closed — alerts, tracking and VIP ideas.</p></div></div>
 
-    ${already ? '<div class="card" style="border-color:var(--up)"><div class="row spread"><div><h3>Premium is active on your account</h3><p class="fine">Manage it on the <a href="#/account">account page</a>.</p></div><span class="chip up">Active</span></div></div>' : ''}
+    ${isAdmin()
+      ? '<div class="card" style="border-color:var(--accent)"><div class="row spread"><div><h3>You own this site — Premium is free for you</h3><p class="fine">Your admin account has every Premium feature permanently, at no cost. This page is what your visitors see.</p></div><span class="chip warn">Owner</span></div></div>'
+      : already ? '<div class="card" style="border-color:var(--up)"><div class="row spread"><div><h3>Premium is active on your account</h3><p class="fine">Manage it on the <a href="#/account">account page</a>.</p></div><span class="chip up">Active</span></div></div>' : ''}
 
     <div class="price-grid mt">
       <div class="plan-card">

@@ -1,7 +1,7 @@
 import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
-import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary } from '../ai/context.js';
-import { ruleBasedAnswer } from '../lib/analyst.js';
+import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext } from '../ai/context.js';
+import { ruleBasedAnswer, isMarketWide } from '../lib/analyst.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
@@ -55,8 +55,9 @@ export async function render(el, [symParam]) {
     $('#focus', el).innerHTML = c ? `<div class="row spread"><a class="acc" href="#/coin/${esc(c.symbol)}">${esc(c.name)} chart →</a><span><b>${money(c.price)}</b> ${changeHtml(c.change24h)}</span></div>` : '';
     const sym = st.symbol;
     $('#suggest', el).innerHTML = [
-      `Will ${sym} go up or down next?`, `Should I buy ${sym} now?`, `When should I take profit on ${sym}?`,
-      `I have $1,000 — how much ${sym} should I buy?`, `Compare ${sym}'s chart with past patterns`, 'Review my portfolio',
+      'Which coin should I buy right now?', 'What are the best buys today and when do I sell?',
+      `Will ${sym} go up or down next?`, `When should I take profit on ${sym}?`,
+      `I have $1,000 — how much ${sym} should I buy?`, 'Review my portfolio',
     ].map((q) => `<button class="btn sm" type="button">${esc(q)}</button>`).join('');
     $$('#suggest button', el).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
   };
@@ -117,7 +118,7 @@ export async function render(el, [symParam]) {
   const drawHistory = () => {
     log.innerHTML = '';
     if (!history.length) {
-      addMsg('bot', markdown(`Hi! I'm the **${CONFIG.APP_NAME} AI**. Ask me about any coin — e.g. *"Will ETH go up this week?"*, *"Where should I put my stop-loss on SOL?"* or *"Review my portfolio"*.\n\nI check live data, signals on 4 timeframes, a backtest and a machine-learning forecast before answering.`));
+      addMsg('bot', markdown(`Hi! I'm the **${CONFIG.APP_NAME} AI**. Ask me about the **whole market** — *"Which coin should I buy right now?"* — or about one coin: *"Will ETH go up this week?"*, *"When should I sell SOL?"*, *"Review my portfolio"*.\n\nI check live data, signals on 4 timeframes, a backtest and a machine-learning forecast before answering.`));
     }
     for (const m of history) addMsg(m.role === 'user' ? 'user' : 'bot', m.role === 'user' ? esc(m.content) : markdown(m.content) + (m.meta ? `<div class="src">${m.meta}</div>` : ''));
   };
@@ -134,20 +135,31 @@ export async function render(el, [symParam]) {
     try {
       const wantsPortfolio = /(portfolio|wallet|holding|my coins)/i.test(question);
       const detected = await detectSymbol(question);
+      // "Which coin should I buy?" is about the whole market — only treat it as
+      // a single-coin question when the user actually named a coin.
+      const wantsMarket = isMarketWide(question) && !detected;
       if (detected && detected !== st.symbol) { st.symbol = detected; $('#coinSel', el).value = detected; drawFocus(); }
       history.lastSymbol = st.symbol;
       const portfolio = await portfolioSummary();
-      let analysis = null;
-      if (!wantsPortfolio || detected) analysis = await analyzeCoin(st.symbol, { interval: st.interval, onStep: step });
-      const ctx = analysis ? analystContext(analysis, portfolio) : { portfolio };
+
+      let analysis = null, market = null;
+      if (wantsMarket) {
+        step('Scanning the market…');
+        const rows = await scanMarket({ interval: st.interval, count: 25, onStep: step });
+        market = marketContext(rows, st.interval);
+      } else if (!wantsPortfolio || detected) {
+        analysis = await analyzeCoin(st.symbol, { interval: st.interval, onStep: step });
+      }
+      const ctx = analysis ? { ...analystContext(analysis, portfolio), market } : { portfolio, market };
       const facts = ruleBasedAnswer(question, ctx);
-      const meta = (src) => `<span>${esc(src)}</span>${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
+      const meta = (src) => `<span>${esc(src)}</span>${market ? `<span>· scanned ${market.scanned} coins on ${esc(market.interval)}</span>` : ''}${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
       let finalText = facts, source = 'Rule-based analyst (instant)';
       if (localReady() || customReady()) {
         step('Writing answer…');
         const ac = new AbortController(); st.abort = ac;
         try {
           const data = analysis ? llmData(analysis) : {};
+          if (market) data.marketPicks = market;
           if (portfolio.length) data.portfolio = portfolio.map((p) => ({ coin: p.symbol, valueUsd: Math.round(p.value), pnlPct: p.pnlPct !== null ? +p.pnlPct.toFixed(1) : null }));
           const r = await askLLM({ history: history.slice(0, -1), question, facts, data, signal: ac.signal, onText: (t) => { bot.innerHTML = markdown(t); log.scrollTop = log.scrollHeight; } });
           if (r.text.trim().length > 20) { finalText = r.text; source = `${r.source} · built-in AI`; }

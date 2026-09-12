@@ -12,7 +12,9 @@ import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData,
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
-  { path: 'ai', label: 'AI Assistant', icon: 'ai', badge: 'NEW', short: 'AI' },
+  { path: 'advice', label: 'What to buy', icon: 'bolt', badge: 'NEW', short: 'Buy' },
+  { path: 'ai', label: 'AI Assistant', icon: 'ai', short: 'AI' },
+  { path: 'trader', label: 'AI trader', icon: 'forecast', short: 'Trader' },
   { path: 'scanner', label: 'Signal Scanner', icon: 'scanner', short: 'Signals' },
   { path: 'track', label: 'Track record', icon: 'forecast', short: 'Record' },
   { path: 'futures', label: 'Futures', icon: 'bolt', short: 'Futures' },
@@ -25,12 +27,14 @@ const NAV = [
 ];
 const ADMIN_NAV = { path: 'admin', label: 'Admin', icon: 'chip', short: 'Admin' };
 // Four destinations plus "More" — five cells, which is what fits a phone row.
-const MOBILE = ['', 'scanner', 'ai', 'wallet'];
+const MOBILE = ['', 'advice', 'ai', 'wallet'];
 
 const VIEWS = {
   '': () => import('./views/markets.js'),
   coin: () => import('./views/coin.js'),
+  advice: () => import('./views/advice.js'),
   ai: () => import('./views/assistant.js'),
+  trader: () => import('./views/trader.js'),
   scanner: () => import('./views/scanner.js'),
   track: () => import('./views/track.js'),
   futures: () => import('./views/futures.js'),

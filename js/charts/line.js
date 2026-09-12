@@ -28,11 +28,13 @@ export class LineChart {
     this.canvas.addEventListener('pointermove', (e) => { this.hover = e.offsetX; this.draw(); });
     this.canvas.addEventListener('pointerdown', (e) => { this.hover = e.offsetX; this.draw(); });
     this.canvas.addEventListener('pointerleave', () => { this.hover = null; this.draw(); });
+    this.onCurrency = () => this.draw();
+    window.addEventListener('cv:currency', this.onCurrency);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(wrap);
   }
 
-  destroy() { this.ro.disconnect(); }
+  destroy() { this.ro.disconnect(); window.removeEventListener('cv:currency', this.onCurrency); }
 
   // series: [{ name, color, data: [{x, y}], width, dash, alpha, hideLegend }]
   // bands:  [{ color, alpha, data: [{x, lo, hi}] }]

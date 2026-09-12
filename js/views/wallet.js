@@ -1,9 +1,11 @@
 import { markets, findCoin, getCandles, walletBalance, CHAINS, isStable } from '../api/market.js';
 import { generateSignal, adviseHolding } from '../lib/signals.js';
 import { donut } from '../charts/small.js';
-import { $, $$, coinLogo, icon, toast, skeleton } from '../ui.js';
+import { $, $$, coinLogo, icon, toast, skeleton, modal } from '../ui.js';
 import { esc, usd, price, pct, amount, changeHtml, compact, money} from '../format.js';
 import { load, save } from '../store.js';
+import { connectWallet, injectedWallet, walletLabel, onWalletChange } from '../api/connect.js';
+import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 
 export const title = 'Wallet';
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -29,7 +31,10 @@ export async function render(el) {
       <div class="card"><div class="card-h"><h3>Allocation</h3></div><div id="alloc" style="display:grid;place-items:center"></div><div id="allocLegend" class="stack mt" style="gap:6px"></div></div>
     </div>
     <div class="card mt">
-      <div class="card-h"><h3>Watch-only wallets</h3><span class="fine">Public addresses only — read-only balance lookup</span></div>
+      <div class="card-h"><h3>Watch-only wallets</h3>
+        <div class="row" style="gap:8px"><span class="fine">Public addresses only — read-only balance lookup</span>
+        <button class="btn sm" id="connectBtn">${icon('wallet', 14)} Connect wallet</button></div></div>
+      <p class="fine" id="connectMsg" style="margin-bottom:8px"></p>
       <form id="wForm" class="row" style="margin-bottom:12px;align-items:flex-end">
         <label class="fld">Network<select class="inp" name="chain">${Object.entries(CHAINS).map(([k, c]) => `<option value="${k}">${c.name}</option>`).join('')}</select></label>
         <label class="fld" style="flex:1;min-width:220px">Public address<input class="inp" name="addr" required placeholder="bc1… / 0x… / Solana address"></label>
@@ -70,7 +75,9 @@ export async function render(el) {
         <td class="${(r.pnl ?? 0) >= 0 ? 'up' : 'down'}">${r.pnl !== null ? `${r.pnl >= 0 ? '+' : '−'}${usd(Math.abs(r.pnl))}<br><small>${pct(r.pnlPct)}</small>` : '<span class="muted">—</span>'}</td>
         <td class="hide-m">${changeHtml(r.ch24)}</td>
         <td class="l" style="white-space:normal;min-width:170px;max-width:240px">${a ? `<span class="${a.tone === 'warn' ? 'warn' : a.tone}">${esc(a.text)}</span>` : '<span class="spinner" style="width:12px;height:12px"></span>'}</td>
-        <td><button class="icon-btn" style="width:30px;height:30px" data-del="${esc(r.symbol)}" aria-label="Remove">${icon('trash', 14)}</button></td></tr>`; }).join('')}
+        <td><div class="row" style="gap:4px;flex-wrap:nowrap;justify-content:flex-end">
+          ${tradable(r.symbol) ? `<button class="btn sm ghost" data-trade="${esc(r.symbol)}" title="Trade ${esc(r.symbol)} on an exchange">Trade</button>` : ''}
+          <button class="icon-btn" style="width:30px;height:30px" data-del="${esc(r.symbol)}" aria-label="Remove">${icon('trash', 14)}</button></div></td></tr>`; }).join('')}
       </tbody></table></div>` : `<div class="empty"><p>No holdings yet.</p><button class="btn primary" onclick="document.getElementById('addBtn').click()">${icon('plus', 14)} Add your first coin</button></div>`;
     $$('[data-del]', el).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); save('holdings', load('holdings', []).filter((h) => h.symbol !== b.dataset.del)); drawHoldings(); }));
     $$('#holdings tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
@@ -140,6 +147,58 @@ export async function render(el) {
     f.reset(); drawWallets(); refreshWallets();
   });
 
+  // Connecting a wallet asks it for the account address and nothing else — no
+  // signature, no transaction, no key. It is the same read-only tracking as
+  // pasting the address by hand, just without the copy-paste.
+  const addAddresses = (addresses, chain) => {
+    const ws = load('wallets', []);
+    let added = 0;
+    for (const addr of addresses) {
+      if (ws.some((w) => w.addr.toLowerCase() === addr.toLowerCase() && w.chain === chain)) continue;
+      ws.push({ chain, addr, label: `${walletLabel() || 'Wallet'}`, symbol: CHAINS[chain].symbol });
+      added++;
+    }
+    if (added) { save('wallets', ws); drawWallets(); refreshWallets(); }
+    return added;
+  };
+
+  $('#connectBtn', el).addEventListener('click', async () => {
+    const msg = $('#connectMsg', el);
+    if (!injectedWallet()) {
+      msg.innerHTML = 'No browser wallet detected. Install MetaMask or any EVM wallet, or just paste your public address below — both are read-only here.';
+      return;
+    }
+    msg.textContent = `Waiting for ${walletLabel()}…`;
+    try {
+      const r = await connectWallet();
+      const added = addAddresses(r.addresses, r.chain);
+      msg.innerHTML = added
+        ? `<span class="up">Connected ${esc(r.label)} — added ${added} address${added === 1 ? '' : 'es'} as watch-only. No signature was requested and no key was shared.</span>`
+        : `<span class="up">Connected ${esc(r.label)} — those addresses were already being tracked.</span>`;
+    } catch (e) {
+      msg.innerHTML = `<span class="down">${esc(e.message)}</span>`;
+    }
+  });
+
+  const stopWatch = onWalletChange((ev) => {
+    if (disposed || ev.type !== 'accounts') return;
+    const added = addAddresses(ev.addresses || [], 'eth');
+    if (added) toast(`Added ${added} more address from your wallet`, 'info');
+  });
+
+  // Buy/sell hand-off for a holding.
+  const openTrade = (symbol) => {
+    const venues = venuesFor(symbol);
+    modal(`<h3>Trade ${esc(symbol)}</h3>
+      <p class="fine">Opens the ${esc(symbol)} market on an exchange you already use.</p>
+      <div class="sheet-grid mt">${venues.map((v) => `<a class="sheet-item" href="${esc(v.href)}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}</div>
+      <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>`);
+  };
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-trade]');
+    if (b) { e.stopPropagation(); openTrade(b.dataset.trade); }
+  });
+
   drawHoldings(); drawWallets(); computeAdvice(); refreshWallets();
-  return () => { disposed = true; };
+  return () => { disposed = true; stopWatch(); };
 }
