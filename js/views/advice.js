@@ -20,7 +20,7 @@ export async function render(el) {
     <div class="page-head">
       <div><h1>What to buy now</h1><p>One verdict per coin, built by blending the chart signal, the AI forecast, the move timing and the multi-year history check — each weighted by how accurate it has actually been.</p></div>
       <div class="row">
-        <div class="seg" id="iv">${['15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
+        <div class="seg" id="iv">${['1m', '5m', '15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
         <button class="btn" id="rescan">${icon('refresh', 16)} Rescan</button>
       </div>
     </div>

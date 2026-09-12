@@ -6,7 +6,7 @@ import { generateSignal, backtest, labelFor } from '../js/lib/signals.js';
 import { forecast, findPatterns } from '../js/lib/predict.js';
 import { analyzeHistory } from '../js/lib/history.js';
 import { timingOutlook, summarizeTiming } from '../js/lib/timing.js';
-import { ruleBasedAnswer } from '../js/lib/analyst.js';
+import { ruleBasedAnswer, isMarketWide } from '../js/lib/analyst.js';
 import { demoCandles } from '../js/lib/demo.js';
 
 test('SMA and EMA basics', () => {
@@ -230,4 +230,188 @@ test('analyst answers whole-market questions with ranked picks, not one coin', a
   // with nothing to buy it must say so rather than inventing a pick
   const empty = ruleBasedAnswer('what should i buy?', { market: { ...market, buys: [], avoid: [] }, portfolio: [] });
   assert.match(empty, /Nothing currently clears the bar/i);
+});
+
+test('prices are shown at full precision, never silently rounded', async () => {
+  const { money, price } = await import('../js/format.js');
+  // A four-figure price used to be rounded to whole dollars, which made the
+  // header disagree with the candle it was drawn from.
+  assert.equal(money(77182.43), '$77,182.43');
+  assert.equal(money(77182.43, { dp: 2 }), '$77,182.43');
+  assert.equal(money(0.00000123, { dp: 8 }), '$0.00000123');
+  assert.equal(money(101.7, { dp: 2 }), '$101.70');
+  // and the raw formatter keeps small coins readable without dropping digits
+  assert.ok(price(0.0000012345).startsWith('0.0000012'));
+  assert.equal(price(2525.5), '2,525.50');
+});
+
+test('second-by-second candles bucket correctly', async () => {
+  const { bucketCandles, INTERVAL_MS, isSecondInterval, MAX_BARS } = await import('../js/api/market.js');
+  assert.equal(INTERVAL_MS['1s'], 1000);
+  assert.equal(INTERVAL_MS['5s'], 5000);
+  assert.equal(INTERVAL_MS['10s'], 10000);
+  assert.ok(isSecondInterval('5s') && !isSecondInterval('1m'));
+  assert.ok(MAX_BARS['1s'] > 0);
+
+  // ten 1-second candles, aligned to a 5-second boundary
+  const base = 1700000000000;
+  const rows = Array.from({ length: 10 }, (_, i) => ({ t: base + i * 1000, o: 100 + i, h: 110 + i, l: 90 + i, c: 100 + i, v: 2 }));
+  const five = bucketCandles(rows, 5, 1000);
+  assert.equal(five.length, 2);
+  assert.equal(five[0].t, base);
+  assert.equal(five[0].o, rows[0].o, 'bucket opens at the first candle');
+  assert.equal(five[0].c, rows[4].c, 'bucket closes at the last candle in it');
+  assert.equal(five[0].h, Math.max(...rows.slice(0, 5).map((r) => r.h)));
+  assert.equal(five[0].l, Math.min(...rows.slice(0, 5).map((r) => r.l)));
+  assert.equal(five[0].v, 10, 'volume adds up');
+  assert.equal(five[1].t, base + 5000);
+
+  const ten = bucketCandles(rows, 10, 1000);
+  assert.equal(ten.length, 1);
+  assert.equal(ten[0].v, 20);
+
+  // buckets stay aligned even when the first candle lands mid-bucket
+  const offset = bucketCandles(rows.slice(2), 5, 1000);
+  assert.equal(offset[0].t, base, 'a partial bucket still starts on the boundary');
+});
+
+test('a whole-market question is answered across every timeframe', () => {
+  const pick = (coin, name, price) => ({
+    coin, name, verdict: 'BUY', conviction: 72, price, change24hPct: 1.2,
+    buyBetween: [price * 0.99, price * 1.01], stopLoss: price * 0.96,
+    sellTargets: [price * 1.04, price * 1.08], riskPct: 4,
+    holdForBars: 5, expectedPeakPrice: price * 1.05, turnsDownAfterBars: 7,
+    waitFor: null, topReason: 'Trend and momentum both point up',
+  });
+  const frame = (interval, label, buys) => ({ label, interval, horizonText: `about 2 days`, scanned: 20, buys, avoid: [], waitingCount: 3 });
+  const marketFrames = {
+    scanned: 20,
+    intervals: ['1h', '4h', '1d'],
+    frames: [
+      frame('1h', 'Short term', [pick('SOL', 'Solana', 150)]),
+      frame('4h', 'Swing', [pick('BTC', 'Bitcoin', 60000), pick('SOL', 'Solana', 150)]),
+      frame('1d', 'Position', [pick('BTC', 'Bitcoin', 60000)]),
+    ],
+    agree: [{ coin: 'BTC', name: 'Bitcoin', frames: [{ label: 'Swing', interval: '4h', ...pick('BTC', 'Bitcoin', 60000) }, { label: 'Position', interval: '1d', ...pick('BTC', 'Bitcoin', 60000) }] }],
+    avoid: [{ coin: 'DOGE', verdict: 'AVOID', conviction: 20, interval: '4h', topReason: 'Downtrend' }],
+  };
+  const a = ruleBasedAnswer('which coin should i buy and when do i sell?', { marketFrames, portfolio: [] });
+  for (const must of ['Short term', 'Swing', 'Position', 'SOL', 'BTC', 'Sell at', 'Strongest overall', 'Avoid or sell', 'DOGE']) {
+    assert.ok(a.includes(must), `whole-market answer is missing "${must}"`);
+  }
+  // it must not collapse into a single coin
+  assert.ok(a.split('BTC').length > 2 && a.includes('SOL'));
+
+  // a buy/sell question with no coin named is a market question
+  assert.equal(isMarketWide('what should i buy this week and when do i sell'), true);
+  assert.equal(isMarketWide('which one is best for the long term'), true);
+  assert.equal(isMarketWide('should i buy this coin'), false);
+
+  // and with no coin open, a generic question still gets the market answer
+  const fallback = ruleBasedAnswer('when do i sell?', { marketFrames });
+  assert.ok(fallback.includes('Whole-market scan'));
+});
+
+test('every module imports the helpers it calls', async () => {
+  // A missing import only shows up at runtime, inside a template string, where it
+  // silently blanks a whole panel. Most of this app's markup lives in template
+  // literals, so the scan must look INSIDE ${...} while ignoring the prose around it.
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  // The list of names is not hand-maintained: it is every helper any module in
+  // this app exports. If a file calls one of them without importing it, that is
+  // a ReferenceError waiting in production, and this test fails instead.
+  // Emit only real code: skips comments and string/template TEXT, but keeps the
+  // expressions inside ${ } — which is where the markup calls these helpers.
+  const codeOnly = (src) => {
+    let out = '';
+    const stack = []; // 'tpl' or brace depth markers inside a template substitution
+    let i = 0;
+    while (i < src.length) {
+      const c = src[i], d = src[i + 1];
+      const inTpl = stack.length && stack[stack.length - 1] === 'tpl';
+      if (!inTpl && c === '/' && d === '/') { while (i < src.length && src[i] !== '\n') i++; continue; }
+      if (!inTpl && c === '/' && d === '*') { i += 2; while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; continue; }
+      if (!inTpl && (c === "'" || c === '"')) {
+        i++;
+        while (i < src.length && src[i] !== c) { if (src[i] === '\\') i++; i++; }
+        i++; out += ' '; continue;
+      }
+      if (c === '`') { if (inTpl) stack.pop(); else stack.push('tpl'); i++; out += ' '; continue; }
+      if (inTpl) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === '$' && d === '{') { stack.push(1); i += 2; out += ' '; continue; }
+        i++; continue; // template TEXT — drop it
+      }
+      if (stack.length && typeof stack[stack.length - 1] === 'number') {
+        if (c === '{') stack[stack.length - 1]++;
+        else if (c === '}') { stack[stack.length - 1]--; if (stack[stack.length - 1] === 0) { stack.pop(); i++; out += ' '; continue; } }
+      }
+      out += c; i++;
+    }
+    return out;
+  };
+
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const f = path.join(dir, e.name);
+    return e.isDirectory() ? walk(f) : f.endsWith('.js') ? [f] : [];
+  });
+
+  const files = walk('js');
+
+  // Every exported helper name in the app, mapped to the file that exports it.
+  const EXPORTS = new Map();
+  for (const file of files) {
+    const src = fs.readFileSync(file, 'utf8');
+    for (const m of src.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g)) EXPORTS.set(m[1], file);
+    for (const m of src.matchAll(/export\s+(?:const|let|var|class)\s+([A-Za-z_$][\w$]*)/g)) EXPORTS.set(m[1], file);
+  }
+  const NAMES = [...EXPORTS.keys()].filter((n) => n.length > 2);
+  assert.ok(NAMES.length > 60, `expected to find the app helpers, found ${NAMES.length}`);
+
+  // Anything bound inside the file itself: declarations, destructuring and
+  // parameters. A name bound locally is not a missing import.
+  const boundIn = (code) => {
+    const out = new Set();
+    for (const m of code.matchAll(/(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g)) out.add(m[1]);
+    for (const m of code.matchAll(/(?:const|let|var)\s*[{[]([^}\]]*)[}\]]/g)) {
+      for (const part of m[1].split(',')) {
+        const n = part.split(':').pop().split('=')[0].replace(/[.\s]/g, '');
+        if (/^[A-Za-z_$][\w$]*$/.test(n)) out.add(n);
+      }
+    }
+    // parameter lists: (a, b) => …  /  (a, b) { …  /  x => …
+    for (const m of code.matchAll(/\(([^()]*)\)\s*(?:=>|\{)/g)) {
+      for (const part of m[1].split(',')) {
+        const n = part.split('=')[0].replace(/[{}[\].\s]/g, '').split(':').pop();
+        if (/^[A-Za-z_$][\w$]*$/.test(n)) out.add(n);
+      }
+    }
+    for (const m of code.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) out.add(m[1]);
+    // object method shorthand — `{ async stats() {…} }` is a definition, not a call
+    for (const m of code.matchAll(/(?:[{,]|\basync)\s*([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*\{/g)) out.add(m[1]);
+
+    return out;
+  };
+
+  const bad = [];
+  for (const file of files) {
+    const src = fs.readFileSync(file, 'utf8');
+    const code = codeOnly(src).replace(/\.\s*[A-Za-z_$][\w$]*/g, '.prop');
+    const imported = new Set();
+    for (const m of src.matchAll(/import \{([^}]*)\} from/g)) {
+      for (const n of m[1].split(',')) {
+        const name = n.trim().split(/\s+as\s+/).pop().trim();
+        if (name) imported.add(name);
+      }
+    }
+    const declared = boundIn(code);
+    for (const name of NAMES) {
+      if (EXPORTS.get(name) === file) continue;
+      if (new RegExp(`(?<![\\w.$])${name}\\(`).test(code) && !imported.has(name) && !declared.has(name)) {
+        bad.push(`${file} calls ${name}() without importing it (exported by ${EXPORTS.get(name)})`);
+      }
+    }
+  }
+  assert.deepEqual(bad, [], `\n${bad.join('\n')}`);
 });

@@ -169,13 +169,82 @@ export async function searchCoins(q) {
 }
 
 // ------------------------------------------------------------ candles
-export const INTERVAL_MS = { '1m': 6e4, '5m': 3e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5, '6h': 216e5, '12h': 432e5, '1d': 864e5, '3d': 2592e5, '1w': 6048e5 };
+export const INTERVAL_MS = { '1s': 1e3, '5s': 5e3, '10s': 1e4, '1m': 6e4, '3m': 18e4, '5m': 3e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5, '6h': 216e5, '12h': 432e5, '1d': 864e5, '3d': 2592e5, '1w': 6048e5 };
+
+// Binance publishes 1-second candles but nothing between 1s and 1m, so 5s and
+// 10s are built here by merging 1s candles into fixed buckets. Anything faster
+// than 1s does not exist as a candle anywhere — that is raw trade data.
+export const SECOND_INTERVALS = ['1s', '5s', '10s'];
+const BUILT_FROM_1S = { '5s': 5, '10s': 10 };
+// One request returns 1000 candles, so a second-chart is capped where the wait
+// is still short: 1s ≈ 17 min of history, 5s ≈ 1.4 h, 10s ≈ 1.7 h.
+export const MAX_BARS = { '1s': 1000, '5s': 1000, '10s': 600 };
+
+export const isSecondInterval = (iv) => SECOND_INTERVALS.includes(iv);
+
+/** Merge candles into buckets of `factor` (e.g. five 1s candles → one 5s candle). */
+export function bucketCandles(rows, factor, stepMs) {
+  const size = factor * stepMs;
+  const out = [];
+  for (const r of rows) {
+    const t = Math.floor(r.t / size) * size;
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, r.h);
+      last.l = Math.min(last.l, r.l);
+      last.c = r.c;
+      last.v += r.v;
+    } else {
+      out.push({ t, o: r.o, h: r.h, l: r.l, c: r.c, v: r.v });
+    }
+  }
+  return out;
+}
 
 const mapKlines = (rows) => rows.map((k) => ({ t: k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4], v: +k[5] }));
+
+// Paginates backwards, 1000 candles per request.
+async function fetchKlines(pair, interval, total, ttl) {
+  let out = [];
+  let endTime = null;
+  while (out.length < total) {
+    const limit = Math.min(1000, total - out.length);
+    const path = `/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}${endTime ? `&endTime=${endTime}` : ''}`;
+    const rows = mapKlines(await getJsonAny(CONFIG.BINANCE_REST, path, { ttl, key: `bn:${path}` }));
+    if (!rows.length) break;
+    out = rows.concat(out);
+    endTime = rows[0].t - 1;
+    if (rows.length < limit) break;
+  }
+  return out;
+}
 
 // Fetch up to `total` candles (paginates backwards, 1000 per request).
 export async function getCandles(coin, interval = '1h', total = 500) {
   const pair = typeof coin === 'string' ? coin : coin?.binance;
+
+  // Second-by-second charts: fetch 1s candles and merge them where needed.
+  if (isSecondInterval(interval)) {
+    const factor = BUILT_FROM_1S[interval] || 1;
+    const want = Math.min(total, MAX_BARS[interval] || 600);
+    if (!pair) {
+      const demoId = (typeof coin === 'object' && coin?.source === 'demo' && coin.id) || demo.demoSymbolToId(`${coin?.symbol}USDT`);
+      if (demoId) { markDemo('candles'); return { candles: demo.demoCandles(demoId, interval, want), source: 'demo', pair: null }; }
+      throw new HttpError('Second-by-second candles are only available for coins that trade on Binance.', 404);
+    }
+    try {
+      const raw = await fetchKlines(pair, '1s', want * factor, 1200);
+      if (raw.length) {
+        markLive();
+        const candles = factor === 1 ? raw : bucketCandles(raw, factor, 1e3);
+        return { candles, source: 'binance', pair, seconds: true };
+      }
+    } catch { /* fall through to demo */ }
+    const demoId = demo.demoSymbolToId(pair);
+    if (demoId) { markDemo('candles'); return { candles: demo.demoCandles(demoId, interval, want), source: 'demo', pair }; }
+    throw new HttpError('Second-by-second candles are not available for this pair.', 404);
+  }
+
   if (pair) {
     try {
       const ttl = interval.endsWith('m') ? 15e3 : 60e3;
@@ -210,6 +279,22 @@ export async function getCandles(coin, interval = '1h', total = 500) {
     return { candles: demo.demoCandles(demoId, interval, Math.min(total, 1500)), source: 'demo', pair };
   }
   throw new HttpError('No price history available for this coin', 404);
+}
+
+// How many decimals the exchange itself quotes this pair to. Showing fewer is a
+// rounded price pretending to be the real one, so the coin page asks for this.
+const tickCache = new Map();
+export async function getTickSize(pair) {
+  if (!pair) return null;
+  if (tickCache.has(pair)) return tickCache.get(pair);
+  try {
+    const r = await getJsonAny(CONFIG.BINANCE_REST, `/api/v3/exchangeInfo?symbol=${pair}`, { ttl: 864e5, key: `bn:info:${pair}` });
+    const f = r.symbols?.[0]?.filters?.find((x) => x.filterType === 'PRICE_FILTER');
+    const tick = f ? +f.tickSize : null;
+    const dp = tick && tick > 0 ? Math.max(0, Math.round(-Math.log10(tick))) : null;
+    tickCache.set(pair, dp);
+    return dp;
+  } catch { tickCache.set(pair, null); return null; }
 }
 
 export async function getDepth(pair, limit = 20) {

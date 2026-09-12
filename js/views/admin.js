@@ -3,6 +3,7 @@
 import { $, $$, bindTabs, toast, skeleton, modal, icon } from '../ui.js';
 import { esc, dateTime, compact } from '../format.js';
 import { auth, sb, isAdmin, callFn, getPosts, savePost, deletePost } from '../api/backend.js';
+import { assuranceLevel, hasTwoFactor } from '../api/security.js';
 
 export const title = 'Admin';
 
@@ -13,10 +14,24 @@ export async function render(el) {
     return;
   }
 
+  // This account can grant premium, read every user and rotate API keys. If it
+  // has an authenticator, the panel is closed until the second step is done.
+  const aal = await assuranceLevel();
+  if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+    el.innerHTML = `<div class="card empty"><h3>Second step required</h3>
+      <p>Your admin account has two-factor turned on. Sign out and back in, entering the code from your authenticator, to open the admin panel.</p>
+      <a class="btn primary" href="#/account">Go to account</a></div>`;
+    return;
+  }
+
+  const twoFactorOn = await hasTwoFactor().catch(() => true);
+
   el.innerHTML = `
     <div class="page-head"><div><h1>Admin</h1><p>Signed in as ${esc(auth.user.email)}</p></div></div>
+    ${twoFactorOn ? '' : `<div class="banner" style="margin:0 0 14px">${icon('info', 16)} This account controls the whole site but has no second factor. <a href="#/account"><b>Turn on two-factor</b></a> — a leaked password would otherwise be enough to take over everything.</div>`}
     <div class="tabs" id="tabs">
       <button data-tab="stats" class="on">Overview</button>
+      <button data-tab="growth">Analytics</button>
       <button data-tab="users">Users</button>
       <button data-tab="content">Content</button>
       <button data-tab="settings">Settings</button>
@@ -54,6 +69,81 @@ export async function render(el) {
         <div class="card mt"><h3>Newest accounts</h3><div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">E-mail</th><th class="l">Name</th><th>Joined</th><th>Premium</th></tr></thead><tbody>
           ${(s.recentUsers || []).map((u) => `<tr><td class="l">${esc(u.email)}</td><td class="l">${esc(u.display_name || '')}</td><td class="fine">${dateTime(new Date(u.created_at).getTime(), false)}</td><td>${u.premium_until && new Date(u.premium_until) > new Date() ? '<span class="chip up">yes</span>' : '—'}</td></tr>`).join('')}
         </tbody></table></div></div>`;
+    },
+
+    // ------------------------------------------------------------ deeper analytics
+    // Read straight from the tables the admin policies already allow, so this
+    // needs no extra backend surface.
+    async growth() {
+      panel.innerHTML = skeleton(6, 24);
+      const client = await sb();
+      const since = new Date(Date.now() - 90 * 864e5).toISOString();
+      const [{ data: profs }, { data: views }] = await Promise.all([
+        client.from('profiles').select('created_at,premium_until,telegram_chat_id,email_verified').limit(5000),
+        client.from('page_views').select('path,created_at,device,session_id,referrer').gte('created_at', since).limit(50000),
+      ]);
+      const users = profs || [], vs = views || [];
+      const now = Date.now();
+
+      const inLast = (days, rows, key) => rows.filter((r) => now - new Date(r[key]).getTime() < days * 864e5).length;
+      const premium = users.filter((u) => u.premium_until && new Date(u.premium_until) > new Date()).length;
+
+      // signups per week
+      const weeks = {};
+      for (const u of users) {
+        const d = new Date(u.created_at); d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+        weeks[d.toISOString().slice(0, 10)] = (weeks[d.toISOString().slice(0, 10)] || 0) + 1;
+      }
+      const wk = Object.entries(weeks).sort();
+      const wkMax = Math.max(1, ...wk.map(([, n]) => n));
+
+      // which coins people actually open
+      const coins = {};
+      for (const v of vs) {
+        const m = /#\/coin\/([A-Z0-9]+)/i.exec(v.path || '');
+        if (m) coins[m[1].toUpperCase()] = (coins[m[1].toUpperCase()] || 0) + 1;
+      }
+      const topCoins = Object.entries(coins).sort((a, b) => b[1] - a[1]).slice(0, 12);
+
+      // sessions that came back on more than one day
+      const bySession = {};
+      for (const v of vs) {
+        if (!v.session_id) continue;
+        (bySession[v.session_id] ||= new Set()).add(v.created_at.slice(0, 10));
+      }
+      const sessions = Object.values(bySession);
+      const returning = sessions.filter((d) => d.size > 1).length;
+
+      const refs = {};
+      for (const v of vs) {
+        if (!v.referrer) continue;
+        try { const h = new URL(v.referrer).hostname.replace(/^www\./, ''); if (h && !h.includes('github.io')) refs[h] = (refs[h] || 0) + 1; } catch { /* ignore */ }
+      }
+      const topRefs = Object.entries(refs).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+      panel.innerHTML = `
+        <div class="admin-grid">
+          <div class="card"><div class="stat"><span class="k">Total accounts</span><span class="v">${users.length}</span><span class="s fine">${inLast(7, users, 'created_at')} in 7 days</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Paying now</span><span class="v ${premium ? 'up' : ''}">${premium}</span><span class="s fine">${users.length ? ((premium / users.length) * 100).toFixed(1) : 0}% of accounts</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Verified e-mail</span><span class="v">${users.filter((u) => u.email_verified).length}</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Telegram linked</span><span class="v">${users.filter((u) => u.telegram_chat_id).length}</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Sessions (90d)</span><span class="v">${compact(sessions.length, '')}</span><span class="s fine">${compact(vs.length, '')} page views</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Came back another day</span><span class="v">${sessions.length ? ((returning / sessions.length) * 100).toFixed(0) : 0}%</span><span class="s fine">${returning} of ${sessions.length}</span></div></div>
+        </div>
+
+        <div class="grid g2 mt">
+          <div class="card"><h3>Sign-ups per week</h3>
+            ${wk.length ? `<div class="bars mt">${wk.map(([w, n]) => `<i style="height:${(n / wkMax) * 100}%" title="${esc(w)}: ${n}"></i>`).join('')}</div><p class="fine mt">${esc(wk[0][0])} → ${esc(wk[wk.length - 1][0])}</p>` : '<p class="muted">No sign-ups yet.</p>'}
+          </div>
+          <div class="card"><h3>Coins people open most</h3>
+            ${topCoins.length ? `<dl class="kv mt">${topCoins.map(([c, n]) => `<dt><a href="#/coin/${esc(c)}">${esc(c)}</a></dt><dd>${n}</dd>`).join('')}</dl>` : '<p class="muted">No coin pages opened yet.</p>'}
+          </div>
+        </div>
+
+        <div class="card mt"><h3>Where visitors come from</h3>
+          ${topRefs.length ? `<dl class="kv mt">${topRefs.map(([h, n]) => `<dt>${esc(h)}</dt><dd>${n}</dd>`).join('')}</dl>` : '<p class="fine">No external referrers recorded yet — most visits are direct or the referrer is hidden.</p>'}
+          <p class="fine mt">Page views keep no IP address and no identity: just the path, a coarse device type and a random id that is dropped when the tab closes. Records older than 30 days are deleted nightly.</p>
+        </div>`;
     },
 
     // ------------------------------------------------------------ users
