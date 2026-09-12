@@ -2,7 +2,8 @@
 // EMA / Bollinger overlays, volume, RSI & MACD panes, levels, markers, and an
 // optional AI forecast cone drawn to the right of the last candle.
 import { computeAll } from '../lib/indicators.js';
-import { price as fmtPrice, compact } from '../format.js';
+// money() converts to the visitor's display currency; the chart's own scale stays in USD.
+import { money as fmtPrice, compact } from '../format.js';
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -27,12 +28,14 @@ export class CandleChart {
     this.ctx = this.canvas.getContext('2d');
     this.pointers = new Map();
     this.bind();
+    this.onCurrency = () => this.draw();
+    window.addEventListener('cv:currency', this.onCurrency);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(el);
     this.resize();
   }
 
-  destroy() { this.ro.disconnect(); this.el.innerHTML = ''; }
+  destroy() { this.ro.disconnect(); window.removeEventListener('cv:currency', this.onCurrency); this.el.innerHTML = ''; }
 
   setData(candles, { keepView = false } = {}) {
     this.candles = candles;

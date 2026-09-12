@@ -359,3 +359,19 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   .analog-row { grid-template-columns: 1fr auto; }
   .analog-row > :nth-child(2) { grid-column: 1 / -1; order: 3; }
 }
+
+/* ============================================================ move timing */
+.timing-box { padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.tl { position: relative; height: 16px; }
+.tl-bar { position: absolute; left: 0; right: 0; top: 7px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--surface-3)); display: block; }
+.tl-mark { position: absolute; top: 1px; width: 3px; height: 15px; border-radius: 2px; transform: translateX(-1.5px); }
+.tl-mark.up { background: var(--up); } .tl-mark.down { background: var(--down); } .tl-mark.warn { background: var(--warn); }
+
+/* ============================================================ advice */
+.advice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+.advice-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); cursor: pointer; }
+.advice-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.advice-card .rank { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 12px; flex: none; }
+.advice-card .plan { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.advice-card .reasons { font-size: 12.5px; }
+@media (max-width: 560px) { .advice-grid { grid-template-columns: minmax(0, 1fr); } }

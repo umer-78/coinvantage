@@ -2,7 +2,7 @@
 import { $, $$, icon, toast, modal } from '../ui.js';
 import { esc, money } from '../format.js';
 import { load } from '../store.js';
-import { auth, sb, isPremium, callFn, updateProfile, refreshProfile, signOut } from '../api/backend.js';
+import { auth, sb, isPremium, isAdmin, callFn, updateProfile, refreshProfile, signOut } from '../api/backend.js';
 import { openAuth } from './auth.js';
 
 export const title = 'Account';
@@ -41,7 +41,7 @@ export async function render(el, [flag]) {
       <div class="card">
         <h3>${premium ? 'Premium' : 'Plan'}</h3>
         ${premium
-          ? `<p class="mt"><span class="chip up">Premium active</span></p><p>${p.premium_until ? `Runs until <b>${new Date(p.premium_until).toLocaleDateString()}</b> — ${Math.max(0, Math.ceil((new Date(p.premium_until) - Date.now()) / 864e5))} days left.` : 'Lifetime access.'}</p>
+          ? `<p class="mt"><span class="chip ${isAdmin() ? 'warn' : 'up'}">${isAdmin() ? 'Owner — Premium free, forever' : 'Premium active'}</span></p><p>${isAdmin() ? 'You own this site, so every Premium feature is yours at no cost and never expires.' : p.premium_until ? `Runs until <b>${new Date(p.premium_until).toLocaleDateString()}</b> — ${Math.max(0, Math.ceil((new Date(p.premium_until) - Date.now()) / 864e5))} days left.` : 'Lifetime access.'}</p>
              <ul class="feat"><li>Unlimited server-side alerts</li><li>Telegram + e-mail delivery</li><li>Premium trade ideas</li><li>Full signal track record</li></ul>`
           : `<p class="mt">You're on the <b>free</b> plan: live prices, charts, signals, forecasts, history comparison and 3 server-side alerts.</p>
              <a class="btn primary mt" href="#/premium">${icon('star', 16)} See Premium</a>`}
