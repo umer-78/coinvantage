@@ -74,6 +74,7 @@ export async function render(el, [symParam]) {
       <div class="stack">
         <div class="card" id="signalCard">${skeleton(6)}</div>
         <div class="card" id="fcCard">${skeleton(5)}</div>
+        <div class="card" id="newsCard" hidden></div>
       </div>
     </div>
     <div class="card mt">
@@ -90,6 +91,30 @@ export async function render(el, [symParam]) {
       </div>
       <div id="tabBody"></div>
     </div>`;
+
+  // Headlines beside the chart, not buried in a tab — the newest few, with the
+  // full list one click away.
+  (async () => {
+    if (!backendEnabled()) return;
+    const rows = await getNews({ coin: coin.symbol, limit: 4 }).catch(() => []);
+    if (st.disposed || !rows.length) return;
+    const card = $('#newsCard', el);
+    if (!card) return;
+    card.hidden = false;
+    card.innerHTML = `
+      <div class="card-h"><h3>${esc(coin.symbol)} news</h3><button class="btn sm ghost" id="allNews">See all</button></div>
+      <div class="news-mini">${rows.map((r) => `
+        <a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">
+          <span>${esc(r.title)}</span>
+          <small class="fine">${esc(r.source || '')} · ${esc(ago(new Date(r.published_at).getTime()))}</small>
+        </a>`).join('')}</div>
+      <p class="fine">Background only — the price model reads price data, not headlines.</p>`;
+    $('#allNews', card)?.addEventListener('click', () => {
+      const btn = $$('[data-tab]', el).find((b) => b.dataset.tab === 'news');
+      btn?.click();
+      btn?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  })();
 
   logActivity('view_coin', coin.symbol, { name: coin.name });
 
