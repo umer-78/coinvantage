@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://umer-78.github.io/coinvantage/sitemap.xml
+Sitemap: https://example.github.io/coinvantage/sitemap.xml

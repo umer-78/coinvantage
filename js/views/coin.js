@@ -4,12 +4,15 @@ import { live } from '../api/live.js';
 import { generateSignal, confluence } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
+import { timingOutlook, TESTED_TIMING } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
 import { LineChart } from '../charts/line.js';
-import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs } from '../ui.js';
-import { esc, price, usd, compact, pct, amount, changeHtml, dateTime, horizonText, INTERVAL_LABEL, money} from '../format.js';
+import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs, modal } from '../ui.js';
+import { esc, usd, compact, pct, amount, changeHtml, dateTime, horizonText, INTERVAL_LABEL, money} from '../format.js';
 import { watchlist, settings } from '../store.js';
+import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
+import { getNews, backendEnabled } from '../api/backend.js';
 
 export const title = (p) => (p[0] || 'Coin').toUpperCase();
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -38,6 +41,7 @@ export async function render(el, [symParam]) {
       </div>
       <div class="row" style="margin-left:auto">
         <a class="btn" href="#/alerts/${esc(coin.symbol)}">${icon('alerts', 16)} Alert</a>
+        ${tradable(coin.symbol) ? `<button class="btn" id="tradeBtn">${icon('exchanges', 16)} Trade</button>` : ''}
         <a class="btn primary" id="askAi" href="#/ai/${esc(coin.symbol)}">${icon('ai', 16)} Ask AI about ${esc(coin.symbol)}</a>
       </div>
     </div>
@@ -68,6 +72,7 @@ export async function render(el, [symParam]) {
         <button data-tab="forecast" class="on">${icon('forecast', 16)} AI forecast</button>
         <button data-tab="patterns">${icon('compare', 16)} Pattern comparison</button>
         <button data-tab="history">${icon('markets', 16)} History &amp; cycles</button>
+        <button data-tab="news">${icon('info', 16)} News</button>
         <button data-tab="periods">History vs now</button>
         <button data-tab="backtest">Backtest</button>
         ${pair ? '<button data-tab="book">Order book</button>' : ''}
@@ -78,6 +83,22 @@ export async function render(el, [symParam]) {
     </div>`;
 
   $('#star', el).addEventListener('click', (e) => e.currentTarget.classList.toggle('on', watchlist.toggle(coin.symbol)));
+
+  // Hand-off to an exchange. CoinVantage never places the order itself.
+  $('#tradeBtn', el)?.addEventListener('click', () => {
+    const venues = venuesFor(coin.symbol);
+    const sig = st.signal;
+    modal(`<h3>Trade ${esc(coin.symbol)}</h3>
+      <p class="fine">Pick where you already have an account. The pair opens ready to trade on their site.</p>
+      ${sig?.ok && sig.plan ? `<div class="plan mt">
+        <div><div class="k">Signal says</div><div class="v ${sig.tone}">${esc(sig.text)}</div></div>
+        <div><div class="k">Stop-loss to set</div><div class="v down">${money(sig.plan.stopLoss)}</div></div>
+      </div><p class="fine" style="margin-top:8px">Set the stop-loss on the exchange as soon as the order fills.</p>` : ''}
+      <div class="sheet-grid mt">
+        ${venues.map((v) => `<a class="sheet-item" href="${esc(v.href)}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}
+      </div>
+      <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>`);
+  });
 
   // ------------------------------------------------------------ chart
   const chart = new CandleChart($('#chart', el), {});
@@ -175,10 +196,10 @@ export async function render(el, [symParam]) {
       ${plan ? `
         <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
         <div class="plan">
-          <div><div class="k">Entry zone</div><div class="v">${price(plan.entryZone[0])} – ${price(plan.entryZone[1])}</div></div>
-          <div><div class="k">Stop-loss</div><div class="v down">${price(plan.stopLoss)} <span class="fine">(${plan.riskPct}%)</span></div></div>
-          <div><div class="k">Take-profit 1</div><div class="v up">${price(plan.takeProfits[0])}</div></div>
-          <div><div class="k">Take-profit 2 / 3</div><div class="v up">${price(plan.takeProfits[1])} / ${price(plan.takeProfits[2])}</div></div>
+          <div><div class="k">Entry zone</div><div class="v">${money(plan.entryZone[0])} – ${money(plan.entryZone[1])}</div></div>
+          <div><div class="k">Stop-loss</div><div class="v down">${money(plan.stopLoss)} <span class="fine">(${plan.riskPct}%)</span></div></div>
+          <div><div class="k">Take-profit 1</div><div class="v up">${money(plan.takeProfits[0])}</div></div>
+          <div><div class="k">Take-profit 2 / 3</div><div class="v up">${money(plan.takeProfits[1])} / ${money(plan.takeProfits[2])}</div></div>
         </div>
         <ul class="reasons mt">${plan.exitRules.map((r) => `<li class="s">${esc(r)}</li>`).join('')}</ul>`
       : `<h3 class="mt" style="margin-bottom:8px">No trade — wait for a trigger</h3><ul class="reasons">${sig.waitFor.map((w) => `<li class="b">${esc(w)}</li>`).join('')}</ul>`}
@@ -198,7 +219,8 @@ export async function render(el, [symParam]) {
     const fc = await runForecast(st.candles, { horizon: H, intervalMs: INTERVAL_MS[iv] });
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
     st.forecast = fc;
-    remember(coin.symbol, iv, { forecast: fc });
+    st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
+    remember(coin.symbol, iv, { forecast: fc, timing: st.timing });
     if (!fc.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(fc.reason)}</p>`; return; }
     chart.setProjection(fc.path);
     drawForecastCard(fc);
@@ -225,10 +247,85 @@ export async function render(el, [symParam]) {
           <div class="fine">Tested accuracy: <b>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'}</b> on ${e.samples} unseen cases</div>
         </div>
       </div>
+      ${timingCardBlock()}
       <div class="row mt"><span class="fine">Horizon</span><div class="seg" id="hSeg">${[Math.max(3, Math.round(st.horizon / 2)), DEFAULT_HORIZON[st.interval] || 12, (DEFAULT_HORIZON[st.interval] || 12) * 2].filter((v, i, a) => a.indexOf(v) === i).map((h) => `<button data-v="${h}" class="${h === st.horizon ? 'on' : ''}">${horizonText(st.interval, h)}</button>`).join('')}</div></div>
       <div id="histLine" class="mt"></div>`;
     bindSeg($('#hSeg', el), (v) => { st.horizon = +v; $('#fcCard', el).innerHTML = `<div class="row"><span class="spinner"></span><b>Re-training for ${horizonText(st.interval, +v)}…</b></div>`; runAi(); });
     paintHistLine();
+  }
+
+  // The shaped path: where the move tops out or bottoms, and when it turns.
+  function timingSection() {
+    const t = st.timing;
+    if (!t?.ok) return `<p class="fine mt">${esc(t?.reason || '')}</p>`;
+    if (!t.shaped) return `<p class="fine mt">Timing: the matched past charts drifted ${t.endPct >= 0 ? 'up' : 'down'} steadily rather than spiking, so there is no clear turning point to call inside this horizon.</p>`;
+    const dur = (bars) => horizonText(st.interval, bars);
+    const main = t.rising ? t.peak : t.trough;
+    return `
+      <h3 class="mt" style="margin-bottom:6px">How long the move lasts — and when it turns</h3>
+      <div class="grid g2">
+        <div><div id="tmChart"></div>
+          <p class="fine">Built from what price actually did after the ${t.matchesUsed} closest past charts, step by step — then tilted so it ends on the ensemble's expected move. Shaded band = the middle half of those past outcomes.</p></div>
+        <div class="stack">
+          <div class="grid g3">
+            <div class="stat"><span class="k">${t.rising ? 'Rises for' : 'Falls for'}</span><span class="v">${esc(dur(main.bar))}</span></div>
+            <div class="stat"><span class="k">${t.rising ? 'Peak near' : 'Low near'}</span><span class="v ${t.rising ? 'up' : 'down'}">${money(main.price)}</span><span class="s fine">${pct(main.pct, 1)}</span></div>
+            <div class="stat"><span class="k">${t.turn ? 'Turns after' : t.recover ? 'Bounces after' : 'At horizon'}</span><span class="v">${esc(dur(t.turn?.bar ?? t.recover?.bar ?? t.horizonBars))}</span></div>
+          </div>
+          <dl class="kv">
+            <dt>Best window to be in</dt><dd>${t.hold ? `${esc(dur(t.hold.fromBar))} – ${esc(dur(t.hold.toBar))}` : '—'}</dd>
+            <dt>Past charts still up at the peak</dt><dd>${main.agreement === null || main.agreement === undefined ? '—' : `${Math.round(main.agreement)}%`}</dd>
+            <dt>Where it ends at the horizon</dt><dd class="${t.endPct >= 0 ? 'up' : 'down'}">${pct(t.endPct, 1)}</dd>
+          </dl>
+          <p class="fine">${TESTED_TIMING.tests ? `Measured on ${TESTED_TIMING.tests} past forecasts across ${TESTED_TIMING.coins} coins, the real high or low landed inside the predicted window <b>${TESTED_TIMING.peakHitPct}%</b> of the time (a random guess scores ${TESTED_TIMING.baselinePct}%; typical miss ${TESTED_TIMING.medianBarsOff} bar${TESTED_TIMING.medianBarsOff === 1 ? '' : 's'}).` : 'Timing accuracy for this build has not been measured yet — treat the turning point as a rough guide, not a schedule.'}</p>
+          <p class="fine warn">Timing is the least reliable part of any forecast. Use it to plan an exit window, never as a reason to skip a stop-loss.</p>
+        </div>
+      </div>`;
+  }
+
+  function drawTimingChart(body) {
+    const t = st.timing;
+    if (!t?.ok || !t.shaped || !$('#tmChart', body)) return;
+    const lc = new LineChart($('#tmChart', body), {
+      height: 260, yFormat: (v) => money(v), xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x),
+    });
+    st.charts.push(lc);
+    const main = t.rising ? t.peak : t.trough;
+    lc.set([
+      { name: 'Expected path', color: cssVar('--accent'), width: 2.6, data: t.path.map((p) => ({ x: p.t, y: p.price })) },
+      { name: t.rising ? 'Expected peak' : 'Expected low', color: cssVar(t.rising ? '--up' : '--down'), width: 0, data: [{ x: main.t, y: main.price }] },
+    ], {
+      bands: [{ color: cssVar('--accent'), alpha: 0.14, data: t.path.map((p) => ({ x: p.t, lo: p.lo, hi: p.hi })) }],
+      divider: main.t, dividerLabel: t.rising ? 'peak' : 'low',
+    });
+  }
+
+  // "How long does it last, and when does it turn?" — shown right under the odds,
+  // because a direction with no timing is only half an answer.
+  function timingCardBlock() {
+    const t = st.timing;
+    if (!t?.ok || !t.shaped) return '';
+    const dur = (bars) => horizonText(st.interval, bars);
+    const main = t.rising ? t.peak : t.trough;
+    const cls = t.rising ? 'up' : 'down';
+    return `
+      <div class="timing-box mt">
+        <div class="row spread"><b>${t.rising ? 'How long the rise lasts' : 'How long the drop lasts'}</b>
+          <span class="chip ${cls}">${t.rising ? 'peaks' : 'bottoms'} in ${esc(dur(main.bar))}</span></div>
+        <div class="tl mt">
+          <i class="tl-bar"></i>
+          <span class="tl-mark ${cls}" style="left:${(main.bar / t.horizonBars) * 100}%" title="${t.rising ? 'peak' : 'low'}"></span>
+          ${t.turn ? `<span class="tl-mark warn" style="left:${(t.turn.bar / t.horizonBars) * 100}%" title="turns"></span>` : ''}
+          ${t.recover ? `<span class="tl-mark up" style="left:${(t.recover.bar / t.horizonBars) * 100}%" title="bounce"></span>` : ''}
+        </div>
+        <div class="row spread fine" style="margin-top:3px"><span>now</span><span>${esc(dur(t.horizonBars))}</span></div>
+        <p class="fine" style="margin:8px 0 0">
+          ${t.rising
+            ? `Expect strength for about <b>${esc(dur(main.bar))}</b>, topping near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.turn ? `, then fading back to ${pct(t.turn.pct, 1)} by <b>${esc(dur(t.turn.bar))}</b>` : ', holding rather than reversing inside this horizon'}.`
+            : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting around <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
+          ${main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
+        </p>
+      </div>`;
   }
 
   // One-line cross-check from the long-range history study, shown next to the forecast.
@@ -313,7 +410,8 @@ export async function render(el, [symParam]) {
         </tbody></table></div>
         <p class="fine mt">How it works: each model is trained on this coin's own history, then tested on the most recent period it never saw. Models that predicted better get more weight. Crypto is noisy — 55% direction accuracy is already a real edge; nothing is certain.</p>
         <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time, called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time (15m ${TESTED_ACCURACY['15m']}% · 1h ${TESTED_ACCURACY['1h']}% · 4h ${TESTED_ACCURACY['4h']}% · 1d ${TESTED_ACCURACY['1d']}%).${st.interval === '1d' || st.interval === '1w' ? ' <b class="warn">Daily and weekly forecasts tested weakest — prefer the 15m–4h charts for timing.</b>' : ''}</p>`;
-      const lc = new LineChart($('#fcChart', body), { height: 300, yFormat: (v) => price(v), xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x) });
+      body.insertAdjacentHTML('beforeend', timingSection());
+      const lc = new LineChart($('#fcChart', body), { height: 300, yFormat: (v) => money(v), xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x) });
       st.charts.push(lc);
       const hist = st.candles.slice(-Math.max(60, fc.horizon * 5));
       const last = hist[hist.length - 1];
@@ -323,6 +421,7 @@ export async function render(el, [symParam]) {
         { name: 'Price', color: cssVar('--text'), data: hist.map((c) => ({ x: c.t, y: c.c })), width: 1.8 },
         { name: 'AI median forecast', color: accent, dash: true, data: [{ x: last.t, y: last.c }, ...fc.path.map((p) => ({ x: p.t, y: p.p50 }))], width: 2.2 },
       ], { bands: [{ color: accent, alpha: 0.1, data: bandPts }, { color: accent, alpha: 0.2, data: band50 }], divider: last.t, dividerLabel: 'now' });
+      drawTimingChart(body);
       return;
     }
 
@@ -352,6 +451,30 @@ export async function render(el, [symParam]) {
         { name: `Now · ${coin.symbol}`, color: cssVar('--text'), width: 3, data: pat.currentSeries.map((v, k) => ({ x: k, y: v })) },
         fc.ok && { name: 'AI forecast', color: accent, dash: true, width: 2.4, data: [{ x: W - 1, y: 100 }, ...fc.path.map((p, k) => ({ x: W + k, y: (p.p50 / fc.lastPrice) * 100 }))] },
       ].filter(Boolean), { divider: W - 1, dividerLabel: 'now' });
+      return;
+    }
+
+    if (st.tab === 'news') {
+      body.innerHTML = `<div id="newsBody">${skeleton(6, 22)}</div>`;
+      (async () => {
+        if (!backendEnabled()) { $('#newsBody', body).innerHTML = '<p class="muted">News is not configured on this deployment.</p>'; return; }
+        const rows = await getNews({ coin: coin.symbol, limit: 30 }).catch(() => []);
+        if (st.tab !== 'news' || st.disposed) return;
+        st.news = rows;
+        $('#newsBody', body).innerHTML = rows.length ? `
+          <p class="fine" style="margin-bottom:10px">${rows.length} recent ${rows.length === 1 ? 'story' : 'stories'} tagged <b>${esc(coin.symbol)}</b>, newest first. Headlines are collected automatically and shown unedited — check the source before acting on one.</p>
+          <div class="news-list">${rows.map((r) => `
+            <article class="news-item">
+              ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none" onerror="this.remove()">` : ''}
+              <div style="min-width:0">
+                <a class="ttl" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
+                ${r.summary ? `<p class="fine" style="margin:4px 0 0">${esc(r.summary.slice(0, 180))}${r.summary.length > 180 ? '…' : ''}</p>` : ''}
+                <div class="meta"><b>${esc(r.source)}</b><span>${ago(new Date(r.published_at).getTime())}</span>${(r.coins || []).filter((c) => c !== coin.symbol).slice(0, 4).map((c) => `<a href="#/coin/${esc(c)}" class="chip">${esc(c)}</a>`).join('')}</div>
+              </div>
+            </article>`).join('')}</div>
+          <p class="fine mt"><b>Note on the forecast:</b> these headlines are shown for context and are given to the AI assistant when it answers about ${esc(coin.symbol)}. They are <b>not</b> an input to the price model — its published accuracy comes from price data alone, and adding unmeasured news sentiment would make that number a lie.</p>`
+          : `<div class="empty">${icon('info', 20)}<p>No recent headlines tagged ${esc(coin.symbol)}. The collector refreshes every 20 minutes.</p><a class="btn sm" href="#/news">All crypto news</a></div>`;
+      })();
       return;
     }
 
@@ -404,7 +527,7 @@ export async function render(el, [symParam]) {
         </div>
         <div id="btChart" class="mt"></div>
         <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Entry</th><th>Entry price</th><th>Exit price</th><th>Result</th><th>Exit reason</th></tr></thead><tbody>
-          ${bt.trades.slice(-15).reverse().map((t) => `<tr style="cursor:default"><td class="l">${dateTime(t.entryTime)}</td><td>${price(t.entry)}</td><td>${price(t.exit)}</td><td class="${t.returnPct >= 0 ? 'up' : 'down'}">${pct(t.returnPct)}</td><td>${t.reason}</td></tr>`).join('') || '<tr><td colspan="5" class="l muted">No completed trades in this window.</td></tr>'}
+          ${bt.trades.slice(-15).reverse().map((t) => `<tr style="cursor:default"><td class="l">${dateTime(t.entryTime)}</td><td>${money(t.entry)}</td><td>${money(t.exit)}</td><td class="${t.returnPct >= 0 ? 'up' : 'down'}">${pct(t.returnPct)}</td><td>${t.reason}</td></tr>`).join('') || '<tr><td colspan="5" class="l muted">No completed trades in this window.</td></tr>'}
         </tbody></table></div>`;
       const lc = new LineChart($('#btChart', body), { height: 260, yFormat: (v) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`, xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x), zeroLine: 0 });
       st.charts.push(lc);
@@ -424,12 +547,12 @@ export async function render(el, [symParam]) {
         if (st.tab !== 'book' || st.disposed) return;
         if (d) {
           const maxQ = Math.max(...d.bids.map((b) => b[1] * b[0]), ...d.asks.map((a) => a[1] * a[0]));
-          const row = (p, q, side) => `<div class="book-row"><i style="width:${((p * q) / maxQ) * 100}%;background:var(--${side})"></i><span class="${side}">${price(p)}</span><span>${amount(q)}</span></div>`;
+          const row = (p, q, side) => `<div class="book-row"><i style="width:${((p * q) / maxQ) * 100}%;background:var(--${side})"></i><span class="${side}">${money(p)}</span><span>${amount(q)}</span></div>`;
           $('#book', body).innerHTML = `<div class="book"><div><div class="row spread fine"><span>Bid (buy)</span><span>Amount</span></div>${d.bids.map(([p, q]) => row(p, q, 'up')).join('')}</div>
             <div><div class="row spread fine"><span>Ask (sell)</span><span>Amount</span></div>${d.asks.map(([p, q]) => row(p, q, 'down')).join('')}</div></div>
             <p class="fine mt">Spread: ${pct(((d.asks[0][0] - d.bids[0][0]) / d.bids[0][0]) * 100, 4, false)}</p>`;
         }
-        if (tr) $('#trades', body).innerHTML = `<div class="book-row fine"><span>Price</span><span>Amount</span><span>Time</span></div>${tr.map((t) => `<div class="book-row"><span class="${t.buyerMaker ? 'down' : 'up'}">${price(t.price)}</span><span>${amount(t.qty)}</span><span class="muted">${new Date(t.time).toLocaleTimeString('en-US', { hour12: false })}</span></div>`).join('')}`;
+        if (tr) $('#trades', body).innerHTML = `<div class="book-row fine"><span>Price</span><span>Amount</span><span>Time</span></div>${tr.map((t) => `<div class="book-row"><span class="${t.buyerMaker ? 'down' : 'up'}">${money(t.price)}</span><span>${amount(t.qty)}</span><span class="muted">${new Date(t.time).toLocaleTimeString('en-US', { hour12: false })}</span></div>`).join('')}`;
       };
       drawBook();
       const iv = setInterval(drawBook, 3000);

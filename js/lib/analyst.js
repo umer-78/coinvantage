@@ -21,9 +21,16 @@ function pct(v) {
   return `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
 }
 
+// "Which coin should I buy?" is a different question from "should I buy BTC?".
+export function isMarketWide(q) {
+  const s = (q || '').toLowerCase();
+  return /(which|what) (coin|crypto|one|token|altcoin)|best (coin|crypto|buy|pick)|top (coin|pick|buy)|what (should i|to) buy|anything (good|worth)|all (the )?coins|scan the market|market overview|any (good )?(buy|opportunit)|recommend|picks?\b|where should i put my money/.test(s);
+}
+
 function detectIntent(q) {
   const s = (q || '').toLowerCase();
   if (/(portfolio|wallet|holding|my coins|my bag)/.test(s)) return 'portfolio';
+  if (isMarketWide(s)) return 'market';
   if (/(predict|forecast|future|will (it|the price|price|this)|go(ing)? (up|down)|next (hour|day|week|month)|tomorrow|pump|dump|target price|where .* (head|go)|up or down)/.test(s)) return 'forecast';
   if (/(backtest|win ?rate|accura|reliab|track record|history of signal)/.test(s)) return 'backtest';
   if (/(position size|how much|\bsize\b|invest|risk|lot size|allocation|\$\s?\d|\d+\s?k?\s?(usd|usdt|dollars?|bucks))/.test(s)) return 'risk';
@@ -91,6 +98,62 @@ function historyBlock(h) {
   return `\n${lines.join('\n')}\n`;
 }
 
+// When the move peaks and when it turns — the half of the answer a direction
+// probability leaves out.
+function timingBlock(ctx) {
+  const t = ctx.timing;
+  if (!t) return '';
+  const lines = [];
+  // Prefer the sentence built with real durations ("about 6 hours") over bar counts.
+  if (ctx.timingSentence) lines.push(`**Timing:** ${ctx.timingSentence.replace(/\*\*/g, '')}`);
+  else if (t.direction === 'rise then fade') {
+    lines.push(`**Timing:** strength typically runs about **${t.barsToPeak} candle${t.barsToPeak === 1 ? '' : 's'}**, topping near ${fmtNum(t.peakPrice)} (${pct(t.peakMovePct)})${t.barsUntilItTurnsDown ? `, then turning down around candle ${t.barsUntilItTurnsDown}` : ' and holding rather than reversing'}.`);
+  } else if (t.direction === 'fall then bounce') {
+    lines.push(`**Timing:** weakness typically runs about **${t.barsToTrough} candle${t.barsToTrough === 1 ? '' : 's'}** (${pct(t.troughMovePct)})${t.barsUntilBounce ? `, with a bounce starting around candle ${t.barsUntilBounce}` : ' with no clear bounce in this horizon'}.`);
+  }
+  if (t.peakPrice) lines.push(`- Expected high around ${fmtNum(t.peakPrice)} (${pct(t.peakMovePct)}); at the horizon ${pct(t.moveAtHorizonPct)}.`);
+  if (t.pctOfPastCasesUpAtPeak !== null && t.pctOfPastCasesUpAtPeak !== undefined) lines.push(`- ${t.pctOfPastCasesUpAtPeak}% of the ${t.basedOnSimilarPastCharts} matched past charts were still up at that point.`);
+  lines.push('- Timing is the least reliable part of a forecast — use it to plan an exit, not to skip the stop-loss.');
+  return lines.length ? `\n${lines.join('\n')}\n` : '';
+}
+
+// The whole-market answer: which coin, at what price, for how long, and where to sell.
+function marketBlock(m) {
+  if (!m) return '';
+  const out = [`**Market scan — ${m.scanned} coins on the ${m.interval} chart**\n`];
+  if (!m.buys.length) {
+    out.push(`Nothing currently clears the bar to buy. ${m.waitingCount} coins came back as "no edge — wait", which is the honest answer more often than not. Sitting out is a position.`);
+  } else {
+    out.push('**Worth buying now**\n');
+    m.buys.forEach((b, i) => {
+      const lines = [`${i + 1}. **${b.coin}** (${b.name}) — ${b.verdict}, conviction ${b.conviction}/100, now ${fmtNum(b.price)}`];
+      if (b.buyBetween) lines.push(`   - Buy between ${fmtNum(b.buyBetween[0])} and ${fmtNum(b.buyBetween[1])}; stop-loss ${fmtNum(b.stopLoss)} (risk ${b.riskPct}%)`);
+      if (b.sellTargets) lines.push(`   - Sell targets: ${b.sellTargets.map(fmtNum).join(' → ')}`);
+      if (b.holdForBars) lines.push(`   - Expected to keep rising for about ${b.holdForBars} candle${b.holdForBars === 1 ? '' : 's'}, topping near ${fmtNum(b.expectedPeakPrice)}${b.turnsDownAfterBars ? `, turning down around candle ${b.turnsDownAfterBars}` : ''}`);
+      if (!b.buyBetween && b.waitFor) lines.push(`   - No entry trigger yet: ${b.waitFor}`);
+      if (b.topReason) lines.push(`   - ${b.topReason}`);
+      out.push(lines.join('\n'));
+    });
+  }
+  if (m.avoid.length) {
+    out.push(`\n**Avoid or sell**\n${m.avoid.map((a) => `- **${a.coin}** — ${a.verdict} (conviction ${a.conviction}/100)${a.topReason ? `: ${a.topReason}` : ''}`).join('\n')}`);
+  }
+  out.push(`\nHorizon for these calls is roughly **${m.horizonText}**. Each verdict blends the chart signal, the AI forecast and the move timing, weighted by how accurate each has been — so a reading with no measured edge barely counts.`);
+  out.push('Ask me about any single coin for the full breakdown, or open **What to buy** for the same list with charts.');
+  return `${out.join('\n')}\n`;
+}
+
+// Headlines are context for the reader, not a model input — say so plainly.
+function newsBlock(ctx) {
+  const n = ctx.news;
+  if (!n?.length) return '';
+  const when = (at) => {
+    const h = Math.round((Date.now() - new Date(at).getTime()) / 3600e3);
+    return h < 1 ? 'just now' : h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+  };
+  return `\n**Recent headlines**\n${n.map((x) => `- ${x.title} _(${x.source}, ${when(x.at)})_`).join('\n')}\n- These are background. The forecast above is built from price data only, so its accuracy figure does not include news.\n`;
+}
+
 function reasonsBlock(sig, n = 4) {
   const b = sig.reasons.bullish.slice(0, n).map((r) => `- ✅ ${r}`);
   const s = sig.reasons.bearish.slice(0, n).map((r) => `- ⚠️ ${r}`);
@@ -110,6 +173,19 @@ export function ruleBasedAnswer(question, ctx = {}) {
   const intent = detectIntent(question);
   const sig = ctx.signal;
   const out = [];
+
+  if (intent === 'market') {
+    if (!ctx.market) {
+      return `I need to scan the market to answer that — ask again in a moment, or open the **What to buy** page for the ranked list.\n\n${DISCLAIMER}`;
+    }
+    out.push(marketBlock(ctx.market));
+    if (ctx.portfolio?.length) {
+      out.push(`\n**You already hold:** ${ctx.portfolio.map((h) => `${h.symbol} (${pct(h.pnlPct)})`).join(', ')}. Ask "review my portfolio" for what to do with those.`);
+    }
+    out.push(sentimentLine(ctx));
+    out.push(DISCLAIMER);
+    return out.filter((l) => l !== '').join('\n');
+  }
 
   if (intent === 'portfolio') {
     const p = ctx.portfolio || [];
@@ -139,7 +215,9 @@ export function ruleBasedAnswer(question, ctx = {}) {
     case 'forecast': {
       if (ctx.forecast) {
         out.push(forecastBlock(ctx.forecast, ctx));
+        out.push(timingBlock(ctx));
         out.push(historyBlock(ctx.history));
+        out.push(newsBlock(ctx));
         out.push(signalLine(sig));
         out.push(`\nThe forecast blends 7 models — chart pattern matching against history, similar past moves, gradient-boosted trees, a neural network, logistic regression, nearest neighbours and a trend model — each weighted by how accurate it was on recent data it never saw. Treat it as a probability, not a promise, and combine it with the stop-loss levels below.`);
         out.push(`\n**Key levels:** resistance ${sig.levels.resistances.slice(0, 2).map(fmtNum).join(' / ') || '—'} · support ${sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ') || '—'}`);
@@ -178,6 +256,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
       } else {
         out.push(`\nNo exit signal yet — the structure still holds. Keep a stop in place.`);
       }
+      out.push(timingBlock(ctx));
       const res = sig.levels.resistances.slice(0, 3).map(fmtNum).join(' / ');
       const sup = sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ');
       out.push(`\n**Exit plan**\n- Take-profit targets (resistance): ${res || '—'}\n- Protective stop: below ${sup ? sup.split(' / ')[0] : fmtNum(sig.price - 1.5 * (sig.indicators.atr || 0))}${sig.indicators.ema50 ? `\n- Trend exit: daily close below the 50 EMA (${fmtNum(sig.indicators.ema50)})` : ''}`);
@@ -234,7 +313,9 @@ export function ruleBasedAnswer(question, ctx = {}) {
       out.push(reasonsBlock(sig, 4));
       out.push(mtfBlock(ctx));
       if (ctx.forecast) out.push(forecastBlock(ctx.forecast, ctx));
+      out.push(timingBlock(ctx));
       out.push(historyBlock(ctx.history));
+      out.push(newsBlock(ctx));
       out.push(planBlock(sig.plan));
       if (!sig.plan && sig.waitFor.length) out.push(`**What to wait for**\n${sig.waitFor.map((w) => `- ${w}`).join('\n')}`);
       out.push(`\n**Key levels:** resistance ${sig.levels.resistances.slice(0, 2).map(fmtNum).join(' / ') || '—'} · support ${sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ') || '—'}`);
@@ -252,6 +333,9 @@ Answer the user's question using ONLY the FACTS and DATA provided in their messa
 Rules:
 - Never invent prices, percentages or dates. Copy numbers exactly from the facts.
 - Be direct: say whether the data leans up, down or sideways, give entry / stop-loss / take-profit levels when relevant, and mention the forecast's measured accuracy so the user knows how reliable it is.
+- When marketPicks is present the user asked about the WHOLE market, not one coin: list the ranked picks with their buy zone, stop-loss, sell targets and how long the move is expected to last. Do not narrow it to a single coin.
+- recentHeadlines is background only. You may mention a headline, but never say it changed the forecast — the model reads price data, not news.
+- When moveTiming is present, say how long the move is expected to last and roughly when it turns — that is usually what the user actually wants to know. Never state timing as a certainty.
 - When multiYearHistory is present, use it: it says how this coin behaved the last times its chart looked like today (over years of daily data), what the median move afterwards was, and how often that comparison was right on this coin. Quote those numbers, and say plainly when the method's accuracy is near 50% that it is weak evidence.
 - Keep it short: a one-line verdict, then 3-6 bullet points. Use **bold** for the verdict.
 - The website only shows signals; it cannot place trades or bets. Recommend risking at most 1-2% of the account per trade and always using a stop-loss.
