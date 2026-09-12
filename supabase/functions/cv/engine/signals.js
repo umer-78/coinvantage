@@ -1,5 +1,6 @@
-// Signal engine (server copy of js/lib/signals.js without the backtest helpers).
-// Rule-based technical signals, not financial advice.
+// Signal engine: turns indicators into a Buy/Sell score, a trade plan
+// (entry, stop-loss, take-profits) and a backtest of the same rules.
+// These are rule-based technical signals, not financial advice.
 
 import { computeAll, supportResistance, last } from './indicators.js';
 
@@ -186,8 +187,26 @@ export function generateSignal(candles, { interval = '' } = {}) {
     };
   }
 
+  // A plan whose whole move is smaller than what it costs to trade is not a
+  // plan. On a 5-second chart the distance from entry to target can be a
+  // fraction of a cent — round-trip fees and the spread eat it several times
+  // over. Better to say there is nothing to trade than to draw levels that
+  // cannot pay. 0.3% is roughly two round trips at a typical 0.1% taker fee.
+  const MIN_TRADEABLE_MOVE = 0.003;
+  let noEdgeReason = null;
+  if (plan) {
+    const target = plan.takeProfits[0];
+    const move = Math.abs(target - price) / price;
+    const riskFrac = plan.riskPct / 100;
+    if (move < MIN_TRADEABLE_MOVE || riskFrac < 0.001) {
+      noEdgeReason = `Price is moving too little on this timeframe to trade: the setup's first target is ${(move * 100).toFixed(3)}% away, which fees and the spread would swallow. Use a slower chart for an actual entry.`;
+      plan = null;
+    }
+  }
+
   const waitFor = [];
-  if (!plan) {
+  if (noEdgeReason) waitFor.push(noEdgeReason);
+  if (!plan && !noEdgeReason) {
     if (r1 !== null) waitFor.push(`Bullish trigger: a close above resistance ${fmtNum(r1)} with rising volume`);
     if (s1 !== null) waitFor.push(`Pullback buy zone near support ${fmtNum(s1)} if RSI stays above 40`);
     if (s1 !== null) waitFor.push(`Bearish trigger: a close below ${fmtNum(s1)}`);
@@ -238,4 +257,97 @@ export function fmtNum(v) {
   const a = Math.abs(v);
   const dp = a >= 1000 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 6 : 8;
   return Number(v.toFixed(dp)).toLocaleString('en-US', { maximumFractionDigits: dp });
+}
+
+// Long-only backtest of the same scoring rules (spot trading style).
+export function backtest(candles, { entryScore = THRESHOLDS.normal, exitScore = -THRESHOLDS.normal, atrStop = 1.5, rMultiple = 2.5, feePct = 0.1 } = {}) {
+  const n = candles.length;
+  if (n < 80) return { ok: false, reason: 'Not enough history to backtest' };
+  const ind = computeAll(candles);
+  const start = n >= 260 ? 200 : 50;
+  const fee = feePct / 100;
+  const trades = [];
+  let pos = null;
+  let equity = 1, peak = 1, maxDD = 0;
+  const curve = [];
+  for (let i = start; i < n; i++) {
+    const c = candles[i];
+    if (pos) {
+      let exit = null, why = '';
+      if (c.l <= pos.stop) { exit = Math.min(pos.stop, c.o); why = pos.stop >= pos.entry ? 'breakeven' : 'stop'; }
+      else if (c.h >= pos.target) { exit = Math.max(pos.target, c.o); why = 'target'; }
+      else {
+        const { score } = scoreAt(candles, ind, i);
+        pos.weak = score <= exitScore ? pos.weak + 1 : 0;
+        if (pos.weak >= 2) { exit = c.c; why = 'signal'; } // bearish signal confirmed on 2 closes
+        else if (c.c >= pos.entry + pos.risk) pos.stop = Math.max(pos.stop, pos.entry); // +1R → stop to breakeven
+      }
+      if (exit !== null) {
+        const ret = (exit / pos.entry) * (1 - fee) * (1 - fee) - 1;
+        equity *= 1 + ret;
+        trades.push({ entryTime: pos.t, exitTime: c.t, entryIndex: pos.i, exitIndex: i, entry: pos.entry, exit, returnPct: +(ret * 100).toFixed(2), reason: why });
+        pos = null;
+      }
+    } else {
+      const a = ind.atr[i];
+      if (a) {
+        const { score } = scoreAt(candles, ind, i);
+        if (score >= entryScore) {
+          pos = { entry: c.c, stop: c.c - atrStop * a, risk: atrStop * a, target: c.c + atrStop * a * rMultiple, t: c.t, i, weak: 0 };
+        }
+      }
+    }
+    const mark = pos ? equity * (c.c / pos.entry) : equity;
+    peak = Math.max(peak, mark);
+    maxDD = Math.max(maxDD, (peak - mark) / peak);
+    curve.push({ t: c.t, v: mark });
+  }
+  const openTrade = pos ? { entryTime: pos.t, entryIndex: pos.i, entry: pos.entry, stop: pos.stop, target: pos.target, unrealizedPct: +((candles[n - 1].c / pos.entry - 1) * 100).toFixed(2) } : null;
+  const wins = trades.filter((t) => t.returnPct > 0);
+  const grossWin = wins.reduce((s, t) => s + t.returnPct, 0);
+  const grossLoss = trades.filter((t) => t.returnPct <= 0).reduce((s, t) => s - t.returnPct, 0);
+  return {
+    ok: true,
+    bars: n - start,
+    from: candles[start].t,
+    to: candles[n - 1].t,
+    trades,
+    openTrade,
+    tradeCount: trades.length,
+    winRate: trades.length ? +((wins.length / trades.length) * 100).toFixed(1) : null,
+    totalReturnPct: +((equity - 1) * 100).toFixed(2),
+    buyHoldPct: +((candles[n - 1].c / candles[start].c - 1) * 100).toFixed(2),
+    maxDrawdownPct: +(maxDD * 100).toFixed(2),
+    profitFactor: grossLoss > 0 ? +(grossWin / grossLoss).toFixed(2) : trades.length ? null : null,
+    avgTradePct: trades.length ? +(trades.reduce((s, t) => s + t.returnPct, 0) / trades.length).toFixed(2) : null,
+    curve,
+  };
+}
+
+// Combine several timeframes into one confluence view.
+export function confluence(signalsByInterval) {
+  const weights = { '15m': 0.5, '1h': 1, '4h': 1.5, '1d': 2, '1w': 2 };
+  let sum = 0, wsum = 0;
+  for (const [iv, s] of Object.entries(signalsByInterval)) {
+    if (!s?.ok) continue;
+    const w = weights[iv] ?? 1;
+    sum += s.score * w; wsum += w;
+  }
+  if (!wsum) return null;
+  const score = Math.round(sum / wsum);
+  return { score, ...labelFor(score) };
+}
+
+// Advice for a coin the user already holds.
+export function adviseHolding({ signal, avgBuyPrice, price }) {
+  if (!signal?.ok) return { text: 'Not enough data', tone: 'flat' };
+  const pnl = avgBuyPrice ? (price / avgBuyPrice - 1) * 100 : null;
+  const rsiV = signal.indicators.rsi;
+  if (signal.score <= -THRESHOLDS.strong) return { text: 'Strong sell signal — consider exiting or tightening your stop', tone: 'down' };
+  if (signal.score <= -THRESHOLDS.normal) {
+    return { text: pnl !== null && pnl > 0 ? 'Trend weakening — consider locking in profit' : 'Bearish — review your stop-loss', tone: 'down' };
+  }
+  if (rsiV !== null && rsiV > 75 && pnl !== null && pnl > 15) return { text: 'Overbought while in profit — consider taking partial profit', tone: 'warn' };
+  if (signal.score >= THRESHOLDS.normal) return { text: 'Bullish — hold; trail stop below support', tone: 'up' };
+  return { text: 'Neutral — hold and watch key levels', tone: 'flat' };
 }

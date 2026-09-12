@@ -137,16 +137,19 @@ export async function render(el, [symParam]) {
       </div>
       <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>
 
-      <h3 class="mt">Practice first — demo trade</h3>
-      <p class="fine">Trade ${esc(coin.symbol)} with simulated money at the live price, in the same practice account as the AI trader. No exchange, no order, no keys.</p>
+      <h3 class="mt">Practice first — your own demo trade</h3>
+      <p class="fine">Trade ${esc(coin.symbol)} yourself with simulated money at the live price. This is your own practice account, kept separate from the AI trader's. No exchange, no order, no keys.</p>
       <div id="paperWrap">${paperBlock()}</div>`);
     wirePaper();
   });
 
   // ---------------------------------------------------------- demo trading
   // Shares the AI trader's simulated account so one balance tells the whole story.
+  // Your own demo trades are kept in a separate account from the AI trader's,
+  // so one person's manual experiments never distort the record the strategy is
+  // judged on. Same simulated rules, same live prices, separate balance.
   const PAPER_CFG = 'traderCfg';
-  const PAPER_STATE = 'traderState';
+  const PAPER_STATE = 'myDemoState';
   const paperCfg = () => ({ ...DEFAULT_CONFIG, ...load(PAPER_CFG, {}) });
   const paperState = () => load(PAPER_STATE, null) || newState(paperCfg());
 
@@ -165,7 +168,7 @@ export async function render(el, [symParam]) {
         <div><div class="k">Open profit / loss</div><div class="v ${pnl >= 0 ? 'up' : 'down'}">${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</div></div>
         <div><div class="k">Practice balance</div><div class="v">${money(bal)}</div></div>
       </div>
-      <div class="row mt" style="gap:8px"><button class="btn primary" id="paperClose">Sell (demo)</button><a class="btn sm ghost" href="#/trader">Open the practice account</a></div>
+      <div class="row mt" style="gap:8px"><button class="btn primary" id="paperClose">Sell (demo)</button><a class="btn sm ghost" href="#/trader">See all my demo trades</a></div>
       <p class="fine" id="paperMsg"></p>
       <p class="fine">${esc(PAPER_NOTICE)}</p>`;
     }

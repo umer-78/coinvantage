@@ -350,6 +350,37 @@ initTicker();
 initAccount();
 riskGate();
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ }));
+// ---------------------------------------------------------------- updates
+//
+// A browser that is still running last week's files is indistinguishable, to
+// the person using it, from a broken site: fixes appear not to have shipped and
+// sign-in seems to fail. So the app checks its own build number on every load
+// and, if the server has a newer one, clears the old copy and reloads once.
+// `version.txt` is rewritten by the deploy script, fetched with no-store so the
+// check itself can never be answered from cache, and the reload is guarded by a
+// session flag so a bad deploy cannot put the page in a refresh loop.
+export const BUILD = "20260912-232031";
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch(`version.txt?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const latest = (await res.text()).trim();
+    if (!latest || latest === BUILD) { sessionStorage.removeItem('cv:reloaded'); return; }
+    if (sessionStorage.getItem('cv:reloaded') === latest) return; // already tried
+    sessionStorage.setItem('cv:reloaded', latest);
+    for (const reg of await navigator.serviceWorker?.getRegistrations?.() ?? []) await reg.unregister();
+    // keep the downloaded AI model — it is large and unrelated to the app files
+    for (const k of await caches.keys()) if (!k.startsWith('webllm')) await caches.delete(k);
+    location.reload();
+  } catch { /* offline, or no version file — carry on with what is loaded */ }
+}
+
+if (location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { /* offline support is optional */ });
+    checkForUpdate();
+    // and again whenever the tab is brought back to the front
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+  });
 }

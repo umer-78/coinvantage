@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable } from '../api/market.js';
-import { newState, replaySymbol, stats, equity, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
+import { newState, replaySymbol, stats, equity, closeManual, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js';
 import { esc, pct, money, compact, dateTime, ago, amount } from '../format.js';
@@ -72,13 +72,72 @@ export async function render(el) {
   }
 
   // ---------------------------------------------------------------- view
+  // Trades you placed yourself, from a coin page. Kept in their own account so
+  // the AI's record stays a record of the AI.
+  const MY_KEY = 'myDemoState';
+  const myState = () => load(MY_KEY, null);
+
+  function myDemoCard() {
+    const ms = myState();
+    if (!ms || (!Object.keys(ms.open).length && !ms.closed.length)) {
+      return `<div class="card"><div class="card-h"><h3>Your own demo trades</h3><span class="chip">Separate account</span></div>
+        <p class="fine">Nothing here yet. Open any coin, press <b>Trade</b>, and use <b>Buy (demo)</b> to place a practice trade yourself at the live price. It is kept apart from the AI's account below, so your experiments never distort the strategy's record.</p></div>`;
+    }
+    const s2 = stats(ms, st.prices);
+    const open = Object.entries(ms.open);
+    const closed = [...ms.closed].reverse().slice(0, 20);
+    return `<div class="card">
+      <div class="card-h"><h3>Your own demo trades</h3><div class="row" style="gap:8px"><span class="chip">Separate account</span><button class="btn sm ghost" id="myReset">Reset</button></div></div>
+      <div class="grid g4">
+        <div class="stat"><span class="k">Balance</span><span class="v ${s2.returnPct >= 0 ? 'up' : 'down'}">${money(s2.equity)}</span><span class="s fine">started at ${money(s2.startingBalance)}</span></div>
+        <div class="stat"><span class="k">Return</span><span class="v ${s2.returnPct >= 0 ? 'up' : 'down'}">${pct(s2.returnPct)}</span></div>
+        <div class="stat"><span class="k">Win rate</span><span class="v">${s2.winRate === null ? '—' : `${s2.winRate}%`}</span><span class="s fine">${s2.wins}W / ${s2.losses}L</span></div>
+        <div class="stat"><span class="k">Trades</span><span class="v">${s2.trades}</span><span class="s fine">${s2.openCount} still open</span></div>
+      </div>
+      ${open.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Bought at</th><th>Now</th><th>Size</th><th>Open P&amp;L</th><th></th></tr></thead><tbody>
+        ${open.map(([sym, p]) => {
+          const px = st.prices[sym] ?? p.entry;
+          const pnl = (px - p.entry) * p.qty;
+          return `<tr><td class="l"><b>${esc(sym)}</b></td><td>${money(p.entry)}</td><td>${money(px)}</td><td>${money(p.notional)}</td>
+            <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b> <small>${pct((px / p.entry - 1) * 100)}</small></td>
+            <td><button class="btn sm" data-mysell="${esc(sym)}">Sell</button></td></tr>`;
+        }).join('')}
+      </tbody></table></div>` : ''}
+      ${closed.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Closed</th><th>Bought</th><th>Sold</th><th>Result</th></tr></thead><tbody>
+        ${closed.map((t) => `<tr><td class="l"><b>${esc(t.symbol)}</b></td><td class="l fine">${dateTime(t.exitAt, false)}</td><td>${money(t.entry)}</td><td>${money(t.exit)}</td>
+          <td class="${t.pnl >= 0 ? 'up' : 'down'}"><b>${t.pnl >= 0 ? '+' : '−'}${money(Math.abs(t.pnl))}</b> <small>${pct(t.pnlPct)}</small></td></tr>`).join('')}
+      </tbody></table></div>` : ''}
+      <p class="fine mt">${esc(PAPER_NOTICE)}</p>
+    </div>`;
+  }
+
+  function wireMyDemo() {
+    $('#myReset', el)?.addEventListener('click', () => {
+      save(MY_KEY, newState(cfg));
+      toast('Your demo account is back to its starting balance.', 'info');
+      draw();
+    });
+    $$('[data-mysell]', el).forEach((b) => b.addEventListener('click', () => {
+      const sym = b.dataset.mysell;
+      const ms = myState();
+      const px = st.prices[sym] ?? ms.open[sym]?.entry;
+      const r = closeManual(ms, cfg, sym, px);
+      if (!r.ok) { toast(r.error, 'down'); return; }
+      save(MY_KEY, ms);
+      toast(`Sold ${sym} — ${r.trade.pnl >= 0 ? 'profit' : 'loss'} ${r.trade.pnlPct}%.`, r.trade.pnl >= 0 ? 'up' : 'down');
+      draw();
+    }));
+  }
+
   function draw() {
-    if (!state) { $('#body', el).innerHTML = startCard(); return; }
+    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}<div class="mt">${startCard()}</div>`; wireMyDemo(); return; }
     const s = stats(state, st.prices);
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
 
     $('#body', el).innerHTML = `
+      ${myDemoCard()}
+      <h3 class="mt" style="margin-bottom:8px">The AI's own account</h3>
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}</span></div></div>
@@ -126,6 +185,7 @@ export async function render(el) {
       </div>`;
 
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
+    wireMyDemo();
 
     st.charts.forEach((c) => c.destroy());
     st.charts = [];
