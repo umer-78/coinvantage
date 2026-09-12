@@ -1,0 +1,23 @@
+{
+  "name": "CoinVantage — Crypto markets, signals & AI forecasts",
+  "short_name": "CoinVantage",
+  "description": "Live crypto prices, charts, buy/sell signals, multi-year history comparison and an AI price forecast that runs in your browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "categories": ["finance", "business", "utilities"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Signal scanner", "url": "./#/scanner" },
+    { "name": "AI assistant", "url": "./#/ai" },
+    { "name": "Bitcoin", "url": "./#/coin/BTC" }
+  ]
+}
