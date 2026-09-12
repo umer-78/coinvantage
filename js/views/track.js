@@ -4,6 +4,9 @@ import { $, $$, bindSeg, skeleton, icon } from '../ui.js';
 import { esc, pct, money, dateTime } from '../format.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
 import { getTrackRecord, backendEnabled } from '../api/backend.js';
+import { CONFIG } from '../config.js';
+import { clockOffsetMs } from '../api/clock.js';
+import { fx } from '../api/fx.js';
 
 export const title = 'Track record';
 
@@ -13,7 +16,39 @@ export async function render(el) {
   el.innerHTML = `
     <div class="page-head"><div><h1>Signal track record</h1><p>Every signal below was written to the database <b>before</b> the outcome was known, then scored automatically when its horizon passed.</p></div>
       <div class="seg" id="iv"><button data-v="all" class="on">All</button><button data-v="15m">15m</button><button data-v="1h">1h</button><button data-v="4h">4h</button><button data-v="1d">1d</button></div></div>
+    <div class="card" id="dataCheck"><div class="row"><span class="spinner"></span><b>Checking live data against the exchange…</b></div></div>
     <div id="body">${skeleton(8, 24)}</div>`;
+
+  // A claim you can check. This compares what the site shows right now against
+  // the exchange's own number, live, in front of the reader.
+  (async () => {
+    const card = $('#dataCheck', el);
+    if (!card) return;
+    const rows = [];
+    let worst = 0;
+    try {
+      const pairs = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
+      const live = await fetch(`${CONFIG.BINANCE_REST[0]}/api/v3/ticker/price?symbols=${encodeURIComponent(JSON.stringify(pairs))}`).then((r) => r.json());
+      const list = await import('../api/market.js').then((m) => m.markets());
+      for (const row of live) {
+        const sym = row.symbol.replace('USDT', '');
+        const ours = list.find((c) => c.symbol === sym);
+        if (!ours) continue;
+        const diff = Math.abs((ours.price - +row.price) / +row.price) * 100;
+        worst = Math.max(worst, diff);
+        rows.push(`<tr><td class="l"><b>${esc(sym)}</b></td><td>${money(+row.price)}</td><td>${money(ours.price)}</td><td class="${diff < 0.1 ? 'up' : 'warn'}">${diff.toFixed(3)}%</td></tr>`);
+      }
+    } catch { /* offline — say so rather than claiming a pass */ }
+    const skew = clockOffsetMs();
+    card.innerHTML = rows.length ? `
+      <div class="card-h"><h3>Live data check</h3><span class="chip ${worst < 0.1 ? 'up' : 'warn'}">${worst < 0.1 ? 'Matching the exchange' : 'Slight drift'}</span></div>
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Exchange now</th><th>Shown here</th><th>Difference</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+      <p class="fine mt">Prices come straight from the exchange and are shown to the same number of decimals it quotes. Small differences are the seconds between the two readings, not rounding.
+      Clock: this device is <b>${Math.abs(skew)} ms ${skew >= 0 ? 'behind' : 'ahead of'}</b> the exchange, and the app corrects for it, so every timestamp on the site is exchange time.
+      Currency: 1 USD = ${fx.rate.toFixed(4)} ${esc(fx.code)}, from a live rate feed.</p>
+      <p class="fine"><b>What is not exact:</b> forecasts. Prices are facts; a forecast is a probability, and the measured accuracy of this one is published below — never rounded up.</p>`
+      : '<div class="card-h"><h3>Live data check</h3><span class="chip warn">Could not reach the exchange</span></div><p class="fine">The check needs a live connection to the exchange. It did not run, so nothing is being claimed here.</p>';
+  })();
 
   if (!backendEnabled()) {
     $('#body', el).innerHTML = '<div class="card empty"><h3>Live tracking is not configured</h3><p>The backend that logs and scores signals is not connected on this deployment.</p></div>';

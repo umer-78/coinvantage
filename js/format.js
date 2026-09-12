@@ -1,4 +1,5 @@
 import { fx } from './api/fx.js';
+import { now } from './api/clock.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -72,7 +73,7 @@ export function dateTime(t, withTime = true) {
 }
 
 export function ago(t) {
-  const s = Math.round((Date.now() - t) / 1000);
+  const s = Math.round((now() - t) / 1000);
   if (s < 60) return `${s}s ago`;
   if (s < 3600) return `${Math.round(s / 60)}m ago`;
   if (s < 86400) return `${Math.round(s / 3600)}h ago`;

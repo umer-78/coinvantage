@@ -4,7 +4,7 @@ import { CONFIG } from './config.js';
 import { $, $$, icon, coinLogo, toast, modal } from './ui.js';
 import { esc, price, changeHtml, money } from './format.js';
 import { settings, load, save } from './store.js';
-import { markets, searchCoins, dataStatus } from './api/market.js';
+import { markets, searchCoins, dataStatus, syncExchangeClock } from './api/market.js';
 import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, I18N, setLang, applyDir } from './i18n.js';
@@ -338,6 +338,11 @@ getAppSettings().then((s) => {
 $$('[data-app-name]').forEach((n) => { n.textContent = CONFIG.APP_NAME; });
 applyTheme(settings.get().theme || 'dark');
 applyDir();
+// Put the app on the exchange's clock before anything is timestamped, and keep
+// it there — a device clock that drifts makes every "2m ago" and every live /
+// stale check wrong.
+syncExchangeClock();
+setInterval(syncExchangeClock, 6e5);
 window.addEventListener('hashchange', route);
 initSearch();
 initSelectors().then(route).catch(route);

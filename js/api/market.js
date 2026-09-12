@@ -3,6 +3,7 @@
 import { CONFIG } from '../config.js';
 import { getJson, getJsonAny, peek, postJson, HttpError } from './http.js';
 import * as demo from '../lib/demo.js';
+import { syncClock, now } from './clock.js';
 
 // ------------------------------------------------------------ status
 export const dataStatus = new EventTarget();
@@ -168,6 +169,11 @@ export async function searchCoins(q) {
   return local;
 }
 
+// Keep the app on the exchange's clock, re-checked every 10 minutes.
+export async function syncExchangeClock() {
+  return syncClock(() => getJsonAny(CONFIG.BINANCE_REST, '/api/v3/time', { ttl: 0 }));
+}
+
 // ------------------------------------------------------------ candles
 export const INTERVAL_MS = { '1s': 1e3, '5s': 5e3, '10s': 1e4, '1m': 6e4, '3m': 18e4, '5m': 3e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5, '6h': 216e5, '12h': 432e5, '1d': 864e5, '3d': 2592e5, '1w': 6048e5 };
 
@@ -260,7 +266,7 @@ export async function getCandles(coin, interval = '1h', total = 500) {
         if (rows.length < limit) break;
       }
       // a pair that stopped trading long ago is treated as unavailable
-      if (out.length && Date.now() - out[out.length - 1].t < INTERVAL_MS[interval] * 3 + 2 * 864e5) {
+      if (out.length && now() - out[out.length - 1].t < INTERVAL_MS[interval] * 3 + 2 * 864e5) {
         markLive();
         return { candles: out, source: 'binance', pair };
       }
