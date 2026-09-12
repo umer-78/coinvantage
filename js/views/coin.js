@@ -8,12 +8,14 @@ import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
 import { LineChart } from '../charts/line.js';
-import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs, modal } from '../ui.js';
+import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs, modal, toast } from '../ui.js';
 import { esc, usd, compact, pct, amount, changeHtml, dateTime, ago, horizonText, INTERVAL_LABEL, money } from '../format.js';
-import { watchlist, settings } from '../store.js';
+import { watchlist, settings, load, save } from '../store.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
+import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
+import { fx } from '../api/fx.js';
 
 export const title = (p) => (p[0] || 'Coin').toUpperCase();
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -107,8 +109,89 @@ export async function render(el, [symParam]) {
       <div class="sheet-grid mt">
         ${venues.map((v) => `<a class="sheet-item" href="${esc(v.href)}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}
       </div>
-      <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>`);
+      <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>
+
+      <h3 class="mt">Practice first — demo trade</h3>
+      <p class="fine">Trade ${esc(coin.symbol)} with simulated money at the live price, in the same practice account as the AI trader. No exchange, no order, no keys.</p>
+      <div id="paperWrap">${paperBlock()}</div>`);
+    wirePaper();
   });
+
+  // ---------------------------------------------------------- demo trading
+  // Shares the AI trader's simulated account so one balance tells the whole story.
+  const PAPER_CFG = 'traderCfg';
+  const PAPER_STATE = 'traderState';
+  const paperCfg = () => ({ ...DEFAULT_CONFIG, ...load(PAPER_CFG, {}) });
+  const paperState = () => load(PAPER_STATE, null) || newState(paperCfg());
+
+  function paperBlock() {
+    const cfg = paperCfg();
+    const state = paperState();
+    const pos = state.open[coin.symbol];
+    const px = st.lastPrice ?? coin.price;
+    const bal = equity(state, { [coin.symbol]: px });
+    const suggested = Math.max(1, Math.round(state.balance * 0.1));
+    if (pos) {
+      const pnl = (px - pos.entry) * pos.qty;
+      return `<div class="plan mt">
+        <div><div class="k">Your practice position</div><div class="v">${amount(pos.qty)} ${esc(coin.symbol)}</div></div>
+        <div><div class="k">Bought at</div><div class="v">${money(pos.entry, { dp: st.dp })}</div></div>
+        <div><div class="k">Open profit / loss</div><div class="v ${pnl >= 0 ? 'up' : 'down'}">${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</div></div>
+        <div><div class="k">Practice balance</div><div class="v">${money(bal)}</div></div>
+      </div>
+      <div class="row mt" style="gap:8px"><button class="btn primary" id="paperClose">Sell (demo)</button><a class="btn sm ghost" href="#/trader">Open the practice account</a></div>
+      <p class="fine" id="paperMsg"></p>
+      <p class="fine">${esc(PAPER_NOTICE)}</p>`;
+    }
+    return `<form class="row mt" style="gap:8px;align-items:flex-end" id="paperForm">
+        <label class="fld" style="flex:1">Amount to put in (${esc(fx.code)})<input class="inp" name="amt" type="number" min="1" step="1" value="${suggested}"></label>
+        <button class="btn primary">Buy (demo)</button>
+      </form>
+      <p class="fine">Practice balance ${money(bal)}. ${st.signal?.ok && st.signal.plan ? `A stop-loss at ${money(st.signal.plan.stopLoss, { dp: st.dp })} is set for you, matching the signal.` : 'A 5% stop-loss is set for you.'}</p>
+      <p class="fine" id="paperMsg"></p>
+      <p class="fine">${esc(PAPER_NOTICE)}</p>`;
+  }
+
+  function wirePaper() {
+    const form = document.querySelector('#paperForm');
+    const closeBtn = document.querySelector('#paperClose');
+    const msg = () => document.querySelector('#paperMsg');
+    const redraw = () => {
+      const wrap = document.querySelector('#paperWrap');
+      if (!wrap) return;
+      wrap.innerHTML = paperBlock();
+      wirePaper();
+    };
+    form?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const cfg = paperCfg();
+      const state = paperState();
+      const px = st.lastPrice ?? coin.price;
+      // The box is in the visitor's currency; the account is kept in USD.
+      const usdAmount = (+form.amt.value || 0) / (fx.rate || 1);
+      const r = openManual(state, cfg, coin.symbol, px, {
+        notional: usdAmount,
+        stopPrice: st.signal?.ok ? st.signal.plan?.stopLoss : undefined,
+        targetPrice: st.signal?.ok ? st.signal.plan?.takeProfits?.[0] : undefined,
+      });
+      if (!r.ok) { const m = msg(); if (m) { m.textContent = r.error; m.className = 'fine down'; } return; }
+      save(PAPER_STATE, state);
+      logActivity('paper_buy', coin.symbol);
+      toast(`Demo buy placed on ${coin.symbol}. No real order was sent.`, 'up');
+      redraw();
+    });
+    closeBtn?.addEventListener('click', () => {
+      const cfg = paperCfg();
+      const state = paperState();
+      const px = st.lastPrice ?? coin.price;
+      const r = closeManual(state, cfg, coin.symbol, px);
+      if (!r.ok) { const m = msg(); if (m) { m.textContent = r.error; m.className = 'fine down'; } return; }
+      save(PAPER_STATE, state);
+      logActivity('paper_sell', coin.symbol);
+      toast(`Demo sell done — ${r.trade.pnl >= 0 ? 'profit' : 'loss'} ${r.trade.pnlPct}%.`, r.trade.pnl >= 0 ? 'up' : 'down');
+      redraw();
+    });
+  }
 
   // ------------------------------------------------------------ chart
   const chart = new CandleChart($('#chart', el), {});
