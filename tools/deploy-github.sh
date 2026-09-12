@@ -28,6 +28,21 @@ git branch -M "$BRANCH"
 # Sitemap and robots point at the real address before the first push.
 node tools/build-sitemap.mjs "$SITE"
 
+# Stamp this release. The app fetches version.txt on every load and reloads
+# itself when the number changes, so nobody is ever left on a stale build.
+BUILD="$(date -u +%Y%m%d-%H%M%S)"
+printf '%s\n' "$BUILD" > version.txt
+# bake the same number into the app and the service-worker cache name
+node -e '
+  const fs = require("fs");
+  const b = process.argv[1];
+  const app = fs.readFileSync("js/app.js", "utf8").replace(/^export const BUILD = .*$/m, `export const BUILD = ${JSON.stringify(b)};`);
+  fs.writeFileSync("js/app.js", app);
+  const sw = fs.readFileSync("sw.js", "utf8").replace(/^const VERSION = .*$/m, `const VERSION = ${JSON.stringify("cv-" + b)};`);
+  fs.writeFileSync("sw.js", sw);
+' "$BUILD"
+echo "Build $BUILD stamped into version.txt, js/app.js and sw.js"
+
 git add -A
 git diff --cached --quiet || git commit -q -m "Deploy CoinVantage to GitHub Pages"
 
