@@ -32,6 +32,24 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
       `js/lib/predict.js` with a stacked logistic regression over `valRecords`, add
       probability calibration, re-measure with `tools/evaluate-engine.mjs`, publish the new
       honest numbers in `TESTED_ACCURACY` and on `#/track`.
+- [ ] **Next accuracy experiment: a pooled cross-coin model.** This is the biggest
+      remaining lever and the only untested one. Today every model is trained on a
+      single coin's own history (~2,000 usable rows), which is why the per-coin
+      weights are noisy and why stacking overfitted. Instead:
+        1. Build one training set from ALL coins at a given interval — the same
+           feature rows `predict.js` already computes, pooled, with the coin
+           identity dropped so the model learns market behaviour, not a ticker.
+        2. Train offline with `tools/evaluate-pooled.mjs`, walk-forward by DATE
+           (train on everything before date D, test after) so no coin leaks the
+           future into another.
+        3. Ship the fitted coefficients as a small constant in the repo and use
+           them as one more voter alongside the per-coin models.
+        4. Accept it only if it beats 54.0% overall on the same 672-forecast
+           harness. Measure with the exact command below; do not estimate.
+      ```
+      node tools/fetch-klines.mjs /tmp/klines.json
+      for i in 0 1 2 3; do node tools/evaluate-engine.mjs /tmp/klines.json $i 4 /tmp/new-$i.json 14 & done; wait
+      ```
 - [ ] Chart drawing tools (trendline, Fibonacci) and VWAP + Ichimoku overlays.
 - [ ] Final full recheck of every route and feature, then redeploy.
 

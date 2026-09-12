@@ -48,6 +48,29 @@ test('signal engine returns a coherent trade plan', () => {
   if (s.plan?.side === 'short') assert.ok(s.plan.stopLoss > s.price);
 });
 
+test('no trade plan when the move is smaller than the fees', () => {
+  // A near-flat series: any "setup" here has targets a rounding error away.
+  // A steady, unmistakably bullish drift — but the whole move is 0.04%, which
+  // is what a 5-second chart on a quiet market actually looks like.
+  const flat = Array.from({ length: 400 }, (_, i) => {
+    const c = 100 + i * 0.0001;
+    return { t: i * 5000, o: c, h: c + 0.0002, l: c - 0.0002, c, v: 10 + (i % 5) };
+  });
+  const s = generateSignal(flat, { interval: '5s' });
+  assert.ok(s.ok);
+  assert.ok(s.score > 0, 'the indicators do read this as bullish');
+  assert.equal(s.plan, null, 'a sub-fee move must not produce a trade plan');
+  assert.ok(s.waitFor.some((w) => /too little|fees|spread/i.test(w)), 'and it must say why');
+
+  // a normal chart still gets a plan when the signal is strong enough
+  const real = demoCandles('bitcoin', '4h', 600);
+  const rs = generateSignal(real, { interval: '4h' });
+  if (rs.plan) {
+    const move = Math.abs(rs.plan.takeProfits[0] - rs.price) / rs.price;
+    assert.ok(move >= 0.003, 'a real plan clears the cost floor');
+  }
+});
+
 test('backtest produces stats', () => {
   const bt = backtest(demoCandles('ethereum', '4h', 800));
   assert.ok(bt.ok);
