@@ -14,7 +14,7 @@ export async function render(el) {
     <div class="page-head">
       <div><h1>Signal scanner</h1><p>Scans the top coins on Binance and ranks them by technical signal strength and AI forecast.</p></div>
       <div class="row">
-        <div class="seg" id="iv">${['15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
+        <div class="seg" id="iv">${['1m', '5m', '15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
         <div class="seg" id="cnt"><button data-v="20">Top 20</button><button data-v="30" class="on">Top 30</button><button data-v="50">Top 50</button></div>
         <button class="btn" id="rescan">${icon('refresh', 16)} Rescan</button>
       </div>

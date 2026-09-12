@@ -13,11 +13,14 @@ export function price(v) {
   return v.toFixed(digits).replace(/(\.\d*?[1-9])0+$/, '$1');
 }
 // Money in the visitor's display currency (values come in as USD).
-export function money(v, { showCode = false } = {}) {
+export function money(v, { showCode = false, dp } = {}) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
   const converted = +v * fx.rate;
-  const digits = Math.abs(converted) >= 1000 ? 0 : undefined;
-  const text = digits === 0 ? Math.round(converted).toLocaleString('en-US') : price(converted);
+  // `dp` is the exchange's own tick size for this pair, so the number shown is
+  // the number the exchange quotes — no rounding of your own on top of it.
+  const text = dp === undefined
+    ? price(converted)
+    : converted.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
   return `${fx.symbol}${text}${showCode && fx.code !== 'USD' ? ` ${fx.code}` : ''}`;
 }
 // Kept for readability at call sites: same thing, currency-aware.
@@ -76,12 +79,13 @@ export function ago(t) {
   return `${Math.round(s / 86400)}d ago`;
 }
 
-export const INTERVAL_LABEL = { '1m': '1 minute', '5m': '5 minutes', '15m': '15 minutes', '30m': '30 minutes', '1h': '1 hour', '2h': '2 hours', '4h': '4 hours', '6h': '6 hours', '12h': '12 hours', '1d': '1 day', '3d': '3 days', '1w': '1 week' };
+export const INTERVAL_LABEL = { '1s': '1 second', '5s': '5 seconds', '10s': '10 seconds', '1m': '1 minute', '3m': '3 minutes', '5m': '5 minutes', '15m': '15 minutes', '30m': '30 minutes', '1h': '1 hour', '2h': '2 hours', '4h': '4 hours', '6h': '6 hours', '12h': '12 hours', '1d': '1 day', '3d': '3 days', '1w': '1 week' };
 
 export function horizonText(interval, bars) {
-  const ms = { '1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440, '3d': 4320, '1w': 10080 }[interval] * bars;
+  const ms = { '1s': 1 / 60, '5s': 5 / 60, '10s': 10 / 60, '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '4h': 240, '6h': 360, '12h': 720, '1d': 1440, '3d': 4320, '1w': 10080 }[interval] * bars;
   const unit = (v, u) => `${v} ${u}${v === 1 ? '' : 's'}`;
-  if (ms < 60) return unit(ms, 'minute');
+  if (ms < 1) return unit(Math.round(ms * 60), 'second');
+  if (ms < 60) return unit(+ms.toFixed(ms < 10 ? 1 : 0), 'minute');
   if (ms < 1440) return unit(+(ms / 60).toFixed(1), 'hour');
   if (ms < 10080 * 2) return unit(+(ms / 1440).toFixed(1), 'day');
   return unit(+(ms / 10080).toFixed(1), 'week');

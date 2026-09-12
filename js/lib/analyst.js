@@ -21,10 +21,19 @@ function pct(v) {
   return `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
 }
 
+// Tickers and names common enough that mentioning one makes the question
+// single-coin. detectSymbol() does the real lookup; this only keeps the
+// rule-based analyst from answering market-wide when a coin was clearly named.
+const NAMES_A_COIN = /\b(btc|bitcoin|eth|ether|ethereum|bnb|sol|solana|xrp|ripple|ada|cardano|doge|dogecoin|trx|tron|avax|dot|polkadot|link|chainlink|matic|polygon|ltc|litecoin|shib|ton|near|atom|uni|xlm|bch|etc|fil|apt|arb|op|sui|pepe|hbar|icp|inj|tao|sei|rndr|aave|mkr|zec)\b/;
+
 // "Which coin should I buy?" is a different question from "should I buy BTC?".
 export function isMarketWide(q) {
   const s = (q || '').toLowerCase();
-  return /(which|what) (coin|crypto|one|token|altcoin)|best (coin|crypto|buy|pick)|top (coin|pick|buy)|what (should i|to) buy|anything (good|worth)|all (the )?coins|scan the market|market overview|any (good )?(buy|opportunit)|recommend|picks?\b|where should i put my money/.test(s);
+  if (/(which|what) (coin|crypto|one|token|altcoin)|best (coin|crypto|buy|pick|token)|top (coin|pick|buy)|what (should i|to) buy|anything (good|worth)|all (the|of the)? ?coins|every coin|whole market|scan the market|market overview|any (good )?(buy|opportunit)|recommend|picks?\b|where should i (put|invest)|shopping list/.test(s)) return true;
+  // A buy/sell/timing question that names no coin is a question about the market.
+  if (NAMES_A_COIN.test(s) || /\b(this coin|my)\b/.test(s)) return false;
+  return /\b(buy|sell|short|long|invest|entry|exit|hold)\b/.test(s)
+    && /\b(what|which|when|anything|something|now|today|this week|time ?frame|timeframe|short term|long term|how long)\b/.test(s);
 }
 
 function detectIntent(q) {
@@ -117,6 +126,50 @@ function timingBlock(ctx) {
   return lines.length ? `\n${lines.join('\n')}\n` : '';
 }
 
+// Every coin, read on three timeframes at once: what to buy for the next few
+// hours, the next few days and the next few weeks — and where to sell each one.
+function frameLines(b, horizon) {
+  const lines = [`  - **${b.coin}** (${b.name}) — ${b.verdict}, conviction ${b.conviction}/100, now ${fmtNum(b.price)}`];
+  if (b.buyBetween) lines.push(`    - Buy between **${fmtNum(b.buyBetween[0])}** and **${fmtNum(b.buyBetween[1])}**; stop-loss **${fmtNum(b.stopLoss)}** (risk ${b.riskPct}%)`);
+  else if (b.waitFor) lines.push(`    - No entry trigger yet — ${b.waitFor}`);
+  if (b.sellTargets) lines.push(`    - Sell at **${b.sellTargets.map(fmtNum).join('** → **')}**`);
+  if (b.holdForBars) lines.push(`    - Hold roughly **${b.holdForBars} candle${b.holdForBars === 1 ? '' : 's'}** of the ${horizon} view, topping near ${fmtNum(b.expectedPeakPrice)}${b.turnsDownAfterBars ? `, turning down around candle ${b.turnsDownAfterBars} — sell before that` : ''}`);
+  if (b.topReason) lines.push(`    - ${b.topReason}`);
+  return lines.join('\n');
+}
+
+function marketMultiBlock(m) {
+  if (!m?.frames?.length) return '';
+  const out = [`**Whole-market scan — ${m.scanned} coins, read on ${m.frames.length} timeframes**\n`];
+
+  for (const fr of m.frames) {
+    out.push(`\n### ${fr.label} — ${fr.interval} chart (${fr.horizonText} ahead)`);
+    if (!fr.buys.length) {
+      out.push(`  - Nothing clears the bar on this timeframe. ${fr.waitingCount} coins read as "no edge — wait", and sitting out is a position.`);
+    } else {
+      for (const b of fr.buys.slice(0, 4)) out.push(frameLines(b, fr.interval));
+    }
+  }
+
+  if (m.agree.length) {
+    out.push('\n### Strongest overall');
+    for (const a of m.agree) {
+      const where = a.frames.map((f) => `${f.label} (${f.interval})`).join(', ');
+      const best = a.frames[0];
+      out.push(`- **${a.coin}** — a buy on ${a.frames.length} of ${m.frames.length} timeframes: ${where}.${best.sellTargets ? ` First sell target ${fmtNum(best.sellTargets[0])}, stop ${fmtNum(best.stopLoss)}.` : ''}`);
+    }
+    out.push('_A coin that reads well on more than one timeframe is the safer call — one that only looks good on the 1h chart is a trade, not an investment._');
+  }
+
+  if (m.avoid.length) {
+    out.push('\n### Avoid or sell now');
+    for (const a of m.avoid) out.push(`- **${a.coin}** — ${a.verdict} on the ${a.interval} chart (conviction ${a.conviction}/100)${a.topReason ? `: ${a.topReason}` : ''}`);
+  }
+
+  out.push('\nEvery verdict blends the chart signal, the AI forecast and the move timing, each weighted by how accurate it has actually been on past data — so a reading with no measured edge barely counts. Open **What to buy** for the same list with charts, or ask me about any single coin for the full breakdown.');
+  return `${out.join('\n')}\n`;
+}
+
 // The whole-market answer: which coin, at what price, for how long, and where to sell.
 function marketBlock(m) {
   if (!m) return '';
@@ -175,6 +228,15 @@ export function ruleBasedAnswer(question, ctx = {}) {
   const out = [];
 
   if (intent === 'market') {
+    if (ctx.marketFrames) {
+      out.push(marketMultiBlock(ctx.marketFrames));
+      if (ctx.portfolio?.length) {
+        out.push(`\n**You already hold:** ${ctx.portfolio.map((h) => `${h.symbol} (${pct(h.pnlPct)})`).join(', ')}. Ask "review my portfolio" for what to do with those.`);
+      }
+      out.push(sentimentLine(ctx));
+      out.push(DISCLAIMER);
+      return out.filter((l) => l !== '').join('\n');
+    }
     if (!ctx.market) {
       return `I need to scan the market to answer that — ask again in a moment, or open the **What to buy** page for the ranked list.\n\n${DISCLAIMER}`;
     }
@@ -202,6 +264,11 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     out.push(`\n${DISCLAIMER}`);
     return out.join('\n');
+  }
+
+  if (!sig?.ok && (ctx.marketFrames || ctx.market)) {
+    const body = ctx.marketFrames ? marketMultiBlock(ctx.marketFrames) : marketBlock(ctx.market);
+    return `${body}${sentimentLine(ctx)}\n${DISCLAIMER}`;
   }
 
   if (!sig?.ok) {
@@ -333,7 +400,7 @@ Answer the user's question using ONLY the FACTS and DATA provided in their messa
 Rules:
 - Never invent prices, percentages or dates. Copy numbers exactly from the facts.
 - Be direct: say whether the data leans up, down or sideways, give entry / stop-loss / take-profit levels when relevant, and mention the forecast's measured accuracy so the user knows how reliable it is.
-- When marketPicks is present the user asked about the WHOLE market, not one coin: list the ranked picks with their buy zone, stop-loss, sell targets and how long the move is expected to last. Do not narrow it to a single coin.
+- When marketByTimeframe or marketPicks is present the user asked about the WHOLE market, not one coin. Cover every timeframe you were given (short term, swing, position) and, under each, list the ranked coins with their buy zone, stop-loss, sell targets and how long the move is expected to last. Then name the coins that read as a buy on more than one timeframe, and the ones to avoid or sell. Never narrow a whole-market question down to a single coin.
 - recentHeadlines is background only. You may mention a headline, but never say it changed the forecast — the model reads price data, not news.
 - When moveTiming is present, say how long the move is expected to last and roughly when it turns — that is usually what the user actually wants to know. Never state timing as a certainty.
 - When multiYearHistory is present, use it: it says how this coin behaved the last times its chart looked like today (over years of daily data), what the median move afterwards was, and how often that comparison was right on this coin. Quote those numbers, and say plainly when the method's accuracy is near 50% that it is weak evidence.
