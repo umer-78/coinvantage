@@ -232,6 +232,16 @@ test('analyst answers whole-market questions with ranked picks, not one coin', a
   assert.match(empty, /Nothing currently clears the bar/i);
 });
 
+test('junk listings are kept out of the coin list', async () => {
+  const { markets } = await import('../js/api/market.js');
+  const rows = await markets().catch(() => null);
+  if (!rows || !rows.length) return; // offline — nothing to assert against
+  for (const r of rows) {
+    assert.ok(!/^[A-Z]{1,3}\d{4,}$/.test(r.symbol), `product-code listing leaked in: ${r.symbol}`);
+    assert.ok(r.price !== null && r.price !== undefined, `${r.symbol} has no price`);
+  }
+});
+
 test('demo trades run on simulated money and book a real result', async () => {
   const { newState, openManual, closeManual, DEFAULT_CONFIG, equity } = await import('../js/lib/autotrader.js');
   const cfg = { ...DEFAULT_CONFIG };

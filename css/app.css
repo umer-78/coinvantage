@@ -385,3 +385,16 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .news-mini a { display: grid; gap: 2px; padding: 8px 10px; border-radius: 9px; background: var(--surface-2); color: var(--text); line-height: 1.35; }
 .news-mini a:hover { background: var(--surface-3); }
 .news-mini span { font-size: 13px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* --- Chart toolbar on small screens -------------------------------------- */
+/* The indicator chips collapse behind one button so the chart keeps the space. */
+.only-s { display: none; }
+@media (max-width: 860px) {
+  .only-s { display: inline-flex; }
+  .chart-tools .toggles { display: none; width: 100%; }
+  .chart-tools.show-toggles .toggles { display: flex; padding-top: 4px; border-top: 1px solid var(--border); margin-top: 2px; }
+  .chart-tools { gap: 6px; }
+}
+
+/* A losing backtest gets a red banner, not a quiet number. */
+.banner.down { border-color: var(--down); background: var(--down-soft); color: var(--text); }

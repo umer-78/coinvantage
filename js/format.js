@@ -7,7 +7,9 @@ export function price(v) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
   v = +v;
   const a = Math.abs(v);
-  if (a >= 1000) return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Decimals follow the size of the number: cents matter on a $600 coin, but
+  // ten-thousandths do not — while on a $1.36 coin they are the whole story.
+  if (a >= 100) return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (a >= 1) return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   if (a === 0) return '0.00';
   const digits = Math.min(10, Math.max(4, -Math.floor(Math.log10(a)) + 3));

@@ -65,6 +65,7 @@ export async function render(el, [symParam]) {
         <div class="card chart-card">
           <div class="chart-tools">
             <div class="seg scroll-x" id="ivSeg">${INTERVALS.map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}" title="${esc(INTERVAL_LABEL[iv] || iv)} candles">${iv}</button>`).join('')}</div>
+            <button class="btn sm ghost only-s" id="indBtn" aria-expanded="false">${icon('chart', 14)} Indicators</button>
             <div class="toggles" id="toggles"></div>
           </div>
           <div class="chart-box" id="chart"></div>
@@ -225,6 +226,12 @@ export async function render(el, [symParam]) {
   $$('#toggles .toggle', el).forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.k; chart.setOptions({ [k]: !chart.opts[k] }); b.classList.toggle('on', chart.opts[k]);
   }));
+  // Twelve indicator chips is a wall of buttons on a phone. On a narrow screen
+  // they live behind one button and the chart gets the room instead.
+  $('#indBtn', el)?.addEventListener('click', (e) => {
+    const open = el.querySelector('.chart-tools').classList.toggle('show-toggles');
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+  });
   const onTheme = () => chart.draw();
   window.addEventListener('cv:theme', onTheme);
 
@@ -572,7 +579,8 @@ export async function render(el, [symParam]) {
             <td>${m.accuracy !== null ? (m.accuracy * 100).toFixed(1) + '%' : '—'}<span class="acc-bar"><i style="width:${Math.max(0, Math.min(100, ((m.accuracy ?? 0.5) - 0.3) / 0.4 * 100))}%"></i></span></td><td>${m.weightPct}%</td></tr>`).join('')}
         </tbody></table></div>
         <p class="fine mt">How it works: each model is trained on this coin's own history, then tested on the most recent period it never saw. Models that predicted better get more weight. Crypto is noisy — 55% direction accuracy is already a real edge; nothing is certain.</p>
-        <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time, called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time (15m ${TESTED_ACCURACY['15m']}% · 1h ${TESTED_ACCURACY['1h']}% · 4h ${TESTED_ACCURACY['4h']}% · 1d ${TESTED_ACCURACY['1d']}%).${UNMEASURED.includes(st.interval) ? ` <b class="warn">This engine has never been tested on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart, so it has no measured accuracy here. Second and minute charts are for watching price move — use the 15m chart or slower for a forecast you can judge.</b>` : st.interval === '1d' || st.interval === '1w' ? ' <b class="warn">Daily and weekly forecasts tested weakest — prefer the 15m–4h charts for timing.</b>' : ''}</p>`;
+        <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time, called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time (15m ${TESTED_ACCURACY['15m']}% · 1h ${TESTED_ACCURACY['1h']}% · 4h ${TESTED_ACCURACY['4h']}% · 1d ${TESTED_ACCURACY['1d']}%).${UNMEASURED.includes(st.interval) ? ` <b class="warn">This engine has never been tested on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart, so it has no measured accuracy here. Second and minute charts are for watching price move — use the 15m chart or slower for a forecast you can judge.</b>` : (TESTED_ACCURACY.noEdge || []).includes(st.interval) || st.interval === '1w' ? ` <b class="warn">On the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart this engine scored ${st.interval === '1w' ? 'too few tests to score' : `${TESTED_ACCURACY['1d']}% — below a coin flip`}. It has no edge here: read this forecast as background, not a reason to trade. The 15m and 4h charts are where it tested best.</b>` : ''}</p>
+        <p class="fine">When the models agree strongly enough to take a side — about ${TESTED_ACCURACY.confidentCoverage}% of the time — accuracy rose to <b>${TESTED_ACCURACY.confident}%</b>. The rest of the time the honest answer is that there is no edge, and the forecast says so rather than inventing one.</p>`;
       body.insertAdjacentHTML('beforeend', timingSection());
       const lc = new LineChart($('#fcChart', body), { height: 300, yFormat: (v) => money(v), xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x) });
       st.charts.push(lc);
@@ -628,7 +636,7 @@ export async function render(el, [symParam]) {
           <p class="fine" style="margin-bottom:10px">${rows.length} recent ${rows.length === 1 ? 'story' : 'stories'} tagged <b>${esc(coin.symbol)}</b>, newest first. Headlines are collected automatically and shown unedited — check the source before acting on one.</p>
           <div class="news-list">${rows.map((r) => `
             <article class="news-item">
-              ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none" onerror="this.remove()">` : ''}
+              ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none">` : ''}
               <div style="min-width:0">
                 <a class="ttl" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
                 ${r.summary ? `<p class="fine" style="margin:4px 0 0">${esc(r.summary.slice(0, 180))}${r.summary.length > 180 ? '…' : ''}</p>` : ''}
@@ -637,6 +645,9 @@ export async function render(el, [symParam]) {
             </article>`).join('')}</div>
           <p class="fine mt"><b>Note on the forecast:</b> these headlines are shown for context and are given to the AI assistant when it answers about ${esc(coin.symbol)}. They are <b>not</b> an input to the price model — its published accuracy comes from price data alone, and adding unmeasured news sentiment would make that number a lie.</p>`
           : `<div class="empty">${icon('info', 20)}<p>No recent headlines tagged ${esc(coin.symbol)}. The collector refreshes every 20 minutes.</p><a class="btn sm" href="#/news">All crypto news</a></div>`;
+        // A broken thumbnail is hidden here rather than with an inline handler,
+        // which the page's Content-Security-Policy blocks outright.
+        $$('#newsBody img', body).forEach((img) => img.addEventListener('error', () => img.remove()));
       })();
       return;
     }
@@ -680,7 +691,18 @@ export async function render(el, [symParam]) {
       const bt = st.backtest;
       if (!bt) { body.innerHTML = `<div class="row"><span class="spinner"></span> Backtesting…</div>`; return; }
       if (!bt.ok) { body.innerHTML = `<p class="muted">${esc(bt.reason)}</p>`; return; }
+      // A backtest that lost badly to buy-and-hold is the most useful thing on
+      // this page, and burying it would be dishonest. Say it in plain words.
+      const lag = bt.totalReturnPct - bt.buyHoldPct;
+      const verdict = bt.totalReturnPct < 0 && lag < -20
+        ? `<div class="banner down" style="margin:0 0 12px"><b>These signals did not work on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart for ${esc(coin.symbol)}.</b> Following them would have lost ${pct(Math.abs(bt.totalReturnPct), 1, false)} while simply holding gained ${pct(bt.buyHoldPct, 1)}. Use a faster chart, or hold — do not trade this timeframe on these signals.</div>`
+        : lag < -10
+          ? `<div class="banner" style="margin:0 0 12px">On this timeframe the signals <b>underperformed simply holding</b> by ${pct(Math.abs(lag), 1, false)}. Holding was the better plan here.</div>`
+          : bt.tradeCount < 10
+            ? '<div class="banner" style="margin:0 0 12px">Fewer than 10 trades — too small a sample to conclude anything from. Treat this as an illustration, not evidence.</div>'
+            : '';
       body.innerHTML = `
+        ${verdict}
         <p class="fine" style="margin-bottom:10px">What would have happened if you had followed this page's Buy/Sell signals on the last ${bt.bars} ${st.interval} candles (long only, 0.1% fee per trade, stop-loss 1.5× ATR, target 2.5R, stop moved to break-even at +1R).</p>
         <div class="grid g4">
           <div class="stat"><span class="k">Strategy return</span><span class="v ${bt.totalReturnPct >= 0 ? 'up' : 'down'}">${pct(bt.totalReturnPct)}</span></div>
