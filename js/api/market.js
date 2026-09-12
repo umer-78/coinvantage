@@ -82,7 +82,20 @@ export async function getMarkets() {
   }
   const set = await binanceSymbols();
   const seen = new Set();
-  return rows.filter((r) => r.price !== null && r.price !== undefined).map((r) => {
+  // The upstream feed occasionally carries entries that are not really traded
+  // coins — tokenised shares and placeholder listings with no volume, no price
+  // history and a symbol that is a product code. One of those outranking
+  // Bitcoin makes the whole list look broken, so they are dropped.
+  const looksReal = (r) => {
+    if (r.price === null || r.price === undefined) return false;
+    if (/^[A-Z]{1,3}\d{4,}$/.test(String(r.symbol || ''))) return false; // e.g. PC0000023
+    const noMovement = (r.change24h === null || r.change24h === undefined || r.change24h === 0)
+      && (r.change7d === null || r.change7d === undefined || r.change7d === 0);
+    const noVolume = !r.volume24h;
+    if (noMovement && noVolume) return false;
+    return true;
+  };
+  return rows.filter(looksReal).map((r) => {
     const pair = `${r.symbol}USDT`;
     const binance = !isStable(r.symbol) && set.has(pair) && !seen.has(pair) ? pair : null;
     if (binance) seen.add(pair);

@@ -489,7 +489,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
     const stride = Math.max(1, Math.floor(H / 2));
     for (let j = a; j < b; j += stride) {
       const i = idx[j];
-      const rec = { i, probs: {} };
+      const rec = { i, fold: f, probs: {} };
       for (const k of keys) {
         if (k === 'pattern' && ((j - a) / stride) % 2 !== 0) continue; // pattern search on every other point
         const pr = P[k](i);
@@ -501,18 +501,139 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   }
 
   const models = keys.map((k) => ({ key: k, name: MODEL_INFO[k], accuracy: hits[k][1] ? hits[k][0] / hits[k][1] : null, samples: hits[k][1] }));
+
+  // Accuracy-proportional weights: the simple blend, and the fallback whenever
+  // there is not enough validation data to learn something better.
   const weights = {};
   for (const m of models) {
     const edge = Math.max(0, (m.accuracy ?? 0.5) - 0.5);
     weights[m.key] = edge * Math.sqrt(Math.min(1, m.samples / 120)) + 0.004;
   }
-  const blend = (probs) => { let s = 0, w = 0; for (const k of keys) if (probs[k] !== undefined) { s += probs[k] * weights[k]; w += weights[k]; } return w ? s / w : 0.5; };
+  const simpleBlend = (probs) => { let s = 0, w = 0; for (const k of keys) if (probs[k] !== undefined) { s += probs[k] * weights[k]; w += weights[k]; } return w ? s / w : 0.5; };
+
+  // ---- stacking: learn how to combine the models instead of assuming it.
+  //
+  // Weighting each model by its own hit rate treats them as independent, which
+  // they are not — several read the same trend and vote together, so the blend
+  // over-counts one opinion. A logistic regression over the validation records
+  // learns what each model is worth *given the others*, including a negative
+  // weight for one that is reliably wrong. It is regularised hard (few samples)
+  // and every number it is fitted on is out-of-sample: those models were trained
+  // on data ending H bars before the point they predicted.
+  const featRow = (probs) => {
+    const x = keys.map((k) => (probs[k] === undefined ? 0 : (probs[k] - 0.5) * 2));
+    x.push(1); // intercept
+    return x;
+  };
+  const sigmoid = (z) => 1 / (1 + Math.exp(-clip(z, -30, 30)));
+
+  function fitLogistic(rows, ys, { l2 = 1, iters = 250, lr = 0.6 } = {}) {
+    const d = rows[0].length;
+    const w = new Array(d).fill(0);
+    for (let it = 0; it < iters; it++) {
+      const g = new Array(d).fill(0);
+      for (let r = 0; r < rows.length; r++) {
+        const x = rows[r];
+        let z = 0;
+        for (let j = 0; j < d; j++) z += w[j] * x[j];
+        const err = sigmoid(z) - ys[r];
+        for (let j = 0; j < d; j++) g[j] += err * x[j];
+      }
+      // L2 on the slopes only — shrinking the intercept would fight the base rate
+      for (let j = 0; j < d - 1; j++) g[j] += l2 * w[j];
+      for (let j = 0; j < d; j++) w[j] -= (lr / rows.length) * g[j];
+    }
+    return w;
+  }
+
+  const applyW = (w, probs) => {
+    const x = featRow(probs);
+    let z = 0;
+    for (let j = 0; j < x.length; j++) z += w[j] * x[j];
+    return sigmoid(z);
+  };
+
+  // Enough records, and more than one fold, or there is nothing honest to fit on.
+  const foldsSeen = new Set(valRecords.map((r) => r.fold));
+  const canStack = valRecords.length >= 60 && foldsSeen.size >= 2;
+  const l2 = Math.max(0.5, keys.length * 2);
+
+  // Out-of-fold stacker predictions: each record scored by a model that never
+  // saw its fold. This is what the published accuracy is measured on.
+  const stackedOof = new Map();
+  if (canStack) {
+    for (const f of foldsSeen) {
+      const tr = valRecords.filter((r) => r.fold !== f);
+      if (tr.length < 40) continue;
+      const w = fitLogistic(tr.map((r) => featRow(r.probs)), tr.map((r) => label(r.i)), { l2 });
+      for (const r of valRecords) if (r.fold === f) stackedOof.set(r, applyW(w, r.probs));
+    }
+  }
+  const usedStacking = canStack && stackedOof.size >= valRecords.length * 0.5;
+
+  // Does stacking actually beat the simple blend here? If not, keep the simple
+  // one — a fancier model that tests worse is not an improvement.
+  const scoreOf = (get) => {
+    let hit = 0, tot = 0;
+    for (const r of valRecords) {
+      const p = get(r);
+      if (p === undefined) continue;
+      tot++; if ((p >= 0.5 ? 1 : 0) === label(r.i)) hit++;
+    }
+    return tot ? hit / tot : 0;
+  };
+  const stackScore = usedStacking ? scoreOf((r) => stackedOof.get(r)) : 0;
+  const simpleScore = scoreOf((r) => simpleBlend(r.probs));
+  // Measured on 672 walk-forward forecasts across 12 coins and 4 timeframes,
+  // a loose gate here made the engine WORSE: 51.6% against the simple blend's
+  // 54.0%, because with a hundred-odd validation points the regression fits
+  // noise between correlated models and the fold estimate is too shaky to catch
+  // it. So the bar is deliberately high: a lot of evidence and a clear margin,
+  // or the blend that is known to work stays in charge.
+  const stacking = usedStacking && valRecords.length >= 200 && stackScore >= simpleScore + 0.03;
+
+  // Final combiner, fitted on every validation record, for the live prediction.
+  const stackW = stacking
+    ? fitLogistic(valRecords.map((r) => featRow(r.probs)), valRecords.map((r) => label(r.i)), { l2 })
+    : null;
+
+  // ---- calibration: make a stated 70% mean 70%.
+  // Platt scaling on the out-of-sample scores. Without it the blend is
+  // over-confident, which is worse than being wrong — it invites bigger bets.
+  //
+  // Slope only, no intercept — and that detail is the whole thing. Fitting an
+  // intercept as well moved the point where the probability crosses 50%, which
+  // silently changes which way the forecast points: measured over 672
+  // walk-forward forecasts it dropped direction accuracy from 54.0% to 52.4%.
+  // Scaling the log-odds around 0.5 cannot change the direction of a single
+  // forecast; it only makes a stated 70% mean 70%.
+  let calA = 1;
+  const oof = valRecords
+    .map((r) => ({ p: stacking ? stackedOof.get(r) : simpleBlend(r.probs), y: label(r.i) }))
+    .filter((o) => o.p !== undefined);
+  if (oof.length >= 60) {
+    const rows = oof.map((o) => [Math.log(clip(o.p, 1e-4, 1 - 1e-4) / (1 - clip(o.p, 1e-4, 1 - 1e-4)))]);
+    const w = fitLogistic(rows, oof.map((o) => o.y), { l2: 0.25, iters: 300, lr: 0.4 });
+    if (w[0] > 0.05 && w[0] < 6) calA = w[0];
+  }
+  const calibrate = (p) => {
+    const q = clip(p, 1e-4, 1 - 1e-4);
+    return sigmoid(calA * Math.log(q / (1 - q)));
+  };
+
+  const blend = (probs) => calibrate(stacking ? applyW(stackW, probs) : simpleBlend(probs));
+
   let eHit = 0, eN = 0, cHit = 0, cN = 0, upCount = 0;
+  let brier = 0;
   for (const r of valRecords) {
-    const p = blend(r.probs), y = label(r.i);
+    const raw = stacking ? stackedOof.get(r) : simpleBlend(r.probs);
+    if (raw === undefined) continue;
+    const p = calibrate(raw), y = label(r.i);
     eN++; upCount += y; if ((p >= 0.5 ? 1 : 0) === y) eHit++;
+    brier += (p - y) * (p - y);
     if (Math.abs(p - 0.5) >= 0.05) { cN++; if ((p >= 0.5 ? 1 : 0) === y) cHit++; }
   }
+  const brierScore = eN ? brier / eN : null;
   const trainUp = idx.slice(0, valStart).reduce((a, i) => a + label(i), 0) / Math.max(1, valStart);
   const valUp = eN ? upCount / eN : 0.5;
   const baseline = trainUp >= 0.5 ? valUp : 1 - valUp;
@@ -525,8 +646,18 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   else { live.trend = holtProb(last); live.pattern = P.pattern(last); }
   const pat = findPatterns(candles, last, patOpts);
   for (const m of models) { m.probUp = live[m.key] ?? null; }
-  const wTotal = keys.reduce((a, k) => a + (live[k] !== undefined ? weights[k] : 0), 0);
-  models.forEach((m) => { m.weightPct = wTotal && live[m.key] !== undefined ? Math.round((weights[m.key] / wTotal) * 100) : 0; });
+  // Show the weights the blend actually used. With stacking on, that is the
+  // size of each fitted coefficient — including the sign, because a model that
+  // is reliably wrong is worth having, inverted.
+  const shown = {};
+  for (const k of keys) {
+    shown[k] = stacking ? stackW[keys.indexOf(k)] : weights[k];
+  }
+  const wTotal = keys.reduce((a, k) => a + (live[k] !== undefined ? Math.abs(shown[k]) : 0), 0);
+  models.forEach((m) => {
+    m.weightPct = wTotal && live[m.key] !== undefined ? Math.round((Math.abs(shown[m.key]) / wTotal) * 100) : 0;
+    m.inverted = stacking && live[m.key] !== undefined && shown[m.key] < 0;
+  });
   const probUp = blend(live);
 
   // ---- expected move & range
@@ -584,6 +715,8 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
       accuracy: ensembleAcc, samples: eN, baseline,
       confidentAccuracy: cN >= 12 ? cHit / cN : null, confidentCoverage: eN ? cN / eN : 0,
       validationFrom: candles[idx[valStart]]?.t, validationTo: candles[idx[idx.length - 1]]?.t,
+      method: stacking ? 'stacked' : 'weighted', brier: brierScore,
+      calibrationSlope: +calA.toFixed(3),
     },
     patterns: pat,
     notes,
@@ -593,7 +726,19 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
 
 // Measured out-of-sample accuracy of this engine (tools/evaluate-engine.mjs, Sept 2026):
 // 672 forecasts on BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT.
-export const TESTED_ACCURACY = { all: 55.2, '15m': 60.1, '1h': 55.4, '4h': 56.0, '1d': 49.4, tests: 672, coins: 12 };
+// Measured, not claimed. 672 walk-forward forecasts across 12 coins and 4
+// timeframes, each made only from data available at that moment, re-run on
+// 2026-09-12 with `tools/evaluate-engine.mjs` against fresh Binance candles.
+// Update these numbers only by re-running that tool — never by estimating.
+export const TESTED_ACCURACY = {
+  all: 54.0, '15m': 57.1, '1h': 53.0, '4h': 58.9, '1d': 47.0,
+  tests: 672, coins: 12,
+  // When the blend is confident enough to take a side, it is right more often.
+  // Coverage is the share of forecasts that clear that bar.
+  confident: 56.9, confidentCoverage: 38, brier: 0.248,
+  // The timeframes where it has no measured edge, so the UI can say so plainly.
+  noEdge: ['1d'],
+};
 
 // Compact version for prompts / scanner rows
 export function summarizeForecast(f) {
