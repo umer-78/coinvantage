@@ -1,22 +1,29 @@
-import { findCoin, getCandles, getCoinProfile, getDepth, getTrades, INTERVAL_MS } from '../api/market.js';
+import { findCoin, getCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { generateSignal, confluence } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
-import { timingOutlook, TESTED_TIMING } from '../lib/timing.js';
+import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs, modal } from '../ui.js';
-import { esc, usd, compact, pct, amount, changeHtml, dateTime, horizonText, INTERVAL_LABEL, money} from '../format.js';
+import { esc, usd, compact, pct, amount, changeHtml, dateTime, ago, horizonText, INTERVAL_LABEL, money } from '../format.js';
 import { watchlist, settings } from '../store.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled } from '../api/backend.js';
+import { logActivity, logForecastShown } from '../api/activity.js';
 
 export const title = (p) => (p[0] || 'Coin').toUpperCase();
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const SERIES = ['--series-1', '--series-2', '--series-3', '--series-5', '--series-7', '--series-4'];
+// Every timeframe the chart offers. The second and minute charts exist for
+// watching price move right now; the forecast engine was never measured on them.
+const INTERVALS = ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'];
+// Timeframes the forecast engine was never measured on — say so rather than
+// letting a number imply an accuracy nobody checked.
+const UNMEASURED = ['1s', '5s', '10s', '1m', '5m'];
 
 export async function render(el, [symParam]) {
   const sym = (symParam || 'BTC').toUpperCase();
@@ -25,7 +32,7 @@ export async function render(el, [symParam]) {
   if (!coin) { el.innerHTML = errorBox(`Coin "${sym}" was not found in the top 250.`); return; }
 
   const st = {
-    interval: ['15m', '1h', '4h', '1d', '1w'].includes(settings.get().interval) ? settings.get().interval : '1h',
+    interval: INTERVALS.includes(settings.get().interval) ? settings.get().interval : '1h',
     candles: [], source: '', signal: null, forecast: null, horizon: null, tab: 'forecast', disposed: false, unsub: [], charts: [],
   };
   st.horizon = DEFAULT_HORIZON[st.interval] || 12;
@@ -55,7 +62,7 @@ export async function render(el, [symParam]) {
       <div class="stack">
         <div class="card chart-card">
           <div class="chart-tools">
-            <div class="seg" id="ivSeg">${['15m', '1h', '4h', '1d', '1w'].map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}">${iv}</button>`).join('')}</div>
+            <div class="seg scroll-x" id="ivSeg">${INTERVALS.map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}" title="${esc(INTERVAL_LABEL[iv] || iv)} candles">${iv}</button>`).join('')}</div>
             <div class="toggles" id="toggles"></div>
           </div>
           <div class="chart-box" id="chart"></div>
@@ -82,12 +89,15 @@ export async function render(el, [symParam]) {
       <div id="tabBody"></div>
     </div>`;
 
+  logActivity('view_coin', coin.symbol, { name: coin.name });
+
   $('#star', el).addEventListener('click', (e) => e.currentTarget.classList.toggle('on', watchlist.toggle(coin.symbol)));
 
   // Hand-off to an exchange. CoinVantage never places the order itself.
   $('#tradeBtn', el)?.addEventListener('click', () => {
     const venues = venuesFor(coin.symbol);
     const sig = st.signal;
+    logActivity('trade_link', coin.symbol);
     modal(`<h3>Trade ${esc(coin.symbol)}</h3>
       <p class="fine">Pick where you already have an account. The pair opens ready to trade on their site.</p>
       ${sig?.ok && sig.plan ? `<div class="plan mt">
@@ -122,7 +132,7 @@ export async function render(el, [symParam]) {
     $('#signalCard', el).innerHTML = skeleton(6);
     $('#fcCard', el).innerHTML = `<div class="row"><span class="spinner"></span><b>Training AI models on ${esc(coin.symbol)} history…</b></div><p class="fine mt">Pattern matching, neural network, gradient-boosted trees and more run in your browser.</p>`;
     try {
-      const r = await getCandles(coin, iv, 1500);
+      const r = await getCandles(coin, iv, isSecondInterval(iv) ? (MAX_BARS[iv] || 600) : 1500);
       if (st.disposed || iv !== st.interval) return;
       st.candles = r.candles; st.source = r.source;
       $('#srcChip', el).textContent = r.source === 'binance' ? `● Live · Binance ${pair}` : r.source === 'demo' ? 'Demo data' : 'CoinGecko (delayed)';
@@ -131,15 +141,40 @@ export async function render(el, [symParam]) {
       updateSignal();
       if (liveUnsub) liveUnsub();
       if (r.source === 'binance') {
-        liveUnsub = live.subscribe(`${pair}@kline_${iv}`, (m) => {
+        // Binance streams 1s candles but nothing between 1s and 1m, so the 5s and
+        // 10s charts merge the 1s stream into the bucket that is still open.
+        const streamIv = isSecondInterval(iv) ? '1s' : iv;
+        const bucketMs = INTERVAL_MS[iv] || 6e4;
+        // On a second chart a candle closes every second. Recomputing the whole
+        // signal that often would heat the phone for nothing, so cap it at 5s.
+        let lastSignalAt = 0;
+        const refreshSignal = () => {
+          if (!isSecondInterval(iv)) { updateSignal(); return; }
+          if (Date.now() - lastSignalAt < 5000) return;
+          lastSignalAt = Date.now();
+          updateSignal();
+        };
+        liveUnsub = live.subscribe(`${pair}@kline_${streamIv}`, (m) => {
           const k = m.k;
-          const c = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v };
+          let c = { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.v };
           const n = st.candles.length;
           if (!n) return;
+          let closed = k.x;
+          if (streamIv !== iv) {
+            const t = Math.floor(c.t / bucketMs) * bucketMs;
+            const open = st.candles[st.candles.length - 1];
+            if (open && open.t === t) {
+              c = { t, o: open.o, h: Math.max(open.h, c.h), l: Math.min(open.l, c.l), c: c.c, v: open.v + c.v };
+              closed = false;
+            } else {
+              c = { ...c, t };
+              closed = true; // the previous bucket just finished
+            }
+          }
           chart.update(c);
           st.candles = chart.candles;
           setPrice(c.c);
-          if (k.x) updateSignal();
+          if (closed) refreshSignal();
         });
       }
       runAi();
@@ -151,11 +186,18 @@ export async function render(el, [symParam]) {
     }
   }
 
+  // The exchange quotes BTC to two decimals and PEPE to eight; show exactly what
+  // it quotes rather than a rounded version of it.
+  getTickSize(pair).then((dp) => { if (dp !== null && !st.disposed) { st.dp = dp; setPrice(st.lastPrice ?? coin.price); } }).catch(() => {});
+
   function setPrice(p) {
+    if (p === null || p === undefined) return;
+    st.lastPrice = p;
     const node = $('#px', el);
     if (!node) return;
-    node.textContent = `${money(p)}`;
-    document.title = `${coin.symbol} ${money(p)} · CoinVantage`;
+    const text = money(p, { dp: st.dp });
+    node.textContent = text;
+    document.title = `${coin.symbol} ${text} · CoinVantage`;
   }
 
   // Signals: current timeframe + confluence across others
@@ -220,6 +262,14 @@ export async function render(el, [symParam]) {
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
     st.forecast = fc;
     st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
+    if (fc.ok) {
+      // Logged before the outcome is known, so "your hit rate" is honest.
+      logForecastShown({
+        symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
+        targetPrice: fc.targetPrice, horizonBars: fc.horizon,
+        horizonAt: fc.path[fc.path.length - 1]?.t, modelAccuracy: fc.ensemble?.accuracy ?? null,
+      });
+    }
     remember(coin.symbol, iv, { forecast: fc, timing: st.timing });
     if (!fc.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(fc.reason)}</p>`; return; }
     chart.setProjection(fc.path);
@@ -261,8 +311,10 @@ export async function render(el, [symParam]) {
     if (!t.shaped) return `<p class="fine mt">Timing: the matched past charts drifted ${t.endPct >= 0 ? 'up' : 'down'} steadily rather than spiking, so there is no clear turning point to call inside this horizon.</p>`;
     const dur = (bars) => horizonText(st.interval, bars);
     const main = t.rising ? t.peak : t.trough;
+    const trust = timingTrust(st.interval);
     return `
       <h3 class="mt" style="margin-bottom:6px">How long the move lasts — and when it turns</h3>
+      ${trust.level === 'bad' ? `<div class="banner" style="margin:0 0 10px">${icon('info', 16)} ${esc(trust.text)}</div>` : ''}
       <div class="grid g2">
         <div><div id="tmChart"></div>
           <p class="fine">Built from what price actually did after the ${t.matchesUsed} closest past charts, step by step — then tilted so it ends on the ensemble's expected move. Shaded band = the middle half of those past outcomes.</p></div>
@@ -277,7 +329,8 @@ export async function render(el, [symParam]) {
             <dt>Past charts still up at the peak</dt><dd>${main.agreement === null || main.agreement === undefined ? '—' : `${Math.round(main.agreement)}%`}</dd>
             <dt>Where it ends at the horizon</dt><dd class="${t.endPct >= 0 ? 'up' : 'down'}">${pct(t.endPct, 1)}</dd>
           </dl>
-          <p class="fine">${TESTED_TIMING.tests ? `Measured on ${TESTED_TIMING.tests} past forecasts across ${TESTED_TIMING.coins} coins, the real high or low landed inside the predicted window <b>${TESTED_TIMING.peakHitPct}%</b> of the time (a random guess scores ${TESTED_TIMING.baselinePct}%; typical miss ${TESTED_TIMING.medianBarsOff} bar${TESTED_TIMING.medianBarsOff === 1 ? '' : 's'}).` : 'Timing accuracy for this build has not been measured yet — treat the turning point as a rough guide, not a schedule.'}</p>
+          <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'good' ? '' : 'warn'}">${esc(trust.text)}</p>
+          <p class="fine">Across all timeframes: ${TESTED_TIMING.tests} walk-forward tests on ${TESTED_TIMING.coins} coins, ${TESTED_TIMING.peakHitPct}% hit versus a ${TESTED_TIMING.baselinePct}% random baseline, and the move really did turn inside the horizon ${TESTED_TIMING.turnedInsideHorizonPct}% of the time.</p>
           <p class="fine warn">Timing is the least reliable part of any forecast. Use it to plan an exit window, never as a reason to skip a stop-loss.</p>
         </div>
       </div>`;
@@ -308,6 +361,7 @@ export async function render(el, [symParam]) {
     const dur = (bars) => horizonText(st.interval, bars);
     const main = t.rising ? t.peak : t.trough;
     const cls = t.rising ? 'up' : 'down';
+    const trust = timingTrust(st.interval);
     return `
       <div class="timing-box mt">
         <div class="row spread"><b>${t.rising ? 'How long the rise lasts' : 'How long the drop lasts'}</b>
@@ -325,6 +379,7 @@ export async function render(el, [symParam]) {
             : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting around <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
           ${main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
         </p>
+        <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% accurate on ${st.interval} charts.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts — use 4h or 1d.` : 'Timing edge on this timeframe is weak.'}</p>
       </div>`;
   }
 
@@ -409,7 +464,7 @@ export async function render(el, [symParam]) {
             <td>${m.accuracy !== null ? (m.accuracy * 100).toFixed(1) + '%' : '—'}<span class="acc-bar"><i style="width:${Math.max(0, Math.min(100, ((m.accuracy ?? 0.5) - 0.3) / 0.4 * 100))}%"></i></span></td><td>${m.weightPct}%</td></tr>`).join('')}
         </tbody></table></div>
         <p class="fine mt">How it works: each model is trained on this coin's own history, then tested on the most recent period it never saw. Models that predicted better get more weight. Crypto is noisy — 55% direction accuracy is already a real edge; nothing is certain.</p>
-        <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time, called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time (15m ${TESTED_ACCURACY['15m']}% · 1h ${TESTED_ACCURACY['1h']}% · 4h ${TESTED_ACCURACY['4h']}% · 1d ${TESTED_ACCURACY['1d']}%).${st.interval === '1d' || st.interval === '1w' ? ' <b class="warn">Daily and weekly forecasts tested weakest — prefer the 15m–4h charts for timing.</b>' : ''}</p>`;
+        <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time, called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time (15m ${TESTED_ACCURACY['15m']}% · 1h ${TESTED_ACCURACY['1h']}% · 4h ${TESTED_ACCURACY['4h']}% · 1d ${TESTED_ACCURACY['1d']}%).${UNMEASURED.includes(st.interval) ? ` <b class="warn">This engine has never been tested on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart, so it has no measured accuracy here. Second and minute charts are for watching price move — use the 15m chart or slower for a forecast you can judge.</b>` : st.interval === '1d' || st.interval === '1w' ? ' <b class="warn">Daily and weekly forecasts tested weakest — prefer the 15m–4h charts for timing.</b>' : ''}</p>`;
       body.insertAdjacentHTML('beforeend', timingSection());
       const lc = new LineChart($('#fcChart', body), { height: 300, yFormat: (v) => money(v), xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x) });
       st.charts.push(lc);

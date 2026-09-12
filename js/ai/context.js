@@ -12,7 +12,7 @@ import { load } from '../store.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 
 const cache = new Map();
-export const DEFAULT_HORIZON = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+export const DEFAULT_HORIZON = { '1s': 30, '5s': 24, '10s': 18, '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
 
 export function remember(symbol, interval, patch) {
   const key = `${symbol}:${interval}`;
@@ -139,6 +139,57 @@ export function marketContext(rows, interval) {
     buys: buys.slice(0, 6).map(shape),
     avoid: avoid.slice(0, 4).map(shape),
     waitingCount: wait.length,
+  };
+}
+
+// The whole market, read on several timeframes at once. "Which coin should I
+// buy?" has a different answer over the next few hours than over the next few
+// weeks, so the assistant answers all three rather than picking one for you.
+export const SCAN_FRAMES = [
+  { interval: '1h', label: 'Short term' },
+  { interval: '4h', label: 'Swing' },
+  { interval: '1d', label: 'Position' },
+];
+
+export async function scanMarketMulti({ intervals = SCAN_FRAMES.map((f) => f.interval), count = 20, onStep } = {}) {
+  const byInterval = {};
+  for (const interval of intervals) {
+    onStep?.(`Scanning the market on the ${interval} chart…`);
+    byInterval[interval] = await scanMarket({ interval, count, onStep: (t) => onStep?.(`${interval}: ${t.replace('Scanning the market… ', '')}`) });
+  }
+  return byInterval;
+}
+
+/** Per-timeframe picks plus the coins that look good on more than one timeframe. */
+export function marketContextMulti(byInterval) {
+  const frames = SCAN_FRAMES
+    .filter((f) => byInterval[f.interval])
+    .map((f) => ({ label: f.label, ...marketContext(byInterval[f.interval], f.interval) }));
+
+  // A coin that ranks as a buy on two or three timeframes is a stronger call
+  // than one that only looks good on a single chart — say which, and how many.
+  const tally = new Map();
+  for (const fr of frames) {
+    for (const b of fr.buys) {
+      const e = tally.get(b.coin) || { coin: b.coin, name: b.name, frames: [], convictionSum: 0 };
+      e.frames.push({ label: fr.label, interval: fr.interval, horizonText: fr.horizonText, ...b });
+      e.convictionSum += b.conviction;
+      tally.set(b.coin, e);
+    }
+  }
+  const agree = [...tally.values()]
+    .sort((a, b) => b.frames.length - a.frames.length || b.convictionSum - a.convictionSum)
+    .slice(0, 5);
+
+  const avoidAll = new Map();
+  for (const fr of frames) for (const a of fr.avoid) if (!avoidAll.has(a.coin)) avoidAll.set(a.coin, { ...a, label: fr.label, interval: fr.interval });
+
+  return {
+    frames,
+    agree,
+    avoid: [...avoidAll.values()].slice(0, 5),
+    scanned: frames[0]?.scanned || 0,
+    intervals: frames.map((f) => f.interval),
   };
 }
 

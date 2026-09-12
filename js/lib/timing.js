@@ -175,12 +175,33 @@ export function summarizeTiming(t) {
   };
 }
 
-// Measured timing accuracy — filled in by tools/evaluate-timing.mjs on real
-// exchange data. `peakHit` is how often the real peak landed inside the
-// predicted window; `baseline` is the same test against a random guess.
+// Measured timing accuracy — tools/evaluate-timing.mjs, 245 walk-forward tests on
+// 12 coins of real Binance data. "Hit" means the real high or low landed within
+// ±25% of the horizon of the predicted bar; `baselinePct` is what a random guess
+// scores on the same tests, so the edge is the gap between them.
+//
+// It works on 4h and daily charts and does NOT work on 15m, where it scores
+// below chance. The UI must say so rather than quietly showing a number.
 export const TESTED_TIMING = {
-  tests: 0, peakHitPct: null, baselinePct: null, medianBarsOff: null, coins: 0,
-  note: 'Not yet measured on this build.',
+  tests: 245, coins: 12,
+  peakHitPct: 61.2, baselinePct: 53.6, medianBarsOff: 2,
+  turnedInsideHorizonPct: 82,
+  byInterval: {
+    '15m': { tests: 20, hitPct: 45.0, medianOff: 3 },
+    '1h': { tests: 64, hitPct: 51.6, medianOff: 3 },
+    '4h': { tests: 78, hitPct: 67.9, medianOff: 1 },
+    '1d': { tests: 83, hitPct: 66.3, medianOff: 2 },
+  },
 };
+
+/** Is the timing call worth showing on this timeframe, and what should we admit? */
+export function timingTrust(interval) {
+  const iv = TESTED_TIMING.byInterval[interval];
+  if (!iv) return { level: 'unknown', text: 'Timing has not been measured on this timeframe — treat the turning point as a rough guide only.' };
+  const edge = iv.hitPct - TESTED_TIMING.baselinePct;
+  if (edge >= 8) return { level: 'good', text: `On ${interval} charts the real high or low landed inside the predicted window ${iv.hitPct}% of the time across ${iv.tests} tests (a random guess scores ${TESTED_TIMING.baselinePct}%); typical miss ${iv.medianOff} candle${iv.medianOff === 1 ? '' : 's'}.` };
+  if (edge >= 2) return { level: 'weak', text: `On ${interval} charts this scored ${iv.hitPct}% against a ${TESTED_TIMING.baselinePct}% random baseline over ${iv.tests} tests — barely an edge. Use the direction, not the clock.` };
+  return { level: 'bad', text: `Timing does not work on ${interval} charts: ${iv.hitPct}% versus a ${TESTED_TIMING.baselinePct}% random baseline over ${iv.tests} tests — worse than guessing. Ignore the turning point here and use the 4h or daily chart for timing.` };
+}
 
 void clamp;

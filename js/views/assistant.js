@@ -1,6 +1,6 @@
 import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
-import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext } from '../ai/context.js';
+import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti } from '../ai/context.js';
 import { ruleBasedAnswer, isMarketWide } from '../lib/analyst.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
@@ -34,7 +34,7 @@ export async function render(el, [symParam]) {
           <div class="row" style="margin-bottom:10px">
             <select class="inp" id="coinSel" style="flex:1">${all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 150).map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.symbol ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
           </div>
-          <div class="row"><span class="fine">Chart</span><div class="seg" id="ivSeg">${['15m', '1h', '4h', '1d'].map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}">${iv}</button>`).join('')}</div></div>
+          <div class="row"><span class="fine">Chart</span><div class="seg" id="ivSeg">${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}">${iv}</button>`).join('')}</div></div>
           <div id="focus" class="mt fine"></div>
         </div>
         <div class="card fine">
@@ -55,7 +55,8 @@ export async function render(el, [symParam]) {
     $('#focus', el).innerHTML = c ? `<div class="row spread"><a class="acc" href="#/coin/${esc(c.symbol)}">${esc(c.name)} chart →</a><span><b>${money(c.price)}</b> ${changeHtml(c.change24h)}</span></div>` : '';
     const sym = st.symbol;
     $('#suggest', el).innerHTML = [
-      'Which coin should I buy right now?', 'What are the best buys today and when do I sell?',
+      'Which coin should I buy right now?', 'Best buys for each timeframe, and when do I sell?',
+      'What should I hold for weeks, and what is only a quick trade?',
       `Will ${sym} go up or down next?`, `When should I take profit on ${sym}?`,
       `I have $1,000 — how much ${sym} should I buy?`, 'Review my portfolio',
     ].map((q) => `<button class="btn sm" type="button">${esc(q)}</button>`).join('');
@@ -118,7 +119,7 @@ export async function render(el, [symParam]) {
   const drawHistory = () => {
     log.innerHTML = '';
     if (!history.length) {
-      addMsg('bot', markdown(`Hi! I'm the **${CONFIG.APP_NAME} AI**. Ask me about the **whole market** — *"Which coin should I buy right now?"* — or about one coin: *"Will ETH go up this week?"*, *"When should I sell SOL?"*, *"Review my portfolio"*.\n\nI check live data, signals on 4 timeframes, a backtest and a machine-learning forecast before answering.`));
+      addMsg('bot', markdown(`Hi! I'm the **${CONFIG.APP_NAME} AI**. Ask me about the **whole market** — *"Which coin should I buy, for how long, and when do I sell?"* — and I'll rank every coin on the short-term, swing and position timeframes. Or ask about one coin: *"Will ETH go up this week?"*, *"When should I sell SOL?"*, *"Review my portfolio"*.\n\nI check live data, signals on 4 timeframes, a backtest and a machine-learning forecast before answering.`));
     }
     for (const m of history) addMsg(m.role === 'user' ? 'user' : 'bot', m.role === 'user' ? esc(m.content) : markdown(m.content) + (m.meta ? `<div class="src">${m.meta}</div>` : ''));
   };
@@ -142,24 +143,26 @@ export async function render(el, [symParam]) {
       history.lastSymbol = st.symbol;
       const portfolio = await portfolioSummary();
 
-      let analysis = null, market = null;
+      let analysis = null, market = null, marketFrames = null;
       if (wantsMarket) {
-        step('Scanning the market…');
-        const rows = await scanMarket({ interval: st.interval, count: 25, onStep: step });
-        market = marketContext(rows, st.interval);
+        step('Scanning every coin on 3 timeframes…');
+        const byInterval = await scanMarketMulti({ count: 20, onStep: step });
+        marketFrames = marketContextMulti(byInterval);
+        market = marketFrames.frames.find((f) => f.interval === st.interval) || marketFrames.frames[1] || marketFrames.frames[0] || null;
       } else if (!wantsPortfolio || detected) {
         analysis = await analyzeCoin(st.symbol, { interval: st.interval, onStep: step });
       }
-      const ctx = analysis ? { ...analystContext(analysis, portfolio), market } : { portfolio, market };
+      const ctx = analysis ? { ...analystContext(analysis, portfolio), market, marketFrames } : { portfolio, market, marketFrames };
       const facts = ruleBasedAnswer(question, ctx);
-      const meta = (src) => `<span>${esc(src)}</span>${market ? `<span>· scanned ${market.scanned} coins on ${esc(market.interval)}</span>` : ''}${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
+      const meta = (src) => `<span>${esc(src)}</span>${marketFrames ? `<span>· scanned ${marketFrames.scanned} coins on ${esc(marketFrames.intervals.join(', '))}</span>` : market ? `<span>· scanned ${market.scanned} coins on ${esc(market.interval)}</span>` : ''}${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
       let finalText = facts, source = 'Rule-based analyst (instant)';
       if (localReady() || customReady()) {
         step('Writing answer…');
         const ac = new AbortController(); st.abort = ac;
         try {
           const data = analysis ? llmData(analysis) : {};
-          if (market) data.marketPicks = market;
+          if (marketFrames) data.marketByTimeframe = marketFrames;
+          else if (market) data.marketPicks = market;
           if (portfolio.length) data.portfolio = portfolio.map((p) => ({ coin: p.symbol, valueUsd: Math.round(p.value), pnlPct: p.pnlPct !== null ? +p.pnlPct.toFixed(1) : null }));
           const r = await askLLM({ history: history.slice(0, -1), question, facts, data, signal: ac.signal, onText: (t) => { bot.innerHTML = markdown(t); log.scrollTop = log.scrollHeight; } });
           if (r.text.trim().length > 20) { finalText = r.text; source = `${r.source} · built-in AI`; }

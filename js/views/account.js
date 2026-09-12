@@ -2,6 +2,10 @@
 import { $, $$, icon, toast, modal } from '../ui.js';
 import { esc, money } from '../format.js';
 import { load } from '../store.js';
+import { myActivity, myForecasts, forecastScore, resolveDueForecasts, clearMyActivity } from '../api/activity.js';
+import { listFactors, startEnrollment, confirmEnrollment, disableTwoFactor, changePassword, signOutEverywhere, assuranceLevel } from '../api/security.js';
+import { getCandles, findCoin } from '../api/market.js';
+import { dateTime, pct, ago } from '../format.js';
 import { auth, sb, isPremium, isAdmin, callFn, updateProfile, refreshProfile, signOut } from '../api/backend.js';
 import { openAuth } from './auth.js';
 
@@ -57,6 +61,11 @@ export async function render(el, [flag]) {
         <div id="tgBox" class="mt"></div>
       </div>
 
+      <div class="card" style="grid-column:1/-1">
+        <div class="card-h"><h3>Your activity</h3><button class="btn sm ghost" id="clearAct">Clear history</button></div>
+        <div id="activityBox">Loading…</div>
+      </div>
+
       <div class="card">
         <h3>Your data</h3>
         <p class="fine">Your watchlist, holdings, watch-only wallet addresses and chart drawings sync to your account. Prices, signals and forecasts are computed in your browser — we never see them.</p>
@@ -64,6 +73,11 @@ export async function render(el, [flag]) {
           <button class="btn sm" id="export">Download my data (JSON)</button>
           <button class="btn sm" id="test">Send me a test alert</button>
         </div>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
+        <div class="card-h"><h3>Security</h3><span class="fine" id="aalChip"></span></div>
+        <div id="secBox">Loading…</div>
       </div>
 
       <div class="card">
@@ -167,6 +181,163 @@ export async function render(el, [flag]) {
       catch (e) { toast(e.message, 'down'); }
     });
   });
+
+  // ---------------------------------------------------------------- security
+  const paintSecurity = async () => {
+    const box = $('#secBox', el);
+    try {
+      const [factors, aal] = await Promise.all([listFactors(), assuranceLevel()]);
+      const verified = factors.find((f) => f.status === 'verified');
+      $('#aalChip', el).innerHTML = verified
+        ? '<span class="chip up">Two-factor on</span>'
+        : `<span class="chip ${isAdmin() ? 'down' : 'warn'}">Two-factor off</span>`;
+      box.innerHTML = `
+        <div class="grid g2">
+          <div>
+            <h4 class="fine">Two-factor authentication</h4>
+            ${verified
+              ? `<p class="fine up">On. Signing in needs your password <b>and</b> a code from your authenticator app, so a stolen password is not enough on its own.</p>
+                 <p class="fine">Added ${dateTime(new Date(verified.created_at).getTime(), false)}. Session level: <b>${esc(aal?.currentLevel || '—')}</b>.</p>
+                 <button class="btn sm ghost" id="mfaOff">Turn off two-factor</button>`
+              : `<p class="fine">${isAdmin()
+                   ? '<b class="down">You own this site.</b> Your account can grant premium, read every user and change API keys — a password alone is thin protection for that. Turn on two-factor.'
+                   : 'Add a second step at sign-in using any authenticator app (Google Authenticator, Authy, 1Password).'}</p>
+                 <button class="btn ${isAdmin() ? 'primary' : ''} sm" id="mfaOn">Set up two-factor</button>`}
+            <div id="mfaFlow" class="mt"></div>
+          </div>
+          <div>
+            <h4 class="fine">Password &amp; sessions</h4>
+            <form class="stack" style="gap:8px" id="pwForm">
+              <label class="fld">New password<input class="inp" name="pw" type="password" minlength="10" autocomplete="new-password" placeholder="at least 10 characters"></label>
+              <button class="btn sm">Change password</button>
+              <p class="fine" id="pwMsg"></p>
+            </form>
+            <p class="fine mt">Signed in on another device you no longer use?</p>
+            <button class="btn sm ghost" id="soAll">Sign out everywhere</button>
+          </div>
+        </div>
+        <p class="fine mt">This site never asks for exchange API keys, private keys or seed phrases — not on this page, not anywhere. Anyone who does is not us.</p>`;
+
+      $('#mfaOn', el)?.addEventListener('click', async () => {
+        const flow = $('#mfaFlow', el);
+        flow.innerHTML = '<span class="spinner"></span> Preparing…';
+        try {
+          const en = await startEnrollment();
+          flow.innerHTML = `
+            <div style="padding:12px;border-radius:10px;background:var(--surface-2)">
+              <p class="fine">1. Scan this with your authenticator app:</p>
+              <img src="${esc(en.qr)}" alt="Two-factor QR code" width="170" height="170" style="background:#fff;border-radius:8px;padding:6px">
+              <p class="fine">Can't scan? Enter this key by hand: <code>${esc(en.secret)}</code></p>
+              <p class="fine">2. Type the 6-digit code it shows:</p>
+              <div class="row" style="gap:8px"><input class="inp" id="mfaCode" inputmode="numeric" maxlength="6" placeholder="000000" style="max-width:120px"><button class="btn sm primary" id="mfaVerify">Turn on</button></div>
+              <p class="fine" id="mfaMsg"></p>
+            </div>`;
+          $('#mfaVerify', el).addEventListener('click', async () => {
+            const msg = $('#mfaMsg', el);
+            msg.textContent = 'Checking…';
+            try {
+              await confirmEnrollment(en.factorId, $('#mfaCode', el).value);
+              toast('Two-factor is on. Keep a backup of the key somewhere safe.', 'up', 8000);
+              paintSecurity();
+            } catch (e2) { msg.innerHTML = `<span class="down">${esc(e2.message)}</span>`; }
+          });
+        } catch (e) { flow.innerHTML = `<span class="fine down">${esc(e.message)}</span>`; }
+      });
+
+      $('#mfaOff', el)?.addEventListener('click', () => {
+        const m = modal(`<h3>Turn off two-factor?</h3><p>Your account will be protected by its password alone${isAdmin() ? ' — and this account controls the whole site' : ''}.</p>
+          <div class="row mt" style="gap:8px"><button class="btn" id="keep">Keep it on</button><button class="btn primary" id="drop" style="background:var(--down);color:#fff">Turn off</button></div>`);
+        $('#keep', m.el).addEventListener('click', m.close);
+        $('#drop', m.el).addEventListener('click', async () => {
+          try { await disableTwoFactor(verified.id); m.close(); toast('Two-factor turned off.', 'info'); paintSecurity(); }
+          catch (e) { toast(e.message, 'down'); }
+        });
+      });
+
+      $('#pwForm', el).addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = $('#pwMsg', el);
+        try {
+          await changePassword(e.target.pw.value);
+          e.target.reset();
+          msg.innerHTML = '<span class="up">Password changed.</span>';
+        } catch (e2) { msg.innerHTML = `<span class="down">${esc(e2.message)}</span>`; }
+      });
+
+      $('#soAll', el).addEventListener('click', async () => {
+        try { await signOutEverywhere(); toast('Signed out on every device.', 'info'); location.hash = '#/'; }
+        catch (e) { toast(e.message, 'down'); }
+      });
+    } catch (e) {
+      box.innerHTML = `<p class="fine">Could not load security settings: ${esc(e.message)}</p>`;
+    }
+  };
+  paintSecurity();
+
+  // ---------------------------------------------------------------- activity
+  // Forecasts you were shown are logged before the outcome is known, then scored
+  // against the real close — so this hit rate is yours, not a marketing number.
+  const closeAt = async (symbol, interval, atMs) => {
+    const coin = await findCoin(symbol);
+    if (!coin) return NaN;
+    const r = await getCandles(coin, interval, 500);
+    let best = NaN, bestGap = Infinity;
+    for (const c of r.candles) {
+      const gap = Math.abs(c.t - atMs);
+      if (c.t <= atMs && gap < bestGap) { bestGap = gap; best = c.c; }
+    }
+    return bestGap < 6 * 3600e3 ? best : NaN;
+  };
+
+  const paintActivity = async () => {
+    const box = $('#activityBox', el);
+    try {
+      await resolveDueForecasts(closeAt);
+      const [acts, fcs] = await Promise.all([myActivity(50), myForecasts(100)]);
+      const sc = forecastScore(fcs);
+      const label = { view_coin: 'Opened', alert_created: 'Created an alert for', alert_fired: 'Alert fired on', forecast_seen: 'Saw a forecast for', trade_link: 'Opened a trade link for', signed_in: 'Signed in' };
+      box.innerHTML = `
+        <div class="grid g4">
+          <div class="stat"><span class="k">Forecasts you were shown</span><span class="v">${sc.shown}</span><span class="s fine">${sc.open} still open</span></div>
+          <div class="stat"><span class="k">Scored so far</span><span class="v">${sc.resolved}</span><span class="s fine">${sc.right} called right</span></div>
+          <div class="stat"><span class="k">Your hit rate</span><span class="v ${sc.accuracy === null ? '' : sc.accuracy >= 55 ? 'up' : sc.accuracy < 50 ? 'down' : ''}">${sc.accuracy === null ? '—' : `${sc.accuracy.toFixed(0)}%`}</span><span class="s fine">on what you actually viewed</span></div>
+          <div class="stat"><span class="k">Coins you follow most</span><span class="v" style="font-size:15px">${topCoins(acts) || '—'}</span></div>
+        </div>
+
+        ${fcs.length ? `<h4 class="mt fine">Forecasts you were shown</h4>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>TF</th><th class="l">Shown</th><th>Price then</th><th>AI up</th><th>Price after</th><th>Result</th></tr></thead><tbody>
+          ${fcs.slice(0, 25).map((f) => `<tr data-sym="${esc(f.symbol)}">
+            <td class="l"><b>${esc(f.symbol)}</b></td><td class="fine">${esc(f.interval)}</td>
+            <td class="l fine">${dateTime(new Date(f.shown_at).getTime())}</td>
+            <td>${money(f.price)}</td>
+            <td class="${f.prob_up >= 0.54 ? 'up' : f.prob_up <= 0.46 ? 'down' : ''}">${f.prob_up === null ? '—' : `${(f.prob_up * 100).toFixed(0)}%`}</td>
+            <td>${f.resolved ? money(f.outcome_price) : '<span class="fine muted">open</span>'}</td>
+            <td>${f.was_right === null ? '—' : f.was_right ? '<span class="up">✓ right</span>' : '<span class="down">✕ wrong</span>'}</td></tr>`).join('')}
+          </tbody></table></div>` : '<p class="fine mt">No forecasts logged yet — open a coin page and one will be recorded here.</p>'}
+
+        ${acts.length ? `<h4 class="mt fine">Recent activity</h4>
+          <div class="stack" style="gap:4px">${acts.slice(0, 20).map((a) => `<div class="row spread fine" style="padding:5px 0;border-bottom:1px solid var(--border)">
+            <span>${esc(label[a.kind] || a.kind)} ${a.symbol ? `<a href="#/coin/${esc(a.symbol)}"><b>${esc(a.symbol)}</b></a>` : ''}</span>
+            <span class="muted">${ago(new Date(a.created_at).getTime())}</span></div>`).join('')}</div>` : ''}
+
+        <p class="fine mt">Only you can read this — the database blocks every other account. The prediction half of each forecast row can never be edited after it is written, which is what makes the hit rate above trustworthy.</p>`;
+      $$('#activityBox tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
+    } catch (e) {
+      box.innerHTML = `<p class="fine">Could not load your activity: ${esc(e.message)}</p>`;
+    }
+  };
+  const topCoins = (acts) => {
+    const n = {};
+    for (const a of acts) if (a.symbol) n[a.symbol] = (n[a.symbol] || 0) + 1;
+    return Object.entries(n).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([s]) => esc(s)).join(', ');
+  };
+  paintActivity();
+  $('#clearAct', el).addEventListener('click', async () => {
+    await clearMyActivity();
+    toast('Activity history cleared.', 'info');
+    paintActivity();
+  });
+  void pct;
 
   const onAuth = () => { paintEmail(); paintTg(); };
   auth.addEventListener('change', onAuth);
