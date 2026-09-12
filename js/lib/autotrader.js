@@ -132,6 +132,42 @@ function closePosition(state, cfg, symbol, exitPrice, t, reason) {
   delete state.open[symbol];
 }
 
+/**
+ * Open a position by hand, in the same simulated account the AI trader uses.
+ * Still no real order anywhere — this is practice, priced off the live market.
+ */
+export function openManual(state, cfg, symbol, price, { notional, stopPrice, targetPrice, at = Date.now() } = {}) {
+  if (state.open[symbol]) return { ok: false, error: `You already have a practice position open on ${symbol}. Close it first.` };
+  if (Object.keys(state.open).length >= cfg.maxPositions) return { ok: false, error: `You already have ${cfg.maxPositions} practice positions open — that is the limit in your settings.` };
+  if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
+
+  const size = Math.min(+notional || 0, state.balance);
+  if (!(size >= 1)) return { ok: false, error: 'Enter an amount of at least 1.' };
+
+  const stop = Number.isFinite(stopPrice) && stopPrice > 0 && stopPrice < price ? stopPrice : price * 0.95;
+  const tp = Number.isFinite(targetPrice) && targetPrice > price ? targetPrice : price + (price - stop) * cfg.rMultiple;
+  const qty = size / price;
+  const fee = size * (cfg.feePct / 100);
+  state.balance -= fee;
+  state.open[symbol] = {
+    symbol, side: 'long', manual: true,
+    entry: round(price), initialStop: round(stop), stop: round(stop), tp: round(tp),
+    qty: round(qty, 10), notional: round(size, 2),
+    openedAt: at, openScore: null, movedToBreakEven: false, feePaid: round(fee, 4),
+  };
+  markEquity(state, at);
+  return { ok: true, position: state.open[symbol] };
+}
+
+/** Close a position by hand at the current price. */
+export function closeManual(state, cfg, symbol, price, at = Date.now()) {
+  if (!state.open[symbol]) return { ok: false, error: `No practice position open on ${symbol}.` };
+  if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
+  closePosition(state, cfg, symbol, price, at, 'closed by you');
+  markEquity(state, at);
+  return { ok: true, trade: state.closed[state.closed.length - 1] };
+}
+
 function markEquity(state, t) {
   const last = state.equityCurve[state.equityCurve.length - 1];
   if (last && t - last.t < 3600e3) return; // at most one point per hour

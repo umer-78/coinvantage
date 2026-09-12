@@ -232,6 +232,39 @@ test('analyst answers whole-market questions with ranked picks, not one coin', a
   assert.match(empty, /Nothing currently clears the bar/i);
 });
 
+test('demo trades run on simulated money and book a real result', async () => {
+  const { newState, openManual, closeManual, DEFAULT_CONFIG, equity } = await import('../js/lib/autotrader.js');
+  const cfg = { ...DEFAULT_CONFIG };
+  const state = newState(cfg);
+  const start = state.balance;
+
+  const bad = openManual(state, cfg, 'BTC', 60000, { notional: 0 });
+  assert.equal(bad.ok, false, 'a zero-size trade is refused');
+  assert.equal(state.balance, start, 'a refused trade changes nothing');
+
+  const r = openManual(state, cfg, 'BTC', 60000, { notional: 1000, stopPrice: 57000 });
+  assert.ok(r.ok);
+  assert.equal(r.position.manual, true);
+  assert.equal(r.position.stop, 57000);
+  assert.ok(r.position.qty > 0);
+  assert.ok(state.balance < start, 'the fee comes out of the balance');
+
+  assert.equal(openManual(state, cfg, 'BTC', 60000, { notional: 500 }).ok, false, 'no second position on the same coin');
+
+  // marked to market while open
+  assert.ok(equity(state, { BTC: 66000 }) > equity(state, { BTC: 60000 }));
+
+  const sold = closeManual(state, cfg, 'BTC', 66000);
+  assert.ok(sold.ok);
+  assert.equal(sold.trade.reason, 'closed by you');
+  assert.ok(sold.trade.pnl > 0, 'a 10% rise on a long is a profit');
+  assert.ok(Math.abs(sold.trade.pnlPct - 10) < 0.001);
+  assert.equal(Object.keys(state.open).length, 0);
+  assert.ok(state.balance > start, 'the profit lands in the balance');
+
+  assert.equal(closeManual(state, cfg, 'BTC', 66000).ok, false, 'nothing left to close');
+});
+
 test('prices are shown at full precision, never silently rounded', async () => {
   const { money, price } = await import('../js/format.js');
   // A four-figure price used to be rounded to whole dollars, which made the
