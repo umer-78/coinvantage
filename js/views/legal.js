@@ -59,7 +59,7 @@ const PAGES = (contact) => ({
       <h2>Read this before you trade anything</h2>
       <p>Crypto assets are volatile, largely unregulated, and can lose most or all of their value quickly. Nothing on ${N} changes that.</p>
       <h2>The forecasts are estimates, not predictions</h2>
-      <p>The engine is validated by walk-forward testing on out-of-sample data. Across 672 forecasts on 12 coins it called direction right <b>55.2%</b> of the time overall: about 60% on 15-minute, 55% on hourly, 56% on 4-hour, and <b>49.4% on daily — no better than chance</b>. Simply assuming "up" every time scored 51.3% on the same sample. A small statistical edge is not a licence to bet large, and past accuracy does not carry over to the future.</p>
+      <p>The engine is validated by walk-forward testing on out-of-sample data: every forecast is made using only the data that existed at that moment. Across 672 forecasts on 12 coins it called direction right <b>54.0%</b> of the time overall — 57.1% on 15-minute, 53.0% on hourly, 58.9% on 4-hour, and <b>47.0% on daily, which is worse than a coin flip</b>. When the models agreed strongly enough to take a side (about 38% of forecasts) accuracy was 56.9%. Simply assuming "up" every time scored 51.3% on the same sample. A small statistical edge is not a licence to bet large, and past accuracy does not carry over to the future.</p>
       <h2>Leverage</h2>
       <p>The futures page shows what leveraged traders are doing because it is useful market context. It is not encouragement. Leverage magnifies losses, liquidations are permanent, and most retail leveraged accounts lose money.</p>
       <h2>Position sizing beats prediction</h2>
