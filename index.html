@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>CoinVantage — Live Crypto Markets, Signals & AI Forecasts</title>
+  <meta name="description" content="Live crypto prices from Binance and 10 exchanges, candlestick charts, buy/sell signals, historical pattern comparison and an AI price forecast that runs in your browser.">
+  <meta name="theme-color" content="#0b0e14">
+  <meta property="og:title" content="CoinVantage — Crypto markets, signals & AI forecasts">
+  <meta property="og:description" content="Live prices, charts, signals, pattern comparison and in-browser AI forecasts.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e14'/%3E%3Cpath d='M14 42l12-12 8 8 16-18' stroke='%23f5b301' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://data-api.binance.vision">
+  <link rel="preconnect" href="https://api.coingecko.com">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    try { const s = JSON.parse(localStorage.getItem('cv:settings') || '{}'); if (s.theme) document.documentElement.dataset.theme = s.theme; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="#/">
+        <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--accent)"/><path d="M14 42l12-12 8 8 16-18" stroke="var(--accent-ink)" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="brand-name" data-app-name>CoinVantage</span>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <div class="side-foot">
+        <div class="live-pill" id="livePill"><i></i><span>Connecting…</span></div>
+        <p class="fine">Data: Binance, CoinGecko & 10 exchanges. Signals and forecasts are not financial advice.</p>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <a class="brand brand-m" href="#/" aria-label="Home">
+          <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="var(--accent)"/><path d="M14 42l12-12 8 8 16-18" stroke="var(--accent-ink)" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <div class="search" id="search">
+          <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="searchInput" type="search" placeholder="Search coin (BTC, Ethereum…)" autocomplete="off" aria-label="Search coins">
+          <div class="search-results" id="searchResults" hidden></div>
+        </div>
+        <select class="mini-sel" id="curSel" aria-label="Display currency"></select>
+        <select class="mini-sel hide-s" id="langSel" aria-label="Language"></select>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme"></button>
+        <button class="btn sm" id="accountBtn" aria-label="Account"></button>
+      </header>
+      <div id="banner"></div>
+      <div class="ticker" id="ticker" aria-label="Live prices"></div>
+      <main id="view" tabindex="-1"></main>
+      <footer class="foot">
+        <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts and AI answers are educational tools, <b>not financial advice</b>. Crypto is volatile — never risk money you can't afford to lose.
+        <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a></span>
+      </footer>
+    </div>
+
+    <nav class="bottombar" id="bottombar" aria-label="Mobile navigation"></nav>
+  </div>
+  <noscript><p style="padding:24px;color:#fff">This site needs JavaScript enabled.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
