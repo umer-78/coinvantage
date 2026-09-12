@@ -1,7 +1,7 @@
 // Offline shell for CoinVantage.
 // Market data is never cached — only the app's own files, so the site opens
 // instantly and still loads on a flaky connection. Bump VERSION on each release.
-const VERSION = 'cv-2026-09-12';
+const VERSION = 'cv-2026-09-12b';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './icon.svg', './icon-192.png', './icon-512.png',
@@ -23,8 +23,12 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return;
 
   // Network first so a new deploy is picked up immediately; cache is the fallback.
+  // `no-cache` forces a revalidation with the server on every app file. Without
+  // it the browser's own 10-minute HTTP cache keeps serving yesterday's modules
+  // after a deploy, which looks exactly like the update never shipped. The
+  // server answers 304 when nothing changed, so this costs almost nothing.
   e.respondWith(
-    fetch(request)
+    fetch(request, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
