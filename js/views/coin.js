@@ -247,6 +247,15 @@ export async function render(el, [symParam]) {
     $('#signalCard', el).innerHTML = skeleton(6);
     $('#fcCard', el).innerHTML = `<div class="row"><span class="spinner"></span><b>Training AI models on ${esc(coin.symbol)} history…</b></div><p class="fine mt">Pattern matching, neural network, gradient-boosted trees and more run in your browser.</p>`;
     try {
+      // A 200-period average over 5-second candles covers 17 minutes and just
+      // draws noise across the chart. Switch the slow overlays off there, and
+      // back on when the reader moves to a real timeframe.
+      const fast = isSecondInterval(iv);
+      if (fast !== st.wasFast) {
+        chart.setOptions({ ema200: !fast, ema50: !fast, bb: false });
+        $$('#toggles .toggle', el).forEach((b) => b.classList.toggle('on', !!chart.opts[b.dataset.k]));
+        st.wasFast = fast;
+      }
       const r = await getCandles(coin, iv, isSecondInterval(iv) ? (MAX_BARS[iv] || 600) : 1500);
       if (st.disposed || iv !== st.interval) return;
       st.candles = r.candles; st.source = r.source;

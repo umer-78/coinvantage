@@ -187,8 +187,26 @@ export function generateSignal(candles, { interval = '' } = {}) {
     };
   }
 
+  // A plan whose whole move is smaller than what it costs to trade is not a
+  // plan. On a 5-second chart the distance from entry to target can be a
+  // fraction of a cent — round-trip fees and the spread eat it several times
+  // over. Better to say there is nothing to trade than to draw levels that
+  // cannot pay. 0.3% is roughly two round trips at a typical 0.1% taker fee.
+  const MIN_TRADEABLE_MOVE = 0.003;
+  let noEdgeReason = null;
+  if (plan) {
+    const target = plan.takeProfits[0];
+    const move = Math.abs(target - price) / price;
+    const riskFrac = plan.riskPct / 100;
+    if (move < MIN_TRADEABLE_MOVE || riskFrac < 0.001) {
+      noEdgeReason = `Price is moving too little on this timeframe to trade: the setup's first target is ${(move * 100).toFixed(3)}% away, which fees and the spread would swallow. Use a slower chart for an actual entry.`;
+      plan = null;
+    }
+  }
+
   const waitFor = [];
-  if (!plan) {
+  if (noEdgeReason) waitFor.push(noEdgeReason);
+  if (!plan && !noEdgeReason) {
     if (r1 !== null) waitFor.push(`Bullish trigger: a close above resistance ${fmtNum(r1)} with rising volume`);
     if (s1 !== null) waitFor.push(`Pullback buy zone near support ${fmtNum(s1)} if RSI stays above 40`);
     if (s1 !== null) waitFor.push(`Bearish trigger: a close below ${fmtNum(s1)}`);

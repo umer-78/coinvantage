@@ -388,13 +388,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
 /* --- Chart toolbar on small screens -------------------------------------- */
 /* The indicator chips collapse behind one button so the chart keeps the space. */
-.only-s { display: none; }
-@media (max-width: 860px) {
-  .only-s { display: inline-flex; }
-  .chart-tools .toggles { display: none; width: 100%; }
-  .chart-tools.show-toggles .toggles { display: flex; padding-top: 4px; border-top: 1px solid var(--border); margin-top: 2px; }
-  .chart-tools { gap: 6px; }
-}
+/* Twelve indicator chips wrapping over three rows is what made the chart card
+   look cluttered at every size. They now live behind one button, always. */
+.only-s { display: inline-flex; }
+.chart-tools .toggles { display: none; width: 100%; }
+.chart-tools.show-toggles .toggles { display: flex; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 4px; }
+.chart-tools { gap: 8px; row-gap: 6px; }
+#indBtn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
 
 /* A losing backtest gets a red banner, not a quiet number. */
 .banner.down { border-color: var(--down); background: var(--down-soft); color: var(--text); }
