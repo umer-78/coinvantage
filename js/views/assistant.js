@@ -1,5 +1,6 @@
 import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
+import { live } from '../api/live.js';
 import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti } from '../ai/context.js';
 import { ruleBasedAnswer, isMarketWide } from '../lib/analyst.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, recommendedModelId } from '../ai/engine.js';
@@ -50,9 +51,30 @@ export async function render(el, [symParam]) {
     </div>`;
 
   const log = $('#log', el);
+  // The focus panel used to print the price fetched when the page loaded and
+  // never touch it again, so after a few minutes it disagreed with the live
+  // ticker at the top of the same screen. It now rides the same stream.
+  // One subscription at a time, swapped when the reader changes coin.
+  let focusUnsub = null;
+  const watchFocus = (pair) => {
+    if (focusUnsub) { focusUnsub(); focusUnsub = null; }
+    focusUnsub = live.subscribe(`${pair}@miniTicker`, (tk) => {
+      const box = $('#focus', el)?.querySelector('[data-focus-px]');
+      if (!box) return;
+      const p = +tk.c, o = +tk.o;
+      if (!Number.isFinite(p) || !Number.isFinite(o) || o === 0) return;
+      box.querySelector('.p').textContent = money(p);
+      box.querySelector('.chg').outerHTML = changeHtml((p / o - 1) * 100);
+      // keep the cached row in step so anything else reading it agrees
+      const row = all.find((x) => x.symbol === st.symbol);
+      if (row) { row.price = p; row.change24h = (p / o - 1) * 100; }
+    });
+  };
+
   const drawFocus = () => {
     const c = all.find((x) => x.symbol === st.symbol);
-    $('#focus', el).innerHTML = c ? `<div class="row spread"><a class="acc" href="#/coin/${esc(c.symbol)}">${esc(c.name)} chart →</a><span><b>${money(c.price)}</b> ${changeHtml(c.change24h)}</span></div>` : '';
+    $('#focus', el).innerHTML = c ? `<div class="row spread"><a class="acc" href="#/coin/${esc(c.symbol)}">${esc(c.name)} chart →</a><span data-focus-px><b class="p">${money(c.price)}</b> ${changeHtml(c.change24h)}</span></div>` : '';
+    if (c?.binance) watchFocus(c.binance);
     const sym = st.symbol;
     $('#suggest', el).innerHTML = [
       'Which coin should I buy right now?', 'Best buys for each timeframe, and when do I sell?',
@@ -196,5 +218,5 @@ export async function render(el, [symParam]) {
     loadLocalModel(s.llmModel).catch(() => {});
   }
   if (!support.webgpu && !s.llmModel) recommendedModelId();
-  return () => { st.disposed = true; st.abort?.abort(); aiState.removeEventListener('change', onAi); };
+  return () => { st.disposed = true; st.abort?.abort(); focusUnsub?.(); aiState.removeEventListener('change', onAi); };
 }

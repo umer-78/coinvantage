@@ -265,6 +265,66 @@ test('junk listings are kept out of the coin list', async () => {
   }
 });
 
+test('Binance trade-history import: parsing and FIFO matching', async () => {
+  const { parseTradeCsv, matchFills, splitPair, parseAmount, splitCsvLine } = await import('../js/lib/importer.js');
+
+  // the amount column carries the asset glued to the number
+  assert.deepEqual(parseAmount('0.01234BTC'), { value: 0.01234, asset: 'BTC' });
+  assert.deepEqual(parseAmount('1,234.5 USDT'), { value: 1234.5, asset: 'USDT' });
+  assert.equal(parseAmount('').value, null);
+  // quoted fields with commas must not split the row
+  assert.deepEqual(splitCsvLine('a,"b,c",d'), ['a', 'b,c', 'd']);
+  // pairs split on the quote asset, longest first
+  assert.deepEqual(splitPair('BTCUSDT'), { base: 'BTC', quote: 'USDT' });
+  assert.deepEqual(splitPair('ETH/BTC'), { base: 'ETH', quote: 'BTC' });
+  assert.deepEqual(splitPair('SOLFDUSD'), { base: 'SOL', quote: 'FDUSD' });
+
+  const csv = [
+    'Date(UTC),Pair,Side,Price,Executed,Amount,Fee',
+    '2026-01-10 09:00:00,BTCUSDT,BUY,40000,0.5BTC,20000USDT,2USDT',
+    '2026-01-11 09:00:00,BTCUSDT,BUY,42000,0.5BTC,21000USDT,2USDT',
+    '2026-01-20 09:00:00,BTCUSDT,SELL,50000,0.5BTC,25000USDT,2USDT',
+    '2026-02-01 09:00:00,ETHUSDT,BUY,2000,2ETH,4000USDT,1USDT',
+    'garbage row',
+  ].join('\n');
+
+  const { fills, errors, skipped } = parseTradeCsv(csv);
+  assert.equal(errors.length, 0);
+  assert.equal(fills.length, 4);
+  assert.equal(skipped, 1, 'the unusable row is skipped, not guessed at');
+  assert.equal(fills[0].symbol, 'BTC');
+  assert.equal(fills[0].side, 'buy');
+  assert.equal(fills[0].qty, 0.5);
+
+  const { closed, open } = matchFills(fills);
+  // FIFO: the sell matches the FIRST buy at 40,000, not the cheaper average
+  assert.equal(closed.length, 1);
+  assert.equal(closed[0].entry, 40000, 'oldest lot is consumed first');
+  assert.equal(closed[0].exit, 50000);
+  assert.equal(closed[0].qty, 0.5);
+  assert.ok(Math.abs(closed[0].pnlPct - 25) < 1e-9);
+  assert.ok(closed[0].pnl < 5000, 'fees come out of the profit');
+  assert.ok(closed[0].pnl > 4990);
+
+  // what is left is still open: the second BTC lot and the whole ETH lot
+  assert.equal(open.length, 2);
+  assert.ok(open.find((o) => o.symbol === 'BTC' && o.entry === 42000));
+  assert.ok(open.find((o) => o.symbol === 'ETH' && o.qty === 2));
+
+  // a partial sell splits a lot rather than dropping it
+  const partial = matchFills([
+    { symbol: 'SOL', side: 'buy', price: 100, qty: 10, fee: 0, at: 1 },
+    { symbol: 'SOL', side: 'sell', price: 120, qty: 4, fee: 0, at: 2 },
+  ]);
+  assert.equal(partial.closed[0].qty, 4);
+  assert.equal(partial.open[0].qty, 6);
+
+  // a file that is not a trade export says so instead of importing nonsense
+  const bad = parseTradeCsv('hello,world\n1,2');
+  assert.equal(bad.fills.length, 0);
+  assert.match(bad.errors[0], /trade history/i);
+});
+
 test('the real account records trades without ever placing one', async () => {
   const { newState, recordRealTrade, DEFAULT_CONFIG, REAL_NOTICE } = await import('../js/lib/autotrader.js');
   const cfg = { ...DEFAULT_CONFIG };
