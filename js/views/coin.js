@@ -3,7 +3,7 @@ import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { generateSignal, confluence } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
-import { TESTED_ACCURACY } from '../lib/predict.js';
+import { TESTED_ACCURACY, summarizeForecast } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
@@ -14,6 +14,7 @@ import { watchlist, settings, load, save } from '../store.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
+import { tradeSummary } from '../lib/summary.js';
 import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
 import { fx } from '../api/fx.js';
 
@@ -420,6 +421,7 @@ export async function render(el, [symParam]) {
       </div>
       <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
       ${conf ? `<p class="fine" style="margin-top:8px">All timeframes combined: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score})</p>` : ''}
+      ${summaryHtml(sig)}
       ${plan ? `
         <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
         <div class="plan">
@@ -433,6 +435,30 @@ export async function render(el, [symParam]) {
       <details class="mt"><summary class="fine" style="cursor:pointer">Why this signal (${sig.reasons.bullish.length} bullish · ${sig.reasons.bearish.length} bearish)</summary>
         <ul class="reasons mt">${sig.reasons.bullish.map((r) => `<li class="b">${esc(r)}</li>`).join('')}${sig.reasons.bearish.map((r) => `<li class="s">${esc(r)}</li>`).join('')}</ul>
       </details>`;
+  }
+
+  // The plain-English version of the numbers below it: what to buy, when to buy,
+  // when to sell, where you are wrong, and how much to risk.
+  function summaryHtml(sig) {
+    const sum = tradeSummary({
+      signal: { ...sig, coinSymbol: coin.symbol },
+      forecast: st.forecast ? summarizeForecast(st.forecast) : null,
+      timing: st.timing || null,
+      interval: st.interval,
+      horizonText: st.forecast ? horizonText(st.interval, st.forecast.horizon) : null,
+      fmt: (v) => money(v, { dp: st.dp }),
+    });
+    if (!sum.steps.length && sum.verdict === 'NO READING') return '';
+    return `
+      <div class="summary mt">
+        <div class="row spread">
+          <span class="chip ${sum.tone === 'warn' ? 'warn' : sum.tone}"><b>${esc(sum.verdict)}</b></span>
+          <span class="fine">${esc(sum.confidence)} confidence</span>
+        </div>
+        <p class="mt" style="margin-bottom:10px">${esc(sum.headline)}</p>
+        <dl class="steps">${sum.steps.map((x) => `<dt>${esc(x.label)}</dt><dd>${esc(x.text)}</dd>`).join('')}</dl>
+        ${sum.caveats.map((c) => `<p class="fine" style="margin:6px 0 0">${esc(c)}</p>`).join('')}
+      </div>`;
   }
 
   // ------------------------------------------------------------ AI forecast
@@ -456,6 +482,8 @@ export async function render(el, [symParam]) {
       });
     }
     remember(coin.symbol, iv, { forecast: fc, timing: st.timing });
+    // the summary reads the forecast, so redraw the signal card now it exists
+    if (st.signal?.ok && !st.disposed && iv === st.interval) updateSignal();
     if (!fc.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(fc.reason)}</p>`; return; }
     chart.setProjection(fc.path);
     drawForecastCard(fc);
