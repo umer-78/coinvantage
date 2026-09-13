@@ -157,7 +157,7 @@ export async function render(el) {
         const { users } = await call('users', { q });
         $('#ulist', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">E-mail</th><th class="l">Name</th><th>Joined</th><th>Premium until</th><th>Telegram</th><th>Admin</th><th></th></tr></thead><tbody>
           ${users.map((u) => `<tr>
-            <td class="l">${esc(u.email)}${u.email_verified ? ' <span class="chip up" style="font-size:10px">✓</span>' : ''}</td>
+            <td class="l">${esc(u.email)}${u.email_verified ? ' <span class="chip up" style="font-size:11px">✓</span>' : ''}</td>
             <td class="l">${esc(u.display_name || '')}</td>
             <td class="fine">${dateTime(new Date(u.created_at).getTime(), false)}</td>
             <td>${u.premium_until ? dateTime(new Date(u.premium_until).getTime(), false) : '—'}</td>

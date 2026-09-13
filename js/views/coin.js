@@ -57,7 +57,7 @@ export async function render(el, [symParam]) {
     <div class="grid g4" style="margin-bottom:14px">
       <div class="card stat"><span class="k">Market cap</span><span class="v">${compact(coin.marketCap)}</span></div>
       <div class="card stat"><span class="k">Volume 24h</span><span class="v">${compact(coin.volume24h)}</span></div>
-      <div class="card stat"><span class="k">24h range</span><span class="v" id="range24" style="font-size:15px">${coin.low24h ? `${usd(coin.low24h)} – ${usd(coin.high24h)}` : '—'}</span></div>
+      <div class="card stat"><span class="k">24h range</span><span class="v" id="range24" style="font-size:16px">${coin.low24h ? `${usd(coin.low24h)} – ${usd(coin.high24h)}` : '—'}</span></div>
       <div class="card stat"><span class="k">All-time high</span><span class="v">${usd(coin.ath)}</span><span class="s muted">${coin.ath ? `${pct((coin.price / coin.ath - 1) * 100, 1)} from ATH` : ''}</span></div>
     </div>
     <div class="coin-layout">
@@ -918,7 +918,7 @@ export async function render(el, [symParam]) {
         </div>
         <div class="grid g3" style="flex:2;min-width:260px">
           <div class="stat"><span class="k">Median move after</span><span class="v ${s.median >= 0 ? 'up' : 'down'}">${pct(s.median)}</span></div>
-          <div class="stat"><span class="k">Best / worst case</span><span class="v" style="font-size:15px"><span class="${s.best >= 0 ? 'up' : 'down'}">${pct(s.best, 1)}</span> / <span class="${s.worst >= 0 ? 'up' : 'down'}">${pct(s.worst, 1)}</span></span></div>
+          <div class="stat"><span class="k">Best / worst case</span><span class="v" style="font-size:16px"><span class="${s.best >= 0 ? 'up' : 'down'}">${pct(s.best, 1)}</span> / <span class="${s.worst >= 0 ? 'up' : 'down'}">${pct(s.worst, 1)}</span></span></div>
           <div class="stat"><span class="k">Method accuracy here</span><span class="v ${reliable && v.accuracy >= 0.55 ? 'up' : reliable && v.accuracy < 0.5 ? 'down' : ''}">${reliable ? `${(v.accuracy * 100).toFixed(0)}%` : '—'}</span><span class="s fine">${h.validation?.tests || 0} past tests</span></div>
         </div>
       </div>

@@ -7,7 +7,7 @@ import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
 import { settings } from '../store.js';
 
-export const title = 'AI Assistant';
+export const title = 'Assistant';
 const history = []; // survives navigation within the session
 
 export async function render(el, [symParam]) {
@@ -17,7 +17,7 @@ export async function render(el, [symParam]) {
   const s = settings.get();
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>AI Assistant</h1><p>Ask about any coin — answers use live prices, signals, backtests and the AI forecast. Runs on your device; no account or API key.</p></div></div>
+    <div class="page-head"><div><h1>Assistant</h1><p>Ask about any coin — answers use live prices, signals, backtests and the AI forecast. Runs on your device; no account or API key.</p></div></div>
     <div class="chat">
       <div class="card chat-box">
         <div class="chat-log" id="log" aria-live="polite"></div>
