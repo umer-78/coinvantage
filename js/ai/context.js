@@ -193,6 +193,43 @@ export function marketContextMulti(byInterval) {
   };
 }
 
+/** Read two to four coins on the same timeframe so they can be ranked fairly. */
+export async function compareCoins(symbols, { interval = '4h', onStep } = {}) {
+  const list = await markets().catch(() => []);
+  const rows = [];
+  for (const sym of symbols.slice(0, 4)) {
+    onStep?.(`Reading ${sym}…`);
+    try {
+      const coin = await findCoin(sym);
+      if (!coin) continue;
+      const { candles } = await getCandles(coin, interval, 600);
+      const signal = generateSignal(candles, { interval });
+      let forecast = null, timing = null;
+      try {
+        forecast = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, fast: true, intervalMs: INTERVAL_MS[interval] });
+        timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
+      } catch { /* the chart signal alone still ranks */ }
+      const advice = adviseCoin({ signal, forecast, timing });
+      const live = list.find((c) => c.symbol === coin.symbol);
+      const f = forecast?.ok ? summarizeForecast(forecast) : null;
+      rows.push({
+        coin: coin.symbol, name: coin.name,
+        verdict: advice.verdict, conviction: advice.conviction,
+        signalText: signal.ok ? signal.text : null,
+        score: signal.ok ? signal.score : null,
+        probUpPct: f ? f.probUpPct : null,
+        accuracyPct: f ? f.validatedAccuracyPct : null,
+        change24h: live?.change24h ?? coin.change24h ?? null,
+        buyBetween: advice.plan ? advice.plan.entryZone : null,
+        stopLoss: advice.plan ? advice.plan.stopLoss : null,
+        sellTargets: advice.plan ? advice.plan.takeProfits : null,
+        topReason: advice.reasons?.[0]?.text || null,
+      });
+    } catch { /* skip a coin we cannot read rather than failing the whole answer */ }
+  }
+  return rows;
+}
+
 export async function portfolioSummary() {
   const holdings = load('holdings', []);
   if (!holdings.length) return [];

@@ -1,7 +1,8 @@
 // The automatic AI trader, running on simulated money.
-import { markets, getCandles, isStable } from '../api/market.js';
+import { markets, getCandles, isStable, findCoin } from '../api/market.js';
 import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PAPER_NOTICE, REAL_NOTICE } from '../lib/autotrader.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
+import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js';
 import { esc, pct, money, compact, dateTime, ago, amount } from '../format.js';
@@ -96,6 +97,10 @@ export async function render(el) {
         </label>
         <span class="fine">Binance → Orders → Trade History → Export. The file is read in your browser; nothing is uploaded.</span>
       </div>
+      ${has ? `<div class="row mt" style="gap:8px;flex-wrap:wrap">
+        <button class="btn sm ghost" data-export="real-csv">Download trades (CSV)</button>
+        <button class="btn sm ghost" data-report="real">Printable report</button>
+      </div>` : ''}
       <p class="fine" id="csvMsg" hidden></p>
 
       <form id="rf" class="row mt" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
@@ -129,7 +134,84 @@ export async function render(el) {
         ${closed.map((t) => `<tr><td class="l"><b>${esc(t.symbol)}</b>${t.side === 'short' ? ' <small class="muted">short</small>' : ''}</td><td class="l fine">${dateTime(t.exitAt, false)}</td><td>${money(t.entry)}</td><td>${money(t.exit)}</td>
           <td class="${t.pnl >= 0 ? 'up' : 'down'}"><b>${t.pnl >= 0 ? '+' : '−'}${money(Math.abs(t.pnl))}</b> <small>${pct(t.pnlPct)}</small></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="fine mt">No real trades recorded yet.</p>'}
+      ${has && rs.equityCurve.length > 2 ? `<div class="mt"><div class="card-h" style="margin-bottom:6px"><h3 style="font-size:14px">Your money over time</h3><span class="fine">against simply holding Bitcoin</span></div><div id="realChart"></div><p class="fine" id="realChartNote"></p></div>` : ''}
     </div>`;
+  }
+
+  // The chart that answers "was any of this worth it?": the real account's
+  // balance against the same money left in Bitcoin over the same period. A
+  // trading record without that comparison flatters itself — a 20% gain in a
+  // year Bitcoin doubled is a loss in every sense that matters.
+  async function drawRealChart() {
+    const host = $('#realChart', el);
+    if (!host) return;
+    const rs = realState();
+    if (!rs || rs.equityCurve.length < 3) return;
+    const curve = rs.equityCurve;
+    const from = curve[0].t, to = curve[curve.length - 1].t;
+    const note = $('#realChartNote', el);
+
+    let holdSeries = null;
+    try {
+      const btc = await findCoin('BTC');
+      const span = to - from;
+      const iv = span > 120 * 864e5 ? '1d' : span > 10 * 864e5 ? '4h' : '1h';
+      const { candles } = await getCandles(btc, iv, 1000);
+      const inRange = candles.filter((c) => c.t >= from - 864e5 && c.t <= to + 864e5);
+      if (inRange.length > 2) {
+        const base = inRange[0].c;
+        holdSeries = inRange.map((c) => ({ x: c.t, y: (c.c / base) * rs.startingBalance }));
+      }
+    } catch { /* the comparison is a bonus, not a requirement */ }
+
+    if (st.disposed) return;
+    const lc = new LineChart(host, { height: 240, yFormat: (v) => money(v), legend: true });
+    st.charts.push(lc);
+    const series = [{ name: 'Your account', color: 'var(--accent)', width: 2.4, data: curve.map((p) => ({ x: p.t, y: p.equity })) }];
+    if (holdSeries) series.push({ name: 'Holding BTC', color: 'var(--text-muted)', width: 1.6, dash: true, data: holdSeries });
+    lc.set(series);
+
+    if (note && holdSeries) {
+      const mine = ((curve[curve.length - 1].equity / rs.startingBalance) - 1) * 100;
+      const hold = ((holdSeries[holdSeries.length - 1].y / rs.startingBalance) - 1) * 100;
+      const diff = mine - hold;
+      note.textContent = diff >= 0
+        ? `You are ${pct(diff, 1)} ahead of simply holding Bitcoin over this period.`
+        : `Holding Bitcoin would have done ${pct(Math.abs(diff), 1, false)} better over this period. Worth knowing before trading more.`;
+      note.className = `fine ${diff >= 0 ? 'up' : 'down'}`;
+    }
+  }
+
+  // Downloads happen entirely in the browser — the data never left it, and the
+  // export should not be the moment it starts to.
+  function wireExports() {
+    const stamp = new Date().toISOString().slice(0, 10);
+    $$('[data-export]', el).forEach((b) => b.addEventListener('click', () => {
+      const which = b.dataset.export;
+      const src = which === 'ai-csv' ? state : realState();
+      if (!src?.closed?.length) { toast('No closed trades to export yet.', 'info'); return; }
+      downloadText(`coinvantage-${which === 'ai-csv' ? 'ai-trader' : 'my-trades'}-${stamp}.csv`, tradesCsv(src.closed));
+      toast(`${src.closed.length} trades exported.`, 'up');
+    }));
+    $$('[data-report]', el).forEach((b) => b.addEventListener('click', () => {
+      const isAi = b.dataset.report === 'ai';
+      const src = isAi ? state : realState();
+      if (!src) { toast('Nothing to report on yet.', 'info'); return; }
+      const s2 = stats(src, st.prices);
+      const notes = isAi
+        ? ['<b>Simulated money.</b> These trades were never placed on an exchange. Fees are modelled, slippage is not.']
+        : ['<b>Recorded by hand or imported.</b> These are trades placed on an exchange; this app did not place them.'];
+      const html = reportHtml({
+        title: isAi ? 'AI trader — performance report' : 'Trading performance report',
+        accountName: isAi ? 'Simulated account' : 'Real account',
+        stats: s2, closed: [...src.closed].reverse(),
+        fmtMoney: (v) => money(v), notes,
+      });
+      const w = window.open('', '_blank');
+      if (!w) { downloadText(`coinvantage-report-${stamp}.html`, html, 'text/html;charset=utf-8'); toast('Report downloaded.', 'up'); return; }
+      w.document.write(html);
+      w.document.close();
+    }));
   }
 
   function wireReal() {
@@ -267,7 +349,7 @@ export async function render(el) {
   }
 
   function draw() {
-    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${startCard()}</div>`; wireMyDemo(); wireReal(); return; }
+    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${startCard()}</div>`; wireMyDemo(); wireReal(); wireExports(); drawRealChart(); return; }
     const s = stats(state, st.prices);
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
@@ -305,7 +387,7 @@ export async function render(el) {
       ${state.equityCurve.length > 2 ? `<div class="card mt"><div class="card-h"><h3>Balance over time</h3><span class="fine">simulated</span></div><div id="eqChart"></div></div>` : ''}
 
       <div class="card mt">
-        <div class="card-h"><h3>Trade log</h3><span class="fine">${s.trades} closed · ${money(s.feesPaid)} paid in fees</span></div>
+        <div class="card-h"><h3>Trade log</h3><div class="row" style="gap:8px"><span class="fine">${s.trades} closed · ${money(s.feesPaid)} paid in fees</span><button class="btn sm ghost" data-export="ai-csv">CSV</button><button class="btn sm ghost" data-report="ai">Report</button></div></div>
         ${closed.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Opened</th><th class="l">Closed</th><th>Entry</th><th>Exit</th><th>Result</th><th class="l">Why it closed</th></tr></thead><tbody>
           ${closed.slice(0, 60).map((t) => `<tr data-sym="${esc(t.symbol)}">
             <td class="l"><b>${esc(t.symbol)}</b></td>
@@ -325,6 +407,8 @@ export async function render(el) {
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
     wireMyDemo();
     wireReal();
+    wireExports();
+    drawRealChart();
 
     st.charts.forEach((c) => c.destroy());
     st.charts = [];

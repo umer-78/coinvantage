@@ -265,6 +265,66 @@ test('junk listings are kept out of the coin list', async () => {
   }
 });
 
+test('CSV export escapes properly and the report keeps its caveats', async () => {
+  const { toCsv, tradesCsv, reportHtml } = await import('../js/lib/export.js');
+
+  // the classic CSV break: commas and quotes inside a field
+  assert.equal(toCsv([{ a: 'he said "hi"', b: 'x,y' }]), 'a,b\n"he said ""hi""","x,y"');
+  assert.equal(toCsv([{ a: 'line\nbreak' }]), 'a\n"line\nbreak"');
+  assert.equal(toCsv([{ a: null, b: undefined }]), 'a,b\n,');
+  assert.equal(toCsv([]), '');
+
+  const trades = [{ symbol: 'BTC', side: 'long', openedAt: 1700000000000, exitAt: 1700086400000, qty: 0.5, entry: 40000, exit: 50000, feePaid: 4, pnl: 4996, pnlPct: 25, reason: 'target' }];
+  const csv = tradesCsv(trades);
+  assert.match(csv.split('\n')[0], /^Coin,Side,Opened,Closed/);
+  assert.match(csv, /BTC,long,2023-11-14/);
+
+  // a small sample must be labelled as one — a win rate off 3 trades means nothing
+  const small = reportHtml({ title: 'T', accountName: 'A', stats: { startingBalance: 1000, equity: 1200, returnPct: 20, trades: 3, winRate: 100, wins: 3, losses: 0, profitFactor: 9, maxDrawdownPct: 1, feesPaid: 2 }, closed: trades });
+  assert.match(small, /Small sample/i);
+  assert.match(small, /3 closed trade/);
+  // and every report carries the not-advice line
+  assert.match(small, /not financial advice/i);
+  assert.match(small, /never places trades/i);
+
+  const big = reportHtml({ title: 'T', accountName: 'A', stats: { startingBalance: 1000, equity: 1200, returnPct: 20, trades: 120, winRate: 55, wins: 66, losses: 54, profitFactor: 1.3, maxDrawdownPct: 9, feesPaid: 40 }, closed: [] });
+  assert.ok(!/Small sample/i.test(big), 'a real sample is not labelled small');
+});
+
+test('coin comparison ranks fairly and refuses to invent a winner', async () => {
+  const { detectCompare, ruleBasedAnswer } = await import('../js/lib/analyst.js');
+
+  assert.deepEqual(detectCompare('compare BTC and ETH'), ['BTC', 'ETH']);
+  assert.deepEqual(detectCompare('BTC vs SOL'), ['BTC', 'SOL']);
+  assert.equal(detectCompare('should i buy btc'), null, 'one coin is not a comparison');
+  assert.equal(detectCompare('what should i buy'), null);
+
+  const row = (coin, conviction, extra = {}) => ({
+    coin, name: coin, verdict: conviction >= 25 ? 'BUY' : 'WAIT', conviction,
+    signalText: 'Buy', score: 30, probUpPct: 58, accuracyPct: 57, change24h: 1.2,
+    buyBetween: [100, 101], stopLoss: 97, sellTargets: [106, 110], topReason: 'Trend is up', ...extra,
+  });
+
+  // a clear winner is named
+  const clear = ruleBasedAnswer('compare BTC and ETH', { compare: [row('BTC', 72), row('ETH', 40)], compareInterval: '4h' });
+  assert.match(clear, /BTC is the stronger/);
+  assert.match(clear, /ETH/, 'the loser still appears in the table');
+
+  // a near-tie is called a tie rather than ranked on noise
+  const tie = ruleBasedAnswer('compare BTC and ETH', { compare: [row('BTC', 52), row('ETH', 48)], compareInterval: '4h' });
+  assert.match(tie, /Too close to call/i);
+
+  // nothing worth buying is said outright
+  const none = ruleBasedAnswer('compare BTC and ETH', { compare: [row('BTC', 12), row('ETH', 8)], compareInterval: '4h' });
+  assert.match(none, /None of them is a buy/i);
+
+  // a forecast with no measured edge is flagged, not quietly used
+  const weak = ruleBasedAnswer('compare BTC and ETH', {
+    compare: [row('BTC', 70, { accuracyPct: 48 }), row('ETH', 40)], compareInterval: '4h',
+  });
+  assert.match(weak, /no measured edge on BTC/);
+});
+
 test('Binance trade-history import: parsing and FIFO matching', async () => {
   const { parseTradeCsv, matchFills, splitPair, parseAmount, splitCsvLine } = await import('../js/lib/importer.js');
 

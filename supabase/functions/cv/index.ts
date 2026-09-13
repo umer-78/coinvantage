@@ -2,6 +2,7 @@
 //   /cv/account        public + signed-in user actions
 //   /cv/admin          admin panel actions
 //   /cv/alerts-check   cron (every minute)
+//   /cv/watchlist-digest  cron (daily watchlist summary)
 //   /cv/track-signals  cron (track record)
 //   /cv/news-fetch     cron (RSS news)
 //   /cv/telegram       Telegram bot webhook
@@ -10,7 +11,7 @@
 import { handle, json, HttpError } from './lib.ts';
 import { account } from './account.ts';
 import { adminApi } from './admin.ts';
-import { alertsCheck } from './alerts.ts';
+import { alertsCheck, watchlistDigest } from './alerts.ts';
 import { trackSignals } from './track.ts';
 import { newsFetch } from './news.ts';
 import { telegramBot } from './telegram.ts';
@@ -19,7 +20,7 @@ import { generateSignal } from './engine/signals.js';
 import { forecast } from './engine/predict.js';
 
 const routes: Record<string, (req: Request) => Promise<Response>> = {
-  account, admin: adminApi, 'alerts-check': alertsCheck, 'track-signals': trackSignals,
+  account, admin: adminApi, 'alerts-check': alertsCheck, 'watchlist-digest': watchlistDigest, 'track-signals': trackSignals,
   'news-fetch': newsFetch, telegram: telegramBot, stripe: stripeWebhook,
   selftest: async () => {
     const candles = Array.from({ length: 400 }, (_, i) => {
