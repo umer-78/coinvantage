@@ -1,8 +1,8 @@
 import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
 import { live } from '../api/live.js';
-import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti } from '../ai/context.js';
-import { ruleBasedAnswer, isMarketWide } from '../lib/analyst.js';
+import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti, compareCoins } from '../ai/context.js';
+import { ruleBasedAnswer, isMarketWide, detectCompare } from '../lib/analyst.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
@@ -79,6 +79,7 @@ export async function render(el, [symParam]) {
     $('#suggest', el).innerHTML = [
       'Which coin should I buy right now?', 'Best buys for each timeframe, and when do I sell?',
       'What should I hold for weeks, and what is only a quick trade?',
+      'Compare BTC, ETH and SOL',
       `Will ${sym} go up or down next?`, `When should I take profit on ${sym}?`,
       `I have $1,000 — how much ${sym} should I buy?`, 'Review my portfolio',
     ].map((q) => `<button class="btn sm" type="button">${esc(q)}</button>`).join('');
@@ -171,8 +172,12 @@ Every answer is built from live prices, signals across four timeframes, a backte
       history.lastSymbol = st.symbol;
       const portfolio = await portfolioSummary();
 
-      let analysis = null, market = null, marketFrames = null;
-      if (wantsMarket) {
+      let analysis = null, market = null, marketFrames = null, compare = null;
+      const wantsCompare = detectCompare(question);
+      if (wantsCompare) {
+        step(`Comparing ${wantsCompare.join(', ')}…`);
+        compare = await compareCoins(wantsCompare, { interval: st.interval, onStep: step });
+      } else if (wantsMarket) {
         step('Scanning every coin on 3 timeframes…');
         const byInterval = await scanMarketMulti({ count: 20, onStep: step });
         marketFrames = marketContextMulti(byInterval);
@@ -180,7 +185,9 @@ Every answer is built from live prices, signals across four timeframes, a backte
       } else if (!wantsPortfolio || detected) {
         analysis = await analyzeCoin(st.symbol, { interval: st.interval, onStep: step });
       }
-      const ctx = analysis ? { ...analystContext(analysis, portfolio), market, marketFrames } : { portfolio, market, marketFrames };
+      const ctx = analysis
+        ? { ...analystContext(analysis, portfolio), market, marketFrames, compare, compareInterval: st.interval }
+        : { portfolio, market, marketFrames, compare, compareInterval: st.interval, interval: st.interval };
       const facts = ruleBasedAnswer(question, ctx);
       const meta = (src) => `<span>${esc(src)}</span>${marketFrames ? `<span>· scanned ${marketFrames.scanned} coins on ${esc(marketFrames.intervals.join(', '))}</span>` : market ? `<span>· scanned ${market.scanned} coins on ${esc(market.interval)}</span>` : ''}${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
       let finalText = facts, source = 'Rule-based analyst (instant)';
@@ -189,6 +196,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
         const ac = new AbortController(); st.abort = ac;
         try {
           const data = analysis ? llmData(analysis) : {};
+          if (compare) data.comparison = compare;
           if (marketFrames) data.marketByTimeframe = marketFrames;
           else if (market) data.marketPicks = market;
           if (portfolio.length) data.portfolio = portfolio.map((p) => ({ coin: p.symbol, valueUsd: Math.round(p.value), pnlPct: p.pnlPct !== null ? +p.pnlPct.toFixed(1) : null }));

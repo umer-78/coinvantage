@@ -132,3 +132,84 @@ async function checkSignalAlerts(alerts: Record<string, unknown>[]) {
   }
   return { signalsChecked: alerts.length, signalsFired: fired };
 }
+
+/**
+ * The daily watchlist digest.
+ *
+ * One message a day instead of a stream of alerts: what moved, what the engine
+ * says now, and which setups are worth a look. Runs on the server so it arrives
+ * whether or not anyone has the site open. Sent only to people who asked for it
+ * and who have a channel linked.
+ */
+export async function watchlistDigest(req: Request): Promise<Response> {
+  await requireCron(req);
+
+  const { data: rows, error } = await admin
+    .from('user_data')
+    .select('user_id,watchlist,settings')
+    .not('watchlist', 'is', null)
+    .limit(2000);
+  if (error) throw error;
+  if (!rows?.length) return json({ users: 0, sent: 0 });
+
+  const site = await setting<{ url?: string }>('site');
+  // one read per coin, shared across every subscriber
+  const cache = new Map<string, { price: number; changePct: number; text: string; score: number } | null>();
+
+  const read = async (symbol: string) => {
+    if (cache.has(symbol)) return cache.get(symbol);
+    try {
+      let candles = await klines(symbol, '4h', 400);
+      if (candles.length && candles[candles.length - 1].t + 144e5 > Date.now()) candles = candles.slice(0, -1);
+      const sig = generateSignal(candles, { interval: '4h' });
+      const last = candles[candles.length - 1];
+      const dayAgo = candles[Math.max(0, candles.length - 7)];
+      const out = sig.ok
+        ? { price: sig.price, changePct: ((last.c / dayAgo.c) - 1) * 100, text: sig.text, score: sig.score }
+        : null;
+      cache.set(symbol, out);
+      return out;
+    } catch { cache.set(symbol, null); return null; }
+  };
+
+  let sent = 0, considered = 0;
+  for (const r of rows) {
+    const wl: string[] = Array.isArray(r.watchlist) ? r.watchlist.slice(0, 12) : [];
+    if (!wl.length) continue;
+    const prefs = (r.settings || {}) as Record<string, unknown>;
+    if (prefs.digest === false) continue;
+    considered++;
+
+    const { data: p } = await admin.from('profiles').select('telegram_chat_id,email,email_verified,email_alerts').eq('id', r.user_id).single();
+    const hasChannel = p?.telegram_chat_id || (p?.email && p.email_verified && p.email_alerts);
+    if (!hasChannel) continue;
+
+    const reads: string[] = [];
+    const movers: { sym: string; chg: number }[] = [];
+    for (const sym of wl) {
+      const d = await read(String(sym).toUpperCase());
+      if (!d) continue;
+      movers.push({ sym: String(sym).toUpperCase(), chg: d.changePct });
+      reads.push(`${d.score > 0 ? '🟢' : d.score < 0 ? '🔴' : '⚪️'} <b>${escHtml(String(sym).toUpperCase())}</b> $${fmtPrice(d.price)} (${d.changePct >= 0 ? '+' : ''}${d.changePct.toFixed(1)}% 24h) — ${escHtml(d.text)}`);
+    }
+    if (!reads.length) continue;
+
+    movers.sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg));
+    const top = movers[0];
+    const head = `📋 <b>Your watchlist today</b>\nBiggest move: <b>${escHtml(top.sym)}</b> ${top.chg >= 0 ? '+' : ''}${top.chg.toFixed(1)}%`;
+    const link = site?.url ? `\n\n<a href="${escHtml(site.url)}#/advice">See what to buy →</a>` : '';
+    const text = `${head}\n\n${reads.join('\n')}${link}\n\n<i>Readings from the 4h chart. Not financial advice.</i>`;
+
+    if (p?.telegram_chat_id) await sendTelegram(p.telegram_chat_id, text);
+    if (p?.email && p.email_verified && p.email_alerts) {
+      await sendEmail(p.email, `Your watchlist: ${top.sym} ${top.chg >= 0 ? '+' : ''}${top.chg.toFixed(1)}%`,
+        `<div style="font-family:system-ui,sans-serif"><h2>📋 Your watchlist today</h2>
+         <ul>${reads.map((l) => `<li>${l}</li>`).join('')}</ul>
+         ${site?.url ? `<p><a href="${escHtml(site.url)}#/advice">See what to buy</a></p>` : ''}
+         <p style="color:#888">Readings from the 4h chart. Not financial advice.</p></div>`);
+    }
+    sent++;
+  }
+  return json({ users: considered, sent });
+}
+
