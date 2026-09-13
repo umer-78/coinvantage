@@ -2,6 +2,7 @@
 // EMA / Bollinger overlays, volume, RSI & MACD panes, levels, markers, and an
 // optional AI forecast cone drawn to the right of the last candle.
 import { computeAll } from '../lib/indicators.js';
+import { FIB_LEVELS, distToSegment } from '../lib/geometry.js';
 // money() converts to the visitor's display currency; the chart's own scale stays in USD.
 import { money as fmtPrice, compact } from '../format.js';
 
@@ -10,12 +11,18 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 export class CandleChart {
   constructor(el, opts = {}) {
     this.el = el;
-    this.opts = { ema20: true, ema50: true, ema200: true, bb: false, volume: true, rsi: true, macd: false, levels: true, markers: true, projection: true, ...opts };
+    this.opts = { ema20: true, ema50: true, ema200: true, bb: false, vwap: false, ichimoku: false, volume: true, rsi: true, macd: false, levels: true, markers: true, projection: true, ...opts };
     this.candles = [];
     this.ind = null;
     this.levels = [];
     this.markers = [];
     this.projection = null;
+    // Drawings are stored in TIME and PRICE, never pixels, so a trend line drawn
+    // at one zoom level still touches the same two candles at another.
+    this.drawings = [];
+    this.tool = null;          // null = pan/zoom as usual
+    this.pending = null;       // first point of a shape being drawn
+    this.onDrawingsChange = null;
     this.barW = 8;
     this.offset = 0; // bars scrolled back from the latest
     this.hover = null;
@@ -62,6 +69,58 @@ export class CandleChart {
     this.draw();
   }
   setLevels(levels) { this.levels = levels || []; this.draw(); }
+
+  /** Replace every drawing on the chart. Shapes are {type, pts:[{t,p}], color?}. */
+  setDrawings(list) { this.drawings = Array.isArray(list) ? list : []; this.pending = null; this.draw(); }
+
+  /** 'trend' | 'hline' | 'fib' | 'erase' | null (null restores pan/zoom). */
+  setTool(tool) {
+    this.tool = tool || null;
+    this.pending = null;
+    this.canvas.style.cursor = this.tool ? (this.tool === 'erase' ? 'not-allowed' : 'crosshair') : '';
+    this.draw();
+  }
+
+  clearDrawings() { this.drawings = []; this.pending = null; this.emitDrawings(); this.draw(); }
+
+  emitDrawings() { this.onDrawingsChange?.(this.drawings); }
+
+  /** pixel x → fractional candle index, the inverse of xOf(). */
+  iOf(px) {
+    const rightIndex = this.candles.length - 1 - this.offset;
+    return rightIndex - (this.plotW - px - this.barW / 2 - 6) / this.barW;
+  }
+
+  /** pixel → a {t, p} anchor, interpolating time past the last candle. */
+  anchorAt(px, py) {
+    const n = this.candles.length;
+    if (!n || !this.yInv) return null;
+    const i = this.iOf(px);
+    const step = n > 1 ? this.candles[n - 1].t - this.candles[n - 2].t : 36e5;
+    const clamped = Math.max(0, Math.min(n - 1, i));
+    const base = this.candles[Math.round(clamped)].t;
+    const t = i > n - 1 ? this.candles[n - 1].t + (i - (n - 1)) * step
+      : i < 0 ? this.candles[0].t + i * step
+        : base;
+    return { t, p: this.yInv(py) };
+  }
+
+  /** {t,p} → pixels, for drawing. */
+  pointPx(pt, y) {
+    const n = this.candles.length;
+    if (!n) return null;
+    const step = n > 1 ? this.candles[n - 1].t - this.candles[n - 2].t : 36e5;
+    // nearest candle by time, extrapolating either side
+    let i;
+    if (pt.t <= this.candles[0].t) i = (pt.t - this.candles[0].t) / step;
+    else if (pt.t >= this.candles[n - 1].t) i = n - 1 + (pt.t - this.candles[n - 1].t) / step;
+    else {
+      i = 0;
+      let best = Infinity;
+      for (let k = 0; k < n; k++) { const d = Math.abs(this.candles[k].t - pt.t); if (d < best) { best = d; i = k; } }
+    }
+    return { x: this.xOf(i), y: y(pt.p) };
+  }
   setMarkers(markers) { this.markers = markers || []; this.draw(); }
   setProjection(p) {
     this.projection = p;
@@ -102,11 +161,18 @@ export class CandleChart {
       this.zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.offsetX);
     }, { passive: false });
     c.addEventListener('pointerdown', (e) => {
+      // With a tool selected the gesture draws instead of panning.
+      if (this.tool) { this.toolDown(e); return; }
       c.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY, startX: e.offsetX, moved: false });
       if (this.pointers.size === 2) this.pinchDist = this.pointerDistance();
     });
     c.addEventListener('pointermove', (e) => {
+      if (this.tool) {
+        this.hover = { x: e.offsetX, y: e.offsetY };
+        this.schedule();
+        return;
+      }
       const p = this.pointers.get(e.pointerId);
       if (p) {
         if (this.pointers.size === 2) {
@@ -134,6 +200,139 @@ export class CandleChart {
     c.addEventListener('pointercancel', end);
     c.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { this.hover = null; this.schedule(); } });
     c.addEventListener('dblclick', () => { this.offset = this.projection && this.opts.projection ? -(this.projection.length + 3) : 0; this.fitDefault(); this.draw(); });
+  }
+
+  // --- drawing tools ---------------------------------------------------
+  //
+  // One tap places a horizontal line; two taps define a trend line or a
+  // Fibonacci retracement. Keeping it to taps (rather than click-and-drag)
+  // means the same code works with a finger on a phone.
+  toolDown(e) {
+    const a = this.anchorAt(e.offsetX, e.offsetY);
+    if (!a) return;
+
+    if (this.tool === 'erase') {
+      const hit = this.hitTest(e.offsetX, e.offsetY);
+      if (hit >= 0) { this.drawings.splice(hit, 1); this.emitDrawings(); }
+      this.draw();
+      return;
+    }
+
+    if (this.tool === 'hline') {
+      this.drawings.push({ type: 'hline', pts: [a] });
+      this.emitDrawings();
+      this.draw();
+      return;
+    }
+
+    if (!this.pending) { this.pending = a; this.draw(); return; }
+    this.drawings.push({ type: this.tool, pts: [this.pending, a] });
+    this.pending = null;
+    this.emitDrawings();
+    this.draw();
+  }
+
+  /** Index of the drawing under the pointer, or -1. */
+  hitTest(px, py) {
+    if (!this.lastGeom) return -1;
+    const { y } = this.lastGeom;
+    const near = 8;
+    for (let i = this.drawings.length - 1; i >= 0; i--) {
+      const d = this.drawings[i];
+      if (d.type === 'hline') {
+        if (Math.abs(y(d.pts[0].p) - py) <= near) return i;
+        continue;
+      }
+      const a = this.pointPx(d.pts[0], y), b = this.pointPx(d.pts[1], y);
+      if (!a || !b) continue;
+      if (d.type === 'fib') {
+        const lo = Math.min(a.y, b.y), hi = Math.max(a.y, b.y);
+        for (const r of FIB_LEVELS) {
+          const yy = hi - (hi - lo) * r;
+          if (Math.abs(yy - py) <= near && px >= Math.min(a.x, b.x) - 20 && px <= Math.max(a.x, b.x) + 400) return i;
+        }
+        continue;
+      }
+      if (distToSegment(px, py, a.x, a.y, b.x, b.y) <= near) return i;
+    }
+    return -1;
+  }
+
+  drawDrawings(y, col) {
+    const { ctx } = this;
+    const accent = col.accent;
+    ctx.save();
+    ctx.lineWidth = 1.6;
+
+    const drawOne = (d, ghost = false) => {
+      ctx.globalAlpha = ghost ? 0.55 : 1;
+      ctx.strokeStyle = d.color || accent;
+      if (d.type === 'hline') {
+        const yy = Math.round(y(d.pts[0].p)) + 0.5;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(this.plotW, yy); ctx.stroke();
+        label(this.plotW - 4, yy, fmtPrice(d.pts[0].p), 'right');
+        return;
+      }
+      const a = this.pointPx(d.pts[0], y), b = this.pointPx(d.pts[1], y);
+      if (!a || !b) return;
+      if (d.type === 'trend') {
+        ctx.setLineDash([]);
+        // extend the line to the right edge so it keeps projecting forward
+        const dx = b.x - a.x;
+        const slope = dx === 0 ? 0 : (b.y - a.y) / dx;
+        const endX = this.plotW;
+        const endY = b.y + slope * (endX - b.x);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.globalAlpha = (ghost ? 0.55 : 1) * 0.45;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(endX, endY); ctx.stroke();
+        ctx.setLineDash([]);
+        if (!ghost) { dot(a.x, a.y); dot(b.x, b.y); }
+        return;
+      }
+      if (d.type === 'fib') {
+        const top = Math.min(a.y, b.y), bottom = Math.max(a.y, b.y);
+        const hiP = Math.max(d.pts[0].p, d.pts[1].p), loP = Math.min(d.pts[0].p, d.pts[1].p);
+        const left = Math.min(a.x, b.x);
+        ctx.setLineDash([]);
+        for (const r of FIB_LEVELS) {
+          const yy = Math.round(bottom - (bottom - top) * r) + 0.5;
+          ctx.globalAlpha = (ghost ? 0.55 : 1) * (r === 0 || r === 1 ? 0.9 : 0.6);
+          ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(this.plotW, yy); ctx.stroke();
+          const price = loP + (hiP - loP) * r;
+          label(left + 4, yy, `${(r * 100).toFixed(1)}%  ${fmtPrice(price)}`, 'left');
+        }
+        ctx.globalAlpha = ghost ? 0.55 : 1;
+        if (!ghost) { dot(a.x, a.y); dot(b.x, b.y); }
+      }
+    };
+
+    const dot = (x, yy) => {
+      ctx.save();
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath(); ctx.arc(x, yy, 3.2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    };
+    const label = (x, yy, text, align) => {
+      ctx.save();
+      ctx.font = '10px system-ui';
+      ctx.textAlign = align;
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.globalAlpha = 0.95;
+      ctx.fillText(text, x, yy - 2);
+      ctx.restore();
+    };
+
+    for (const d of this.drawings) drawOne(d);
+
+    // the shape being placed, following the pointer
+    if (this.pending && this.hover && this.tool && this.tool !== 'hline' && this.tool !== 'erase') {
+      const live = this.anchorAt(this.hover.x, this.hover.y);
+      if (live) drawOne({ type: this.tool, pts: [this.pending, live] }, true);
+    }
+    ctx.restore();
   }
 
   pointerDistance() {
@@ -216,6 +415,8 @@ export class CandleChart {
     for (let i = first; i <= last; i++) { lo = Math.min(lo, candles[i].l); hi = Math.max(hi, candles[i].h); }
     const inc = (arr) => { for (let i = first; i <= last; i++) { const v = arr?.[i]; if (v !== null && v !== undefined) { lo = Math.min(lo, v); hi = Math.max(hi, v); } } };
     if (this.opts.bb) { inc(ind.bb.upper); inc(ind.bb.lower); }
+    if (this.opts.vwap) inc(ind.vwap);
+    if (this.opts.ichimoku) { inc(ind.ichimoku.senkouA); inc(ind.ichimoku.senkouB); inc(ind.ichimoku.tenkan); inc(ind.ichimoku.kijun); }
     const proj = this.opts.projection && this.projection?.length ? this.projection : null;
     if (proj && this.offset < proj.length + 2) for (const p of proj) { lo = Math.min(lo, p.p10); hi = Math.max(hi, p.p90); }
     const pad = (hi - lo) * 0.06 || hi * 0.01;
@@ -223,6 +424,7 @@ export class CandleChart {
     const y = (v) => priceTop + ((hi - v) / (hi - lo)) * (priceBottom - priceTop);
     this.yInv = (py) => hi - ((py - priceTop) / (priceBottom - priceTop)) * (hi - lo);
     this.scale = { lo, hi, first, last };
+    this.lastGeom = { y, priceTop, priceBottom };
 
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, this.plotW, this.h - L.timeH); ctx.clip();
@@ -277,6 +479,10 @@ export class CandleChart {
     }
 
     // EMAs
+    // Ichimoku goes under the moving averages: it is a background of trend,
+    // not a line to read a level off.
+    if (this.opts.ichimoku) this.drawCloud(ind.ichimoku, first, last, y, col);
+    if (this.opts.vwap) this.line(ind.vwap, first, last, y, css('--series-4') || '#e0507a', 1.8);
     if (this.opts.ema20) this.line(ind.ema20, first, last, y, col.ema20, 1.5);
     if (this.opts.ema50) this.line(ind.ema50, first, last, y, col.ema50, 1.5);
     if (this.opts.ema200) this.line(ind.ema200, first, last, y, col.ema200, 1.5);
@@ -312,6 +518,10 @@ export class CandleChart {
       }
     }
     ctx.restore();
+
+    // the reader's own trend lines, Fibonacci levels and horizontals — drawn
+    // above the market data, below the crosshair
+    this.drawDrawings(y, col);
 
     // levels (drawn across plot, label on axis)
     const tags = [];
@@ -369,6 +579,31 @@ export class CandleChart {
     }
 
     this.drawHover(L, col, y);
+  }
+
+  // The cloud is the point of Ichimoku: a shaded band between the two spans,
+  // pushed 26 bars into the future, green when the faster span is on top.
+  drawCloud(ich, first, last, y, col) {
+    const { ctx } = this;
+    const end = Math.min(ich.senkouA.length - 1, last + ich.displacement);
+    ctx.save();
+    for (let i = Math.max(first, 1); i <= end; i++) {
+      const a0 = ich.senkouA[i - 1], b0 = ich.senkouB[i - 1];
+      const a1 = ich.senkouA[i], b1 = ich.senkouB[i];
+      if (a0 === null || b0 === null || a1 === null || b1 === null) continue;
+      const x0 = this.xOf(i - 1), x1 = this.xOf(i);
+      if (x1 < -20 || x0 > this.plotW + 20) continue;
+      ctx.fillStyle = a1 >= b1 ? col.up : col.down;
+      ctx.globalAlpha = 0.13;
+      ctx.beginPath();
+      ctx.moveTo(x0, y(a0)); ctx.lineTo(x1, y(a1)); ctx.lineTo(x1, y(b1)); ctx.lineTo(x0, y(b0));
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    this.line(ich.senkouA, first, end, y, col.up, 1, 0.45);
+    this.line(ich.senkouB, first, end, y, col.down, 1, 0.45);
+    this.line(ich.tenkan, first, last, y, col.ema20, 1.2, 0.85);
+    this.line(ich.kijun, first, last, y, col.ema50, 1.2, 0.85);
   }
 
   line(arr, first, last, y, color, width = 1.5, alpha = 1, yMap = y) {

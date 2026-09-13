@@ -311,6 +311,54 @@ test('prices are shown at full precision, never silently rounded', async () => {
   assert.equal(price(2525.5), '2,525.50');
 });
 
+test('VWAP resets each day and Ichimoku projects its cloud forward', async () => {
+  const { vwap, ichimoku } = await import('../js/lib/indicators.js');
+  // two UTC days, second day priced far above the first
+  const day = 864e5;
+  const candles = [];
+  for (let i = 0; i < 24; i++) candles.push({ t: i * 36e5, o: 100, h: 100, l: 100, c: 100, v: 10 });
+  for (let i = 0; i < 24; i++) candles.push({ t: day + i * 36e5, o: 200, h: 200, l: 200, c: 200, v: 10 });
+  const v = vwap(candles);
+  assert.equal(v[23], 100, 'day one averages its own prices');
+  assert.equal(v[24], 200, 'day two starts fresh rather than dragging day one along');
+  assert.equal(v[47], 200);
+
+  const ich = ichimoku(candles);
+  assert.equal(ich.senkouA.length, candles.length + 26, 'the cloud is plotted 26 bars ahead');
+  assert.equal(ich.tenkan[0], null, 'no value before there is enough history');
+  assert.ok(ich.kijun.at(-1) !== null);
+  assert.equal(ich.chikou[0], candles[26].c, 'the lagging line is shifted back');
+});
+
+test('drawing-tool geometry', async () => {
+  const { distToSegment, fibPrices, trendYAt, FIB_LEVELS } = await import('../js/lib/geometry.js');
+
+  // hit-testing a trend line
+  assert.equal(distToSegment(5, 0, 0, 0, 10, 0), 0, 'a point on the segment');
+  assert.equal(distToSegment(5, 3, 0, 0, 10, 0), 3, 'straight above it');
+  // past the end it measures to the endpoint, not to the infinite line —
+  // otherwise erasing would delete a line the reader tapped nowhere near
+  assert.equal(distToSegment(20, 0, 0, 0, 10, 0), 10);
+  assert.equal(distToSegment(0, 0, 5, 5, 5, 5), Math.hypot(5, 5), 'a zero-length segment is just a point');
+
+  // Fibonacci levels read the same whichever way the reader drags
+  const up = fibPrices(100, 200);
+  const down = fibPrices(200, 100);
+  assert.deepEqual(up.map((f) => f.price), down.map((f) => f.price), 'direction must not change the levels');
+  assert.equal(up[0].price, 100);
+  assert.equal(up.at(-1).price, 200);
+  const half = up.find((f) => f.ratio === 0.5);
+  assert.equal(half.price, 150);
+  const golden = up.find((f) => f.ratio === 0.618);
+  assert.ok(Math.abs(golden.price - 161.8) < 1e-9);
+  assert.equal(FIB_LEVELS.length, 7);
+
+  // a trend line keeps projecting past its second point
+  assert.equal(trendYAt(20, 0, 0, 10, 10), 20, 'extends beyond the anchors');
+  assert.equal(trendYAt(5, 0, 0, 10, 10), 5);
+  assert.equal(trendYAt(5, 3, 0, 3, 9), null, 'a vertical line has no single value');
+});
+
 test('second-by-second candles bucket correctly', async () => {
   const { bucketCandles, INTERVAL_MS, isSecondInterval, MAX_BARS } = await import('../js/api/market.js');
   assert.equal(INTERVAL_MS['1s'], 1000);
