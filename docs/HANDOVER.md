@@ -56,18 +56,20 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
 
 Umer picked these four, plus the Binance import which is DONE and live.
 
-- [ ] **Portfolio performance chart** — the Real account's value over time against
-      simply holding Bitcoin. `js/views/trader.js` already has `state.equityCurve`
-      and a LineChart on the AI account; do the same for the real one and overlay
-      a buy-and-hold BTC line normalised to the same starting balance.
-- [ ] **Watchlist alerts digest** — one daily summary of everything on the
-      watchlist: what moved, what triggered, what the engine says now. Server side,
-      in `supabase/functions/cv/alerts.ts`, on its own pg_cron schedule.
-- [ ] **Coin comparison AI** — let the assistant answer "compare BTC, ETH and SOL"
-      with a ranked table. `scanMarketMulti` in `js/ai/context.js` already builds
-      per-coin readings; add a `compare` intent in `js/lib/analyst.js`.
-- [ ] **Export and reports** — download trades, signals and the track record as
-      CSV, and a printable summary for handing to a client.
+- [x] **Portfolio performance chart** — `drawRealChart()` in `js/views/trader.js`.
+      The real account's equity curve with a buy-and-hold BTC line normalised to
+      the same starting balance, and a line saying whether you beat it.
+- [x] **Watchlist alerts digest** — `watchlistDigest()` in
+      `supabase/functions/cv/alerts.ts`, routed at `/cv/watchlist-digest`, pg_cron
+      job `cv-digest` daily at 08:00 UTC. One read per coin shared across all
+      subscribers; skips anyone with `settings.digest === false` or no channel.
+- [x] **Coin comparison AI** — `detectCompare()` + `compareBlock()` in
+      `js/lib/analyst.js`, `compareCoins()` in `js/ai/context.js`. Refuses to name
+      a winner when the top two are within 10 conviction points, and flags any
+      coin whose forecast has no measured edge.
+- [x] **Export and reports** — `js/lib/export.js`. CSV with proper quoting and a
+      printable HTML report that labels a sample under 30 trades as too small to
+      judge, and carries the not-advice line.
 
 ### Repair / maintenance sweep to run each time
 1. `node --check` every file in js/, then `node --test tests/*.test.mjs` (31 tests).
