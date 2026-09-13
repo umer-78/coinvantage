@@ -18,7 +18,7 @@ export async function render(el, [symParam]) {
   const s = settings.get();
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Assistant</h1><p>Ask about any coin — answers use live prices, signals, backtests and the AI forecast. Runs on your device; no account or API key.</p></div></div>
+    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built from live prices, signals, backtests and the forecast — and run on your device. No account, no API key, nothing sent to a server.</p></div></div>
     <div class="chat">
       <div class="card chat-box">
         <div class="chat-log" id="log" aria-live="polite"></div>
@@ -141,7 +141,13 @@ export async function render(el, [symParam]) {
   const drawHistory = () => {
     log.innerHTML = '';
     if (!history.length) {
-      addMsg('bot', markdown(`Hi! I'm the **${CONFIG.APP_NAME} AI**. Ask me about the **whole market** — *"Which coin should I buy, for how long, and when do I sell?"* — and I'll rank every coin on the short-term, swing and position timeframes. Or ask about one coin: *"Will ETH go up this week?"*, *"When should I sell SOL?"*, *"Review my portfolio"*.\n\nI check live data, signals on 4 timeframes, a backtest and a machine-learning forecast before answering.`));
+      addMsg('bot', markdown(`**Ask me anything about the market.**
+
+Start broad — *"What should I buy right now?"* — and I'll rank every coin across three horizons: short term, swing and position, each with an entry, a stop and a target.
+
+Or ask about one coin: *"Is ETH worth buying this week?"* · *"Where should I sell SOL?"* · *"How is my portfolio doing?"*
+
+Every answer is built from live prices, signals across four timeframes, a backtest, and a forecast whose accuracy is measured and published — never a guess dressed up as a number.`));
     }
     for (const m of history) addMsg(m.role === 'user' ? 'user' : 'bot', m.role === 'user' ? esc(m.content) : markdown(m.content) + (m.meta ? `<div class="src">${m.meta}</div>` : ''));
   };
