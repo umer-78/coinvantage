@@ -563,6 +563,50 @@ test('second-by-second candles bucket correctly', async () => {
   assert.equal(offset[0].t, base, 'a partial bucket still starts on the boundary');
 });
 
+test('the score is only called evidence inside the band where it was measured', async () => {
+  const { SIGNAL_EDGE, edgeBand } = await import('../js/lib/signals.js');
+  const { tradeSummary } = await import('../js/lib/summary.js');
+
+  // only bands that cleared n>=300 and lift>=1.10 are published
+  for (const [iv, b] of Object.entries(SIGNAL_EDGE)) {
+    assert.ok(b.samples >= 300, `${iv} band published on too few samples`);
+    assert.ok(b.lift >= 1.10, `${iv} band published without a real lift`);
+    assert.ok(b.hitRate > b.baseRate, `${iv} band must beat its own base rate`);
+  }
+  // 15m scored 60.6% in its top bucket but on 99 samples — deliberately excluded
+  assert.equal(SIGNAL_EDGE['15m'], undefined, '15m has no band large enough to trust');
+  assert.equal(SIGNAL_EDGE['1d'], undefined, '1d lift was under 1.10');
+
+  assert.equal(edgeBand('1h', 50).inside, true);
+  assert.equal(edgeBand('1h', 70).inside, false, 'above the band is outside it — higher is not better');
+  assert.equal(edgeBand('1h', 20).inside, false);
+  assert.equal(edgeBand('1d', 50).band, null);
+
+  const mk = (score, interval) => tradeSummary({
+    signal: { ok: true, score, coinSymbol: 'BTC',
+      plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: 0.055, geometryTested: true },
+      waitFor: [] },
+    forecast: { probUpPct: 60, validatedAccuracyPct: 58 }, interval, fmt: String,
+  });
+
+  // inside the band: stated as measured evidence, with the numbers behind it
+  const inBand = mk(50, '1h');
+  const tested = inBand.steps.find((x) => x.label === 'Tested zone');
+  assert.ok(tested, 'a score inside the measured band should say so');
+  assert.match(tested.text, /35\.4%/);
+  assert.match(tested.text, /486 tested entries/);
+
+  // outside it: the reader is told the number is description, not evidence
+  const outBand = mk(75, '1h');
+  assert.ok(!outBand.steps.some((x) => x.label === 'Tested zone'));
+  assert.ok(outBand.caveats.some((c) => /higher score does not reliably mean a better trade/i.test(c)));
+
+  // a timeframe with no measured band makes no claim either way
+  const noBand = mk(50, '1d');
+  assert.ok(!noBand.steps.some((x) => x.label === 'Tested zone'));
+  assert.ok(!noBand.caveats.some((c) => /measured edge \(/.test(c)));
+});
+
 test('trade levels come from measurement, and losing geometry is admitted', async () => {
   const { TRADE_GEOMETRY, geometryFor, generateSignal } = await import('../js/lib/signals.js');
   const { tradeSummary } = await import('../js/lib/summary.js');
