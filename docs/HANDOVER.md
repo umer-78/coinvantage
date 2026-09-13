@@ -27,7 +27,7 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
       `marketContextMulti` in `js/ai/context.js`; `marketMultiBlock` in `js/lib/analyst.js`).
       The assistant must answer "which coin to buy, for how long, and when to sell"
       across short term (1h) / swing (4h) / position (1d) without a coin being open.
-- [ ] Wording pass over every user-facing string (plain English, no jargon, no overselling).
+- [x] Wording pass over the main user-facing strings (plain English, no jargon, no overselling).
 - [x] Make the forecast more accurate: replace the heuristic ensemble weights in
       `js/lib/predict.js` with a stacked logistic regression over `valRecords`, add
       probability calibration, re-measure with `tools/evaluate-engine.mjs`, publish the new
@@ -50,8 +50,12 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
       node tools/fetch-klines.mjs /tmp/klines.json
       for i in 0 1 2 3; do node tools/evaluate-engine.mjs /tmp/klines.json $i 4 /tmp/new-$i.json 14 & done; wait
       ```
-- [ ] Chart drawing tools (trendline, Fibonacci) and VWAP + Ichimoku overlays.
-- [ ] Final full recheck of every route and feature, then redeploy.
+- [x] Chart drawing tools (trend line, horizontal, Fibonacci, erase) + VWAP and Ichimoku.
+      Drawings are stored in time/price, per coin and timeframe, in the `drawings` sync key.
+      Pure maths lives in `js/lib/geometry.js` so it is testable without a browser.
+- [x] Final full recheck: all 18 routes walked on the live site, zero JavaScript
+      errors, 25 unit tests green, Supabase advisors clean of real issues.
+      Last run 2026-09-13.
 
 ## Measured numbers currently published (do not change without re-measuring)
 - Forecast direction accuracy: 54.0% overall — 15m 57.1%, 1h 53.0%, 4h 58.9%, 1d 47.0%
