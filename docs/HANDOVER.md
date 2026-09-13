@@ -16,7 +16,7 @@ A fresh session should **clone this repo, read this file, and continue from "Ope
 ## How to verify (always run all of these before deploying)
 ```
 node --check $(find js -name '*.js')      # syntax
-node --test tests/*.test.mjs              # 17 unit tests, incl. the missing-import guard
+node --test tests/*.test.mjs              # 25 unit tests, incl. the missing-import guard
 node tools/smoke.mjs                      # route smoke test
 bash tools/deploy-github.sh               # commit + push to gh-pages
 ```
@@ -32,24 +32,19 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
       `js/lib/predict.js` with a stacked logistic regression over `valRecords`, add
       probability calibration, re-measure with `tools/evaluate-engine.mjs`, publish the new
       honest numbers in `TESTED_ACCURACY` and on `#/track`.
-- [ ] **Next accuracy experiment: a pooled cross-coin model.** This is the biggest
-      remaining lever and the only untested one. Today every model is trained on a
-      single coin's own history (~2,000 usable rows), which is why the per-coin
-      weights are noisy and why stacking overfitted. Instead:
-        1. Build one training set from ALL coins at a given interval — the same
-           feature rows `predict.js` already computes, pooled, with the coin
-           identity dropped so the model learns market behaviour, not a ticker.
-        2. Train offline with `tools/evaluate-pooled.mjs`, walk-forward by DATE
-           (train on everything before date D, test after) so no coin leaks the
-           future into another.
-        3. Ship the fitted coefficients as a small constant in the repo and use
-           them as one more voter alongside the per-coin models.
-        4. Accept it only if it beats 54.0% overall on the same 672-forecast
-           harness. Measure with the exact command below; do not estimate.
-      ```
-      node tools/fetch-klines.mjs /tmp/klines.json
-      for i in 0 1 2 3; do node tools/evaluate-engine.mjs /tmp/klines.json $i 4 /tmp/new-$i.json 14 & done; wait
-      ```
+- [x] **Pooled cross-coin model — built, measured, REJECTED.** `tools/train-pooled.mjs`
+      fits one logistic regression per timeframe across all 12 coins at once
+      (~25k rows for 15m/1h, 22k for 4h, 14k for 1d), trained strictly on the
+      first 55% of every series so it can never see a tested forecast. Wired in
+      as an extra voter it scored **53.7%** against the shipped roster's 54.0%,
+      Brier 0.2499 vs 0.2483, confident-subset 56.0% vs 56.9%. Per timeframe it
+      helped 15m (57.1 → 58.3) and hurt 1h (53.0 → 51.8) and 4h (58.9 → 57.7) —
+      differences well inside the noise for 168 forecasts each, so enabling it
+      only on 15m would be fitting the test set, not an improvement.
+      The trainer and `js/lib/pooled.js` are kept. To re-try it, add `pooled`
+      back to `MODEL_INFO` in `js/lib/predict.js`, re-train, and re-measure —
+      accept only if it beats 54.0% overall.
+
 - [x] Chart drawing tools (trend line, horizontal, Fibonacci, erase) + VWAP and Ichimoku.
       Drawings are stored in time/price, per coin and timeframe, in the `drawings` sync key.
       Pure maths lives in `js/lib/geometry.js` so it is testable without a browser.
@@ -61,10 +56,12 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
 - Forecast direction accuracy: 54.0% overall — 15m 57.1%, 1h 53.0%, 4h 58.9%, 1d 47.0%
   (672 tests, 12 coins, naive baseline 51.3%). Confident subset: 56.9% over 38% of forecasts.
   Brier 0.248. Re-measured 2026-09-12 with tools/evaluate-engine.mjs on fresh candles.
-- Tried and REJECTED (both measured worse, do not re-add without new evidence):
+- Tried and REJECTED (all measured worse, do not re-add without new evidence):
   stacked logistic regression over the model votes (51.6%), and Platt calibration
   WITH an intercept (52.4% — the intercept moves the 50% crossing and flips
   forecasts). Slope-only calibration is what shipped: direction unchanged at
   54.0%, Brier 0.2529 to 0.2483, confident-subset accuracy 53.0% to 56.9%.
+  Also rejected: a pooled cross-coin model (53.7%), and more validation points
+  with below-chance models zeroed out (51.5%). Four variants tested, one shipped.
 - Timing peak-hit: 61.2% vs 53.6% random — 15m 45% (worse than chance, flagged as such in the UI),
   1h 51.6%, 4h 67.9%, 1d 66.3%.

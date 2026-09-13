@@ -330,6 +330,27 @@ test('VWAP resets each day and Ichimoku projects its cloud forward', async () =>
   assert.equal(ich.chikou[0], candles[26].c, 'the lagging line is shifted back');
 });
 
+test('a model with nothing to say abstains instead of voting zero', async () => {
+  const { forecast } = await import('../js/lib/predict.js');
+  const { pooledProb, POOLED } = await import('../js/lib/pooled.js');
+
+  // The pooled model returns null for a timeframe it was never trained on.
+  // If that null leaked into the blend as 0 it would read as "100% down".
+  assert.equal(pooledProb('nonsense-interval', new Array(22).fill(0)), null);
+  assert.equal(pooledProb('1h', null), null);
+  // wrong-length feature rows must also abstain rather than silently misalign
+  if (POOLED['1h']) assert.equal(pooledProb('1h', [1, 2, 3]), null);
+
+  const c = demoCandles('bitcoin', '1h', 700);
+  const f = forecast(c, { horizon: 12, fast: true });
+  assert.ok(f.ok);
+  assert.ok(f.probUp > 0.02 && f.probUp < 0.98, `an abstaining model must not drag the blend to an extreme (got ${f.probUp})`);
+  for (const m of f.models) {
+    assert.ok(m.probUp === null || (m.probUp >= 0 && m.probUp <= 1), `${m.key} produced ${m.probUp}`);
+    assert.ok(m.accuracy === null || (m.accuracy >= 0 && m.accuracy <= 1));
+  }
+});
+
 test('drawing-tool geometry', async () => {
   const { distToSegment, fibPrices, trendYAt, FIB_LEVELS } = await import('../js/lib/geometry.js');
 
