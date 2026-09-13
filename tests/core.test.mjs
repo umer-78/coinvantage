@@ -410,6 +410,44 @@ test('second-by-second candles bucket correctly', async () => {
   assert.equal(offset[0].t, base, 'a partial bucket still starts on the boundary');
 });
 
+test('a buy signal that contradicts the forecast is flagged, not sold confidently', async () => {
+  const { conflictCheck } = await import('../js/lib/analyst.js');
+
+  const sig = { ok: true, score: 31, plan: { side: 'long' } };
+  // the exact case seen live: chart says Buy, model says 41.9% up
+  const clash = conflictCheck(sig, { probUpPct: 41.9, validatedAccuracyPct: 56 });
+  assert.ok(clash, 'a long signal against a 41.9% up forecast is a conflict');
+  assert.equal(clash.side, 'long');
+  assert.equal(clash.forecastSide, 'short');
+  assert.equal(clash.forecastIsWeak, false);
+
+  // agreement is not a conflict
+  assert.equal(conflictCheck(sig, { probUpPct: 62, validatedAccuracyPct: 56 }), null);
+  // and neither is noise around the middle
+  assert.equal(conflictCheck(sig, { probUpPct: 49, validatedAccuracyPct: 56 }), null);
+  assert.equal(conflictCheck(sig, { probUpPct: 52, validatedAccuracyPct: 56 }), null);
+  // a forecast with no measured accuracy still counts, but is marked weak
+  const weak = conflictCheck(sig, { probUpPct: 40, validatedAccuracyPct: null });
+  assert.equal(weak.forecastIsWeak, true);
+
+  // the warning has to reach the answer the reader sees
+  const answer = ruleBasedAnswer('should i buy?', {
+    coin: { name: 'Bitcoin', symbol: 'BTC', price: 77248, change24h: -0.11 },
+    interval: '4h',
+    signal: { ...sig, text: 'Buy', tone: 'up', price: 77248,
+      reasons: { bullish: ['Price above 200 EMA'], bearish: [] },
+      levels: { supports: [{ price: 76000 }], resistances: [{ price: 79000 }] },
+      indicators: { rsi: 55, atr: 500, ema50: 76500 },
+      plan: { side: 'long', title: 'Long / buy setup', entryZone: [76946, 77248], stopLoss: 76343, takeProfits: [78605, 79509, 79652], riskPct: 1.17, rewardRisk: 2.5 },
+      waitFor: [] },
+    forecast: { probUpPct: 41.9, validatedAccuracyPct: 56, confidence: 'Low', horizonBars: 6 },
+    horizonText: '1 day',
+  });
+  assert.match(answer, /disagree/i, 'the reader must be told the readings conflict');
+  assert.match(answer, /41\.9% up/, 'and shown the number that contradicts the signal');
+  assert.ok(!/Conditions currently favour a \*\*long entry\*\*/.test(answer), 'the confident wording must be withdrawn when they conflict');
+});
+
 test('a whole-market question is answered across every timeframe', () => {
   const pick = (coin, name, price) => ({
     coin, name, verdict: 'BUY', conviction: 72, price, change24hPct: 1.2,

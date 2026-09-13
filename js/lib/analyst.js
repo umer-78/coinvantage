@@ -207,6 +207,43 @@ function newsBlock(ctx) {
   return `\n**Recent headlines**\n${n.map((x) => `- ${x.title} _(${x.source}, ${when(x.at)})_`).join('\n')}\n- These are background. The forecast above is built from price data only, so its accuracy figure does not include news.\n`;
 }
 
+// The chart signal and the forecast are two independent readings, and they
+// disagree often. Presenting a confident "Buy" plan while the model quietly
+// puts the odds at 42% up is the single most misleading thing this app could
+// do, so a conflict is stated first, in plain words, and the recommendation is
+// downgraded to match.
+export function conflictCheck(sig, forecast) {
+  if (!sig?.ok || !forecast) return null;
+  const side = sig.plan?.side ?? (sig.score > 0 ? 'long' : sig.score < 0 ? 'short' : null);
+  if (!side) return null;
+  const probUp = forecast.probUpPct;
+  if (probUp === null || probUp === undefined) return null;
+
+  // only a clear lean counts as disagreement — 49% vs 51% is noise
+  const forecastSide = probUp >= 55 ? 'long' : probUp <= 45 ? 'short' : null;
+  if (!forecastSide || forecastSide === side) return null;
+
+  const acc = forecast.validatedAccuracyPct;
+  const forecastIsWeak = acc === null || acc === undefined || acc < 52;
+  return { side, forecastSide, probUp, acc, forecastIsWeak };
+}
+
+function conflictBlock(ctx) {
+  const c = conflictCheck(ctx.signal, ctx.forecast);
+  if (!c) return '';
+  const horizon = ctx.horizonText || 'the forecast horizon';
+  const signalWord = c.side === 'long' ? 'buy' : 'sell';
+  const modelWord = c.forecastSide === 'long' ? 'up' : 'down';
+  const lines = [
+    `⚠️ **The two readings disagree — treat this as no clear edge.** The chart signal says **${signalWord}**, but the AI forecast puts the next ${horizon} at **${c.probUp}% up**, which leans **${modelWord}**.`,
+  ];
+  lines.push(c.forecastIsWeak
+    ? `On this coin and timeframe the forecast has ${c.acc === null || c.acc === undefined ? 'no measured accuracy yet' : `only scored ${c.acc}% on recent unseen data`}, so it is the weaker of the two — but it is still pointing the other way, and that is a reason to take a smaller position, not a bigger one.`
+    : `The forecast scored ${c.acc}% on recent unseen data, so it is not noise. When a tested model contradicts the chart, waiting for them to agree is usually the better trade.`);
+  lines.push('If you take the setup below anyway, use the stop-loss exactly as written and size it small.');
+  return `\n${lines.join(' ')}\n`;
+}
+
 function reasonsBlock(sig, n = 4) {
   const b = sig.reasons.bullish.slice(0, n).map((r) => `- ✅ ${r}`);
   const s = sig.reasons.bearish.slice(0, n).map((r) => `- ⚠️ ${r}`);
@@ -297,8 +334,12 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     case 'entry': {
       out.push(signalLine(sig));
+      const conflict = conflictBlock(ctx);
+      out.push(conflict);
       if (sig.plan?.side === 'long') {
-        out.push(`\nConditions currently favour a **long entry**. Prefer entering inside the zone rather than chasing green candles.`);
+        out.push(conflict
+          ? `\nThe chart alone would call this a **long entry**, but read the warning above before acting on it.`
+          : `\nConditions currently favour a **long entry**. Prefer entering inside the zone rather than chasing green candles.`);
         out.push(planBlock(sig.plan));
       } else if (sig.plan?.side === 'short') {
         out.push(`\n**Not a good time to buy.** The setup is bearish — waiting usually beats catching a falling knife.`);
@@ -316,6 +357,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     case 'exit': {
       out.push(signalLine(sig));
+      out.push(conflictBlock(ctx));
       if (sig.score <= -18) {
         out.push(`\nMomentum has turned against longs. If you hold ${ctx.coin?.symbol || 'this coin'}, **consider closing or reducing** the position, or at least tighten your stop.`);
       } else if ((sig.indicators.rsi ?? 50) > 72) {
@@ -375,6 +417,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     default: {
       out.push(signalLine(sig));
+      out.push(conflictBlock(ctx));
       const bias = sig.score >= 18 ? 'bullish' : sig.score <= -18 ? 'bearish' : 'range-bound / undecided';
       out.push(`\nOverall the chart is **${bias}**.`);
       out.push(reasonsBlock(sig, 4));
@@ -401,6 +444,7 @@ Rules:
 - Never invent prices, percentages or dates. Copy numbers exactly from the facts.
 - Be direct: say whether the data leans up, down or sideways, give entry / stop-loss / take-profit levels when relevant, and mention the forecast's measured accuracy so the user knows how reliable it is.
 - When marketByTimeframe or marketPicks is present the user asked about the WHOLE market, not one coin. Cover every timeframe you were given (short term, swing, position) and, under each, list the ranked coins with their buy zone, stop-loss, sell targets and how long the move is expected to last. Then name the coins that read as a buy on more than one timeframe, and the ones to avoid or sell. Never narrow a whole-market question down to a single coin.
+- If the FACTS contain a line saying the two readings disagree, that warning must appear in your first two sentences and your verdict must be cautious. Never present a confident buy or sell when the chart signal and the forecast point opposite ways.
 - recentHeadlines is background only. You may mention a headline, but never say it changed the forecast — the model reads price data, not news.
 - When moveTiming is present, say how long the move is expected to last and roughly when it turns — that is usually what the user actually wants to know. Never state timing as a certainty.
 - When multiYearHistory is present, use it: it says how this coin behaved the last times its chart looked like today (over years of daily data), what the median move afterwards was, and how often that comparison was right on this coin. Quote those numbers, and say plainly when the method's accuracy is near 50% that it is weak evidence.

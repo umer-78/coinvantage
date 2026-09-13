@@ -1,19 +1,27 @@
 import { markets, isStable } from '../api/market.js';
-import { $, $$, icon, toast, coinLogo } from '../ui.js';
+import { $, $$, icon, toast, coinLogo, skeleton } from '../ui.js';
 import { esc, price, usd, ago, money} from '../format.js';
 import { load, save } from '../store.js';
+import { auth, backendEnabled, serverAlerts, createServerAlert, deleteServerAlert } from '../api/backend.js';
+import { openAuth } from './auth.js';
 
-export const title = 'Price alerts';
+export const title = 'Alerts';
 
 export async function render(el, [preset]) {
   const all = await markets().catch(() => []);
   const coins = all.filter((c) => c.binance && !isStable(c.symbol));
   const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
   el.innerHTML = `
-    <div class="page-head"><div><h1>Price alerts</h1><p>Get a notification when a coin crosses your price — checked live against the Binance stream while this site is open.</p></div></div>
+    <div class="page-head"><div><h1>Alerts</h1><p>Two kinds: a <b>price alert</b> that watches a level, and a <b>signal alert</b> that fires the moment the engine's buy or sell setup triggers — with the entry, stop and targets in the message.</p></div></div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><h3>Signal alert</h3><span class="chip warn">Runs on the server</span></div>
+      <div id="sigBox">${skeleton(3, 22)}</div>
+    </div>
+
     <div class="grid g2">
       <div class="card">
-        <h3 style="margin-bottom:12px">New alert</h3>
+        <h3 style="margin-bottom:12px">New price alert</h3>
         <form id="f" class="stack" style="gap:10px">
           <label class="fld">Coin<select class="inp" name="sym">${coins.map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === (preset || 'BTC').toUpperCase() ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select></label>
           <div class="row">
@@ -32,6 +40,74 @@ export async function render(el, [preset]) {
   const showCur = () => { const c = coins.find((x) => x.symbol === f.sym.value); if (c) { $('#cur', el).textContent = `Current price: ${money(c.price)}`; if (!f.price.value) f.price.placeholder = price(c.price); } };
   f.sym.addEventListener('change', () => { f.price.value = ''; showCur(); });
   showCur();
+
+  // --- signal alerts (server side) --------------------------------------
+  // These run in the backend so they still fire with the browser closed. The
+  // message carries the whole plan, because an alert that just says "BTC is
+  // interesting" makes you open the site to find out what to do.
+  const INTERVALS = ['15m', '1h', '4h', '1d'];
+  const SIDES = [['any', 'Buy or sell'], ['long', 'Buy setups only'], ['short', 'Sell setups only']];
+
+  async function drawSignals() {
+    const box = $('#sigBox', el);
+    if (!box) return;
+
+    if (!backendEnabled()) {
+      box.innerHTML = '<p class="fine">Signal alerts need the backend, which is not connected on this deployment. Price alerts below still work while the site is open.</p>';
+      return;
+    }
+    if (!auth.user) {
+      box.innerHTML = `<p class="fine">Sign in to set a signal alert — it runs on the server, so it reaches you with the browser closed.</p>
+        <button class="btn primary mt" id="sigSignIn">${icon('bolt', 16)} Sign in</button>`;
+      $('#sigSignIn', box).addEventListener('click', () => openAuth('in'));
+      return;
+    }
+
+    const rows = await serverAlerts().catch(() => []);
+    const sigs = rows.filter((r) => r.kind === 'signal');
+    box.innerHTML = `
+      <form id="sf" class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <label class="fld">Coin<select class="inp" name="sym">${coins.slice(0, 60).map((c) => `<option value="${esc(c.symbol)}">${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="fld">Chart<select class="inp" name="iv">${INTERVALS.map((i) => `<option ${i === '4h' ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+        <label class="fld">Tell me about<select class="inp" name="side">${SIDES.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></label>
+        <label class="fld">Only if strength is at least<input class="inp" name="score" type="number" min="10" max="100" step="5" value="25" style="width:90px"></label>
+        <button class="btn primary">${icon('alerts', 16)} Create signal alert</button>
+      </form>
+      <p class="fine mt">It checks once each time a candle on that chart closes, and waits a full candle before telling you again. Delivery goes to Telegram and e-mail if you have linked them on the <a href="#/account">account page</a>.</p>
+      ${sigs.length ? `<div class="stack mt" style="gap:8px">${sigs.map((a) => `
+        <div class="row spread" style="padding:10px;border-radius:10px;background:var(--surface-2)">
+          <div><b>${esc(a.symbol)}</b> · ${esc(a.interval)} chart · ${esc(SIDES.find(([v]) => v === (a.side || 'any'))?.[1] || 'Buy or sell')} · strength ≥ ${esc(String(a.min_score ?? 25))}
+            <br><small class="muted">${a.last_fired_at ? `Last fired ${ago(new Date(a.last_fired_at).getTime())}` : 'Waiting for a setup'}</small></div>
+          <button class="icon-btn" style="width:32px;height:32px" data-sigdel="${esc(String(a.id))}" aria-label="Delete signal alert">${icon('trash', 14)}</button>
+        </div>`).join('')}</div>` : '<p class="fine mt">No signal alerts yet.</p>'}`;
+
+    $('#sf', box).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f2 = e.currentTarget;
+      const btn = f2.querySelector('button');
+      btn.disabled = true;
+      try {
+        await createServerAlert({
+          kind: 'signal', symbol: f2.sym.value, interval: f2.iv.value,
+          side: f2.side.value, min_score: Math.round(+f2.score.value) || 25,
+          channels: ['telegram', 'email'], active: true,
+        });
+        toast(`Signal alert set for ${f2.sym.value} on the ${f2.iv.value} chart.`, 'up');
+        drawSignals();
+      } catch (err) {
+        toast(err.message, 'down');
+        btn.disabled = false;
+      }
+    });
+    $$('[data-sigdel]', box).forEach((b) => b.addEventListener('click', async () => {
+      await deleteServerAlert(b.dataset.sigdel).catch(() => {});
+      drawSignals();
+    }));
+  }
+
+  drawSignals();
+  const onAuth = () => drawSignals();
+  auth.addEventListener('change', onAuth);
 
   const draw = () => {
     const alerts = load('alerts', []);
@@ -61,5 +137,8 @@ export async function render(el, [preset]) {
   const onStore = (e) => { if (e.detail.key === 'alerts') draw(); };
   window.addEventListener('cv:store', onStore);
   draw();
-  return () => window.removeEventListener('cv:store', onStore);
+  return () => {
+    window.removeEventListener('cv:store', onStore);
+    auth.removeEventListener('change', onAuth);
+  };
 }
