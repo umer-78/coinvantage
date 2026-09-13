@@ -24,7 +24,8 @@ function pct(v) {
 // Tickers and names common enough that mentioning one makes the question
 // single-coin. detectSymbol() does the real lookup; this only keeps the
 // rule-based analyst from answering market-wide when a coin was clearly named.
-const NAMES_A_COIN = /\b(btc|bitcoin|eth|ether|ethereum|bnb|sol|solana|xrp|ripple|ada|cardano|doge|dogecoin|trx|tron|avax|dot|polkadot|link|chainlink|matic|polygon|ltc|litecoin|shib|ton|near|atom|uni|xlm|bch|etc|fil|apt|arb|op|sui|pepe|hbar|icp|inj|tao|sei|rndr|aave|mkr|zec)\b/;
+const NAMES_A_COIN_G = /\b(btc|bitcoin|eth|ether|ethereum|bnb|sol|solana|xrp|ripple|ada|cardano|doge|dogecoin|trx|tron|avax|dot|polkadot|link|chainlink|matic|polygon|ltc|litecoin|shib|ton|near|atom|uni|xlm|bch|etc|fil|apt|arb|op|sui|pepe|hbar|icp|inj|tao|sei|rndr|aave|mkr|zec)\b/gi;
+const NAMES_A_COIN = new RegExp(NAMES_A_COIN_G.source);
 
 // "Which coin should I buy?" is a different question from "should I buy BTC?".
 export function isMarketWide(q) {
@@ -36,9 +37,19 @@ export function isMarketWide(q) {
     && /\b(what|which|when|anything|something|now|today|this week|time ?frame|timeframe|short term|long term|how long)\b/.test(s);
 }
 
+// "compare BTC and ETH" / "BTC vs SOL" / "which is better, X or Y"
+export function detectCompare(q) {
+  const s = String(q || '');
+  const named = [...s.matchAll(NAMES_A_COIN_G)].map((m) => m[0].toUpperCase());
+  const uniq = [...new Set(named)];
+  const asksToCompare = /\b(compare|versus|vs\.?|better|stronger|which of|between)\b/i.test(s);
+  return uniq.length >= 2 && (asksToCompare || uniq.length >= 2) ? uniq.slice(0, 4) : null;
+}
+
 function detectIntent(q) {
   const s = (q || '').toLowerCase();
   if (/(portfolio|wallet|holding|my coins|my bag)/.test(s)) return 'portfolio';
+  if (detectCompare(q)) return 'compare';
   if (isMarketWide(s)) return 'market';
   if (/(predict|forecast|future|will (it|the price|price|this)|go(ing)? (up|down)|next (hour|day|week|month)|tomorrow|pump|dump|target price|where .* (head|go)|up or down)/.test(s)) return 'forecast';
   if (/(backtest|win ?rate|accura|reliab|track record|history of signal)/.test(s)) return 'backtest';
@@ -196,6 +207,46 @@ function marketBlock(m) {
   return `${out.join('\n')}\n`;
 }
 
+// Two or three coins, ranked against each other on the same evidence.
+//
+// The hard part of a comparison is not gathering the numbers, it is refusing to
+// declare a winner when there isn't one. Every coin here is scored with the same
+// blend the rest of the app uses, and when the spread between them is inside the
+// noise the answer says they are level rather than manufacturing a ranking.
+function compareBlock(rows, interval, horizon) {
+  if (!rows?.length) return '';
+  const ranked = [...rows].sort((a, b) => (b.conviction ?? 0) - (a.conviction ?? 0));
+  const out = [`**${ranked.map((r) => r.coin).join(' vs ')}** — same test, same timeframe (${interval}), ranked on the evidence.\n`];
+
+  out.push('| | ' + ranked.map((r) => `**${r.coin}**`).join(' | ') + ' |');
+  out.push('|---|' + ranked.map(() => '---').join('|') + '|');
+  const row = (label, get) => out.push(`| ${label} | ${ranked.map(get).join(' | ')} |`);
+  row('Verdict', (r) => r.verdict || '—');
+  row('Conviction', (r) => (r.conviction ?? '—') + '/100');
+  row('Chart signal', (r) => `${r.signalText || '—'}${r.score !== null && r.score !== undefined ? ` (${r.score > 0 ? '+' : ''}${r.score})` : ''}`);
+  row('Forecast', (r) => (r.probUpPct !== null && r.probUpPct !== undefined ? `${r.probUpPct}% up` : '—'));
+  row('Measured accuracy', (r) => (r.accuracyPct !== null && r.accuracyPct !== undefined ? `${r.accuracyPct}%` : 'not measured'));
+  row('24h', (r) => (r.change24h === null || r.change24h === undefined ? '—' : pct(r.change24h)));
+  row('Buy between', (r) => (r.buyBetween ? `${fmtNum(r.buyBetween[0])} – ${fmtNum(r.buyBetween[1])}` : 'no entry yet'));
+  row('Stop', (r) => (r.stopLoss ? fmtNum(r.stopLoss) : '—'));
+  row('First target', (r) => (r.sellTargets ? fmtNum(r.sellTargets[0]) : '—'));
+
+  const top = ranked[0], second = ranked[1];
+  const gap = (top.conviction ?? 0) - (second?.conviction ?? 0);
+  out.push('');
+  if (!top.conviction || top.conviction < 25) {
+    out.push(`**None of them is a buy right now.** The best of the three only scores ${top.conviction ?? 0}/100, which is not enough to act on. Waiting costs nothing.`);
+  } else if (gap < 10) {
+    out.push(`**Too close to call.** ${top.coin} edges ${second.coin} by ${gap} points, which is inside the noise of this method — treat them as level and pick on what you already hold or understand, not on this ranking.`);
+  } else {
+    out.push(`**${top.coin} is the stronger of the ${ranked.length}**, by ${gap} points of conviction over ${second.coin}. ${top.topReason || ''}`);
+  }
+  const weak = ranked.filter((r) => r.accuracyPct !== null && r.accuracyPct !== undefined && r.accuracyPct < 52);
+  if (weak.length) out.push(`\nThe forecast has no measured edge on ${weak.map((r) => r.coin).join(' and ')} at this timeframe, so their rows lean on the chart signal alone.`);
+  out.push(`\nHorizon for all of them is about ${horizon}.`);
+  return `${out.join('\n')}\n`;
+}
+
 // Headlines are context for the reader, not a model input — say so plainly.
 function newsBlock(ctx) {
   const n = ctx.news;
@@ -263,6 +314,16 @@ export function ruleBasedAnswer(question, ctx = {}) {
   const intent = detectIntent(question);
   const sig = ctx.signal;
   const out = [];
+
+  if (intent === 'compare') {
+    if (!ctx.compare?.length) {
+      return `I need to pull each coin's chart to compare them — ask again in a moment.\n\n${DISCLAIMER}`;
+    }
+    out.push(compareBlock(ctx.compare, ctx.compareInterval || ctx.interval || '4h', ctx.horizonText || 'the next few days'));
+    out.push(sentimentLine(ctx));
+    out.push(DISCLAIMER);
+    return out.filter((l) => l !== '').join('\n');
+  }
 
   if (intent === 'market') {
     if (ctx.marketFrames) {
@@ -445,6 +506,7 @@ Rules:
 - Be direct: say whether the data leans up, down or sideways, give entry / stop-loss / take-profit levels when relevant, and mention the forecast's measured accuracy so the user knows how reliable it is.
 - When marketByTimeframe or marketPicks is present the user asked about the WHOLE market, not one coin. Cover every timeframe you were given (short term, swing, position) and, under each, list the ranked coins with their buy zone, stop-loss, sell targets and how long the move is expected to last. Then name the coins that read as a buy on more than one timeframe, and the ones to avoid or sell. Never narrow a whole-market question down to a single coin.
 - If the FACTS contain a line saying the two readings disagree, that warning must appear in your first two sentences and your verdict must be cautious. Never present a confident buy or sell when the chart signal and the forecast point opposite ways.
+- When a comparison block is present the user asked to compare named coins: keep every coin in the answer, rank them on the conviction given, and if the top two are within 10 points say they are too close to call rather than picking one.
 - recentHeadlines is background only. You may mention a headline, but never say it changed the forecast — the model reads price data, not news.
 - When moveTiming is present, say how long the move is expected to last and roughly when it turns — that is usually what the user actually wants to know. Never state timing as a certainty.
 - When multiYearHistory is present, use it: it says how this coin behaved the last times its chart looked like today (over years of daily data), what the median move afterwards was, and how often that comparison was right on this coin. Quote those numbers, and say plainly when the method's accuracy is near 50% that it is weak evidence.

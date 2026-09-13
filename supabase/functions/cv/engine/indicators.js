@@ -213,6 +213,68 @@ export function last(arr) {
 }
 
 // Compute the full indicator bundle once for a candle array.
+
+/**
+ * VWAP — the volume-weighted average price, reset at the start of each UTC day.
+ *
+ * It answers a question a moving average cannot: what did the average buyer
+ * actually pay today? Price above VWAP means today's buyers are in profit,
+ * which is why desks use it as the line between a strong and a weak session.
+ * Anchoring to the day is what makes it meaningful; a running total since the
+ * first candle on the chart would drift into nonsense.
+ */
+export function vwap(candles) {
+  const out = new Array(candles.length).fill(null);
+  let day = null, pv = 0, vol = 0;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const d = Math.floor(c.t / 864e5);
+    if (d !== day) { day = d; pv = 0; vol = 0; }
+    const typical = (c.h + c.l + c.c) / 3;
+    const v = c.v > 0 ? c.v : 0;
+    pv += typical * v;
+    vol += v;
+    out[i] = vol > 0 ? pv / vol : typical;
+  }
+  return out;
+}
+
+/**
+ * Ichimoku Cloud (9 / 26 / 52).
+ *
+ * Five lines, but the useful part is the cloud: the span between senkouA and
+ * senkouB, plotted 26 bars AHEAD of price. Price above the cloud is an uptrend,
+ * below it a downtrend, inside it no trend worth trading. Because the cloud is
+ * shifted forward it also shows where support and resistance will sit before
+ * price gets there — the reason it survives as an indicator.
+ *
+ * `senkouA`/`senkouB` are returned already shifted forward, so the arrays run
+ * `displacement` entries longer than `candles`; `chikou` is shifted back.
+ */
+export function ichimoku(candles, { conversion = 9, base = 26, spanB = 52, displacement = 26 } = {}) {
+  const n = candles.length;
+  const midpoint = (period, i) => {
+    if (i < period - 1) return null;
+    let hi = -Infinity, lo = Infinity;
+    for (let k = i - period + 1; k <= i; k++) { hi = Math.max(hi, candles[k].h); lo = Math.min(lo, candles[k].l); }
+    return (hi + lo) / 2;
+  };
+  const tenkan = new Array(n).fill(null);
+  const kijun = new Array(n).fill(null);
+  const senkouA = new Array(n + displacement).fill(null);
+  const senkouB = new Array(n + displacement).fill(null);
+  const chikou = new Array(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    tenkan[i] = midpoint(conversion, i);
+    kijun[i] = midpoint(base, i);
+    if (tenkan[i] !== null && kijun[i] !== null) senkouA[i + displacement] = (tenkan[i] + kijun[i]) / 2;
+    const b = midpoint(spanB, i);
+    if (b !== null) senkouB[i + displacement] = b;
+    if (i - displacement >= 0) chikou[i - displacement] = candles[i].c;
+  }
+  return { tenkan, kijun, senkouA, senkouB, chikou, displacement };
+}
+
 export function computeAll(candles) {
   const closes = candles.map((c) => c.c);
   const vols = candles.map((c) => c.v);
@@ -227,5 +289,7 @@ export function computeAll(candles) {
     adx: adx(candles, 14),
     stoch: stochRsi(closes),
     volSma: sma(vols, 20),
+    vwap: vwap(candles),
+    ichimoku: ichimoku(candles),
   };
 }
