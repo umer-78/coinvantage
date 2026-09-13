@@ -66,7 +66,19 @@ export async function render(el, [symParam]) {
           <div class="chart-tools">
             <div class="seg scroll-x" id="ivSeg">${INTERVALS.map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}" title="${esc(INTERVAL_LABEL[iv] || iv)} candles">${iv}</button>`).join('')}</div>
             <button class="btn sm ghost only-s" id="indBtn" aria-expanded="false">${icon('chart', 14)} Indicators</button>
+            <button class="btn sm ghost" id="drawBtn" aria-expanded="false">${icon('compare', 14)} Draw</button>
             <div class="toggles" id="toggles"></div>
+          </div>
+          <div class="draw-tools" id="drawTools" hidden>
+            <div class="seg" id="toolSeg">
+              <button data-tool="" class="on">Off</button>
+              <button data-tool="trend">Trend line</button>
+              <button data-tool="hline">Horizontal</button>
+              <button data-tool="fib">Fibonacci</button>
+              <button data-tool="erase">Erase</button>
+            </div>
+            <button class="btn sm ghost" id="clearDraw">Clear all</button>
+            <span class="fine" id="drawHint">Tap two points on the chart to place a trend line.</span>
           </div>
           <div class="chart-box" id="chart"></div>
           <p class="fine" style="margin:6px 4px 0">Scroll or pinch to zoom · drag to pan · double-click to reset. Yellow cone = AI forecast.</p>
@@ -224,13 +236,58 @@ export async function render(el, [symParam]) {
 
   // ------------------------------------------------------------ chart
   const chart = new CandleChart($('#chart', el), {});
-  const TOGGLES = [['ema20', 'EMA 20', '--series-1'], ['ema50', 'EMA 50', '--series-2'], ['ema200', 'EMA 200', '--series-7'], ['bb', 'Bollinger'], ['volume', 'Volume'], ['rsi', 'RSI'], ['macd', 'MACD'], ['levels', 'Levels'], ['markers', 'Signals'], ['projection', 'Forecast', '--accent']];
+  const TOGGLES = [['ema20', 'EMA 20', '--series-1'], ['ema50', 'EMA 50', '--series-2'], ['ema200', 'EMA 200', '--series-7'], ['bb', 'Bollinger'], ['vwap', 'VWAP', '--series-4'], ['ichimoku', 'Ichimoku'], ['volume', 'Volume'], ['rsi', 'RSI'], ['macd', 'MACD'], ['levels', 'Levels'], ['markers', 'Signals'], ['projection', 'Forecast', '--accent']];
   $('#toggles', el).innerHTML = TOGGLES.map(([k, label, c]) => `<button class="toggle ${chart.opts[k] ? 'on' : ''}" data-k="${k}">${c ? `<i style="background:var(${c})"></i>` : ''}${label}</button>`).join('');
   $$('#toggles .toggle', el).forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.k; chart.setOptions({ [k]: !chart.opts[k] }); b.classList.toggle('on', chart.opts[k]);
   }));
   // Twelve indicator chips is a wall of buttons on a phone. On a narrow screen
   // they live behind one button and the chart gets the room instead.
+  // --- drawing tools ----------------------------------------------------
+  // Drawings are saved per coin and per timeframe, in time/price coordinates,
+  // and ride the same sync as the watchlist so they follow the account.
+  const drawKey = () => `${coin.symbol}:${st.interval}`;
+  const allDrawings = () => load('drawings', {});
+  const loadDrawings = () => allDrawings()[drawKey()] || [];
+  const saveDrawings = (list) => {
+    const all = allDrawings();
+    if (list.length) all[drawKey()] = list; else delete all[drawKey()];
+    save('drawings', all);
+  };
+  chart.onDrawingsChange = (list) => saveDrawings(list);
+  chart.setDrawings(loadDrawings());
+
+  const HINTS = {
+    '': 'Drawing off — the chart pans and zooms as usual.',
+    trend: 'Tap two points on the chart to place a trend line. It keeps projecting past the last one.',
+    hline: 'Tap once to place a horizontal line at that price.',
+    fib: 'Tap a swing low then a swing high (or the reverse) to lay Fibonacci retracements between them.',
+    erase: 'Tap any drawing to remove it.',
+  };
+
+  $('#drawBtn', el)?.addEventListener('click', (e) => {
+    const tools = $('#drawTools', el);
+    const open = tools.hidden;
+    tools.hidden = !open;
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+    if (!open) { chart.setTool(null); $$('#toolSeg button', el).forEach((b) => b.classList.toggle('on', b.dataset.tool === '')); }
+  });
+
+  $$('#toolSeg button', el).forEach((b) => b.addEventListener('click', () => {
+    $$('#toolSeg button', el).forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    const tool = b.dataset.tool || null;
+    chart.setTool(tool);
+    const hint = $('#drawHint', el);
+    if (hint) hint.textContent = HINTS[b.dataset.tool] || HINTS[''];
+  }));
+
+  $('#clearDraw', el)?.addEventListener('click', () => {
+    if (!chart.drawings.length) { toast('Nothing to clear on this chart.', 'info'); return; }
+    chart.clearDrawings();
+    toast('Drawings cleared.', 'info');
+  });
+
   $('#indBtn', el)?.addEventListener('click', (e) => {
     const open = el.querySelector('.chart-tools').classList.toggle('show-toggles');
     e.currentTarget.setAttribute('aria-expanded', String(open));
@@ -253,6 +310,7 @@ export async function render(el, [symParam]) {
       // A 200-period average over 5-second candles covers 17 minutes and just
       // draws noise across the chart. Switch the slow overlays off there, and
       // back on when the reader moves to a real timeframe.
+      chart.setDrawings(loadDrawings());
       const fast = isSecondInterval(iv);
       if (fast !== st.wasFast) {
         chart.setOptions({ ema200: !fast, ema50: !fast, bb: false });
