@@ -22,7 +22,7 @@ const NAV = [
   { path: 'compare', label: 'Compare', icon: 'compare', short: 'Compare' },
   { path: 'exchanges', label: 'Exchanges', icon: 'exchanges', short: 'Exchanges' },
   { path: 'wallet', label: 'Wallet', icon: 'wallet', short: 'Wallet' },
-  { path: 'alerts', label: 'Price Alerts', icon: 'alerts', short: 'Alerts' },
+  { path: 'alerts', label: 'Alerts', icon: 'alerts', short: 'Alerts' },
   { path: 'premium', label: 'Premium', icon: 'star', short: 'Premium' },
 ];
 const ADMIN_NAV = { path: 'admin', label: 'Admin', icon: 'chip', short: 'Admin' };
@@ -359,7 +359,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260913-061935";
+export const BUILD = "20260913-165454";
 
 async function checkForUpdate() {
   try {
