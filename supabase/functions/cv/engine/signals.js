@@ -26,6 +26,36 @@ export const TRADE_GEOMETRY = {
   '4h':  { stopAtr: 1, rr: 1, ev: -0.047, tested: true },
   '1d':  { stopAtr: 1, rr: 2, ev: +0.058, tested: true },
 };
+/**
+ * Where the score has actually worked — measured, not assumed.
+ *
+ * `tools/evaluate-signal-edge.mjs` replays every bar across 12 coins, computes
+ * the score the site would have shown, and scores the trade that followed. The
+ * result is uncomfortable and worth stating plainly: **a higher score does not
+ * reliably mean a better trade.** The relationship is not a gradient. On the 4h
+ * chart a score of 60+ performed WORSE than the average bar (45.5% vs 47.6%),
+ * and on the 1h chart the 60+ bucket was worse than the 45-59 one.
+ *
+ * Two bands did show a real, repeated edge on a large enough sample, and only
+ * those two are marked. Everything else is presented as no measured edge, which
+ * is the honest description of a flat lift.
+ *
+ * A band qualifies only at n >= 300 and lift >= 1.10 over that timeframe's own
+ * base rate — small buckets that look spectacular (15m 60+ hit 60.6%, but on 99
+ * samples) are deliberately excluded.
+ */
+export const SIGNAL_EDGE = {
+  '1h': { lo: 45, hi: 59, hitRate: 35.4, baseRate: 27.5, ev: 0.415, baseEv: 0.097, samples: 486, lift: 1.29 },
+  '4h': { lo: 18, hi: 29, hitRate: 52.6, baseRate: 47.6, ev: 0.049, baseEv: -0.050, samples: 498, lift: 1.10 },
+};
+
+/** The measured band for this timeframe, and whether the score sits inside it. */
+export function edgeBand(interval, score) {
+  const band = SIGNAL_EDGE[interval];
+  if (!band) return { band: null, inside: false };
+  return { band, inside: score >= band.lo && score <= band.hi };
+}
+
 const DEFAULT_GEOMETRY = { stopAtr: 1.5, rr: 2.5, ev: null, tested: false };
 export const geometryFor = (interval) => TRADE_GEOMETRY[interval] || DEFAULT_GEOMETRY;
 
