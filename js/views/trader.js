@@ -6,7 +6,7 @@ import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js
 import { esc, pct, money, compact, dateTime, ago, amount } from '../format.js';
 import { load, save } from '../store.js';
 
-export const title = 'AI trader (demo)';
+export const title = 'Trading';
 
 const CFG_KEY = 'traderCfg';
 const STATE_KEY = 'traderState';
@@ -21,8 +21,8 @@ export async function render(el) {
 
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>AI trader <span class="chip warn">Practice money</span></h1>
-        <p>The AI runs the strategy by itself on live prices — opening, sizing and closing positions with no input from you. It uses <b>simulated money</b>: no exchange, no keys, no real orders.</p></div>
+      <div><h1>Trading</h1>
+        <p>Three accounts, side by side: the practice trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p></div>
       <div class="row">
         <button class="btn" id="cfgBtn">${icon('chip', 16)} Settings</button>
         ${state ? '<button class="btn ghost" id="resetBtn">Reset</button>' : ''}

@@ -13,9 +13,9 @@ import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData,
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
   { path: 'advice', label: 'What to buy', icon: 'bolt', badge: 'NEW', short: 'Buy' },
-  { path: 'ai', label: 'AI assistant', icon: 'ai', short: 'AI' },
-  { path: 'trader', label: 'AI trader (demo)', icon: 'forecast', short: 'Demo' },
-  { path: 'scanner', label: 'Signal scanner', icon: 'scanner', short: 'Signals' },
+  { path: 'ai', label: 'Assistant', icon: 'ai', short: 'Ask' },
+  { path: 'trader', label: 'Trading', icon: 'forecast', short: 'Trading' },
+  { path: 'scanner', label: 'Scanner', icon: 'scanner', short: 'Scanner' },
   { path: 'track', label: 'Track record', icon: 'forecast', short: 'Record' },
   { path: 'futures', label: 'Futures', icon: 'bolt', short: 'Futures' },
   { path: 'news', label: 'News', icon: 'info', short: 'News' },
@@ -390,7 +390,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260913-170834";
+export const BUILD = "20260913-171436";
 
 async function checkForUpdate() {
   try {

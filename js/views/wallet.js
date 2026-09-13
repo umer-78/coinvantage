@@ -15,7 +15,7 @@ export async function render(el) {
   let disposed = false;
   const all = await markets().catch(() => []);
   el.innerHTML = `
-    <div class="page-head"><div><h1>Wallet &amp; portfolio</h1><p>Track holdings with live P&amp;L and AI hold/exit hints, and watch public wallet addresses.</p></div></div>
+    <div class="page-head"><div><h1>Wallet</h1><p>Track holdings with live P&amp;L and AI hold/exit hints, and watch public wallet addresses.</p></div></div>
     <div class="grid g4" id="sum"></div>
     <div class="grid mt" style="grid-template-columns:minmax(0,1fr) 320px" id="wgrid">
       <div class="card">
