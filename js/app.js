@@ -359,7 +359,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260913-001618";
+export const BUILD = "20260913-061935";
 
 async function checkForUpdate() {
   try {
