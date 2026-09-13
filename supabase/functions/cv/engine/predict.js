@@ -13,6 +13,8 @@
 // can judge how much to trust a forecast. Not financial advice.
 
 import { computeAll } from './indicators.js';
+import { pooledProb } from './pooled.js';
+import { tripleBarrier } from './barrier.js';
 
 // ---------------------------------------------------------------- helpers
 const clip = (v, lo = -5, hi = 5) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0);
@@ -413,6 +415,11 @@ function moveStatsModel(samples) {
 }
 
 // ---------------------------------------------------------------- main
+// The models that get a vote. A cross-coin model was built, trained on 25k
+// pooled rows per timeframe and measured on the same 672-forecast harness: it
+// scored 53.7% against this roster's 54.0%, with a worse Brier score, so it is
+// not in the list. tools/train-pooled.mjs and js/lib/pooled.js are kept so the
+// experiment can be repeated rather than guessed at — see docs/HANDOVER.md.
 export const MODEL_INFO = {
   gbdt: 'Gradient-boosted trees',
   mlp: 'Neural network',
@@ -423,11 +430,16 @@ export const MODEL_INFO = {
   trend: 'Trend model (Holt)',
 };
 
-export function forecast(candles, { horizon = 12, window = 40, fast = false, intervalMs = null, folds = 3 } = {}) {
+// Candle spacing → the timeframe key the pooled model was trained under.
+const INTERVAL_FOR_MS = { 9e5: '15m', 36e5: '1h', 144e5: '4h', 864e5: '1d' };
+
+export function forecast(candles, { horizon = 12, window = 40, fast = false, intervalMs = null, folds = 3, interval = null, labelMode = 'direction', barrierUp = 2, barrierDown = 1 } = {}) {
   const n = candles.length;
   const H = horizon;
   if (n < 200) return { ok: false, reason: 'Need at least 200 candles of history for the AI forecast.' };
   const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
+  const stepMs = intervalMs || (n > 1 ? candles[n - 1].t - candles[n - 2].t : null);
+  const intervalKey = interval || (stepMs ? INTERVAL_FOR_MS[stepMs] : null);
   const t0 = now();
   const closes = candles.map((c) => c.c);
   const ind = computeAll(candles);
@@ -436,7 +448,25 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   const idx = [];
   for (let i = 0; i < n - H; i++) if (feats[i]) idx.push(i);
   if (idx.length < 150) return { ok: false, reason: 'Not enough clean history to train the models.' };
-  const label = (i) => (closes[i + H] > closes[i] ? 1 : 0);
+  // What the models are trained to predict.
+  //
+  // 'direction' is the original question — is the close higher H bars later?
+  // It counts a +0.01% drift as a win and ignores the path, which is most of
+  // why it scores near a coin flip.
+  //
+  // 'barrier' asks the question a trade actually turns on: does price reach the
+  // profit target before the stop? Bounded, decidable, and the same thing the
+  // entry/stop/target plan on the page depends on. Measured separately, because
+  // it is a different question and its accuracy is NOT comparable to the other.
+  const barrierOpts = { up: barrierUp, down: barrierDown, maxBars: H * 3 };
+  const barrierCache = new Map();
+  const barrierAt = (i) => {
+    if (!barrierCache.has(i)) barrierCache.set(i, tripleBarrier(candles, i, ind.atr[i], barrierOpts));
+    return barrierCache.get(i);
+  };
+  const label = labelMode === 'barrier'
+    ? (i) => { const b = barrierAt(i); return b.label === null ? (closes[i + H] > closes[i] ? 1 : 0) : b.label; }
+    : (i) => (closes[i + H] > closes[i] ? 1 : 0);
   const fret = (i) => Math.log(closes[i + H] / closes[i]);
   const zAt = (i) => Math.log(closes[i] / closes[Math.max(0, i - H)]) / ((rollingSigma(closes, i, 100) || 1e-9) * Math.sqrt(H));
   const holt = holtSeries(closes);
@@ -458,6 +488,10 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
     const mlps = fast ? [] : [trainMlp(Xf, yf, { seed: seedBase + 7, epochs: 25 }), trainMlp(Xf, yf, { seed: seedBase + 29, epochs: 25 })];
     const moves = moveStatsModel(trainIdx.map((i) => ({ z: zAt(i), rsi: ind.rsi[i], up: label(i) })));
     const p = {
+      // Available to re-enable by adding `pooled` back to MODEL_INFO; it takes
+      // the raw feature row, not the per-coin standardised one, because that is
+      // what it was trained on. Measured worse — see the note above.
+      pooled: (i) => pooledProb(intervalKey, feats[i]),
       logistic: (i) => lr.predict(scale(feats[i])),
       gbdt: (i) => gb.predict(scale(feats[i])),
       knn: (i) => knn(scale(feats[i])).prob,
@@ -493,6 +527,10 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
       for (const k of keys) {
         if (k === 'pattern' && ((j - a) / stride) % 2 !== 0) continue; // pattern search on every other point
         const pr = P[k](i);
+        // A model with nothing to say (the pooled one has no coefficients for
+        // this timeframe, say) must abstain, not vote 0 — counting a null as
+        // "down" would both wreck the blend and fake its accuracy.
+        if (pr === null || pr === undefined || !Number.isFinite(pr)) continue;
         rec.probs[k] = pr;
         hits[k][1]++; if ((pr >= 0.5 ? 1 : 0) === label(i)) hits[k][0]++;
       }
@@ -509,7 +547,15 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
     const edge = Math.max(0, (m.accuracy ?? 0.5) - 0.5);
     weights[m.key] = edge * Math.sqrt(Math.min(1, m.samples / 120)) + 0.004;
   }
-  const simpleBlend = (probs) => { let s = 0, w = 0; for (const k of keys) if (probs[k] !== undefined) { s += probs[k] * weights[k]; w += weights[k]; } return w ? s / w : 0.5; };
+  const simpleBlend = (probs) => {
+    let s = 0, w = 0;
+    for (const k of keys) {
+      const p = probs[k];
+      if (p === null || p === undefined || !Number.isFinite(p)) continue;
+      s += p * weights[k]; w += weights[k];
+    }
+    return w ? s / w : 0.5;
+  };
 
   // ---- stacking: learn how to combine the models instead of assuming it.
   //
@@ -521,7 +567,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   // and every number it is fitted on is out-of-sample: those models were trained
   // on data ending H bars before the point they predicted.
   const featRow = (probs) => {
-    const x = keys.map((k) => (probs[k] === undefined ? 0 : (probs[k] - 0.5) * 2));
+    const x = keys.map((k) => (probs[k] === undefined || probs[k] === null ? 0 : (probs[k] - 0.5) * 2));
     x.push(1); // intercept
     return x;
   };
@@ -642,7 +688,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   const last = n - 1;
   const P = trainAll(idx.slice(-3000), 999);
   const live = {};
-  if (feats[last]) for (const k of keys) live[k] = P[k](last);
+  if (feats[last]) for (const k of keys) { const v = P[k](last); if (v !== null && v !== undefined && Number.isFinite(v)) live[k] = v; }
   else { live.trend = holtProb(last); live.pattern = P.pattern(last); }
   const pat = findPatterns(candles, last, patOpts);
   for (const m of models) { m.probUp = live[m.key] ?? null; }
@@ -715,7 +761,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
       accuracy: ensembleAcc, samples: eN, baseline,
       confidentAccuracy: cN >= 12 ? cHit / cN : null, confidentCoverage: eN ? cN / eN : 0,
       validationFrom: candles[idx[valStart]]?.t, validationTo: candles[idx[idx.length - 1]]?.t,
-      method: stacking ? 'stacked' : 'weighted', brier: brierScore,
+      method: stacking ? 'stacked' : 'weighted', brier: brierScore, labelMode,
       calibrationSlope: +calA.toFixed(3),
     },
     patterns: pat,
