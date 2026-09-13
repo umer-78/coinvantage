@@ -80,6 +80,29 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it. `md5sum` both and compare.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Measured: the score is NOT a gradient (2026-09-13)
+
+`tools/evaluate-signal-edge.mjs` replays every bar across 12 coins, computes the
+score the site would have shown, and scores the trade that followed with the
+triple-barrier test. Base rates and lifts, by timeframe:
+
+| Timeframe | Base (every bar) | Best band | Hit | Lift | n |
+|---|---|---|---|---|---|
+| 15m | 49.4% | 60..100 | 60.6% | 1.23 | 99 (too few) |
+| 1h  | 27.5% | 45..59  | 35.4% | 1.29 | 486 ✔ published |
+| 4h  | 47.6% | 18..29  | 52.6% | 1.10 | 498 ✔ published |
+| 1d  | 35.0% | 30..44  | 37.9% | 1.08 | 596 (lift too low) |
+
+The relationship is **not monotonic**. On 4h a score of 60+ did WORSE than an
+average bar (45.5% vs 47.6%); on 1h the 60+ bucket was worse than 45-59. Only
+bands at n>=300 AND lift>=1.10 are published in `SIGNAL_EDGE`, and the UI says
+plainly, outside those bands, that a higher score does not mean a better trade.
+
+Note on method: the barrier test always measures a LONG (target above, stop
+below), so the positive EV on strongly NEGATIVE scores is mean reversion after
+selloffs, not the signal being right. Do not read those rows as "the sell signal
+works" — that needs its own short-side test, which has not been run.
+
 ### Known, deliberate, do not "fix"
 - 15m and 4h trade geometry has NEGATIVE measured expectancy at every configuration
   tested. The UI says so and downgrades the verdict to BUY (WEAK EDGE). Do not

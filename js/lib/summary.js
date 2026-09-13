@@ -8,6 +8,7 @@
 // all say the same thing in the same words.
 
 import { conflictCheck } from './analyst.js';
+import { edgeBand } from './signals.js';
 
 const pct = (v, dp = 1) => `${v > 0 ? '+' : ''}${Number(v).toFixed(dp)}%`;
 
@@ -110,6 +111,22 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
       label: 'What the model adds',
       text: `${forecast.probUpPct}% chance of going ${dir} over ${horizonText || 'the forecast horizon'}${acc !== null ? `, from a model that called direction right ${acc}% of the time on recent data it had never seen` : ''}.`,
     });
+  }
+
+  // Where the score has actually worked. Replaying every bar showed the score is
+  // not a smooth gradient of quality — on some timeframes the very highest
+  // scores did worse than average — so the only honest thing to report is the
+  // narrow band that measured better, and silence everywhere else.
+  const { band, inside } = edgeBand(interval, signal.score);
+  if (band && !conflict) {
+    if (inside) {
+      steps.push({
+        label: 'Tested zone',
+        text: `A score of ${signal.score} sits in the band where this engine has actually worked on the ${interval} chart: ${band.hitRate}% of those trades reached target versus ${band.baseRate}% for an average bar, over ${band.samples} tested entries. That is ${(band.lift).toFixed(2)}× the base rate — the one band on this timeframe with a measured edge.`,
+      });
+    } else {
+      caveats.push(`On the ${interval} chart only scores of ${band.lo}–${band.hi} have shown a measured edge (${band.hitRate}% vs ${band.baseRate}% base rate over ${band.samples} entries). A score of ${signal.score} is outside that band, so treat the strength number as description, not evidence — a higher score does not reliably mean a better trade.`);
+    }
   }
 
   // The geometry's own expectancy, measured over ~21,000 entries. If the levels
