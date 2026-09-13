@@ -1,7 +1,7 @@
 // Sign in / sign up / password reset — a single modal, no page navigation needed.
 import { $, icon, modal, toast } from '../ui.js';
 import { esc } from '../format.js';
-import { signIn, signUp, callFn } from '../api/backend.js';
+import { signIn, signUp, callFn, sendResetLink } from '../api/backend.js';
 import { assuranceLevel, completeChallenge } from '../api/security.js';
 
 const FORMS = {
@@ -50,9 +50,15 @@ export function openAuth(mode = 'in') {
         ${cur === 'up' ? '<label class="fld">Name<input class="inp" name="name" autocomplete="name" maxlength="60"></label>' : ''}
         <label class="fld">E-mail<input class="inp" name="email" type="email" autocomplete="email" required></label>
         ${cur === 'reset' ? `
-          <p class="fine">${emailEnabled === false ? 'E-mail sending is not configured on this site yet, so password reset codes cannot be sent. Ask the site admin to reset it for you.' : 'We will e-mail you a 6-digit code.'}</p>
-          <div class="row" style="gap:8px"><button type="button" class="btn sm" id="sendCode" ${emailEnabled === false ? 'disabled' : ''}>Send code</button><span class="fine" id="codeMsg"></span></div>
-          <label class="fld">6-digit code<input class="inp" name="code" inputmode="numeric" maxlength="6" pattern="\\d{6}" required></label>
+          <p class="fine">${emailEnabled === false
+            ? 'This site has no e-mail provider connected, so it cannot send a 6-digit code. Use the reset link below instead — it comes from the account service itself and needs no setup.'
+            : 'We will e-mail you a 6-digit code.'}</p>
+          <div class="row" style="gap:8px">
+            <button type="button" class="btn sm" id="sendCode" ${emailEnabled === false ? 'disabled' : ''}>Send code</button>
+            <button type="button" class="btn sm" id="sendLink">E-mail me a reset link</button>
+            <span class="fine" id="codeMsg"></span>
+          </div>
+          <label class="fld">6-digit code<input class="inp" name="code" inputmode="numeric" maxlength="6" pattern="\\d{6}" ${emailEnabled === false ? '' : 'required'}></label>
         ` : ''}
         <label class="fld">${cur === 'reset' ? 'New password' : 'Password'}<input class="inp" name="password" type="password" autocomplete="${cur === 'in' ? 'current-password' : 'new-password'}" minlength="8" required></label>
         ${cur !== 'in' ? '<p class="fine">At least 8 characters.</p>' : ''}
@@ -70,6 +76,22 @@ export function openAuth(mode = 'in') {
     m.el.querySelectorAll('[data-close]').forEach((a) => a.addEventListener('click', () => m.close()));
 
     const form = $('#af', m.el), err = $('#err', m.el), btn = $('#go', m.el);
+    // The always-available route: a recovery link from the account service.
+    $('#sendLink', m.el)?.addEventListener('click', async (e) => {
+      const email = form.email.value.trim();
+      if (!email) { form.email.focus(); return; }
+      const btn2 = e.currentTarget;
+      btn2.disabled = true;
+      $('#codeMsg', m.el).textContent = 'Sending…';
+      try {
+        await sendResetLink(email, `${location.origin}${location.pathname}`);
+        $('#codeMsg', m.el).innerHTML = '<b>Check your inbox</b> — open the link and you can set a new password here.';
+      } catch (err) {
+        $('#codeMsg', m.el).textContent = err.message;
+        btn2.disabled = false;
+      }
+    });
+
     $('#sendCode', m.el)?.addEventListener('click', async () => {
       const email = form.email.value.trim();
       if (!email) { form.email.focus(); return; }
@@ -99,7 +121,9 @@ export function openAuth(mode = 'in') {
         }
         else if (cur === 'up') await signUp(email, password, form.name.value.trim());
         else {
-          await callFn('account', { action: 'reset-password', email, code: form.code.value.trim(), password });
+          const code = form.code.value.trim();
+          if (!code) throw new Error('Enter the 6-digit code, or use "E-mail me a reset link" above and follow the link instead.');
+          await callFn('account', { action: 'reset-password', email, code, password });
           await signIn(email, password);
         }
         m.close();

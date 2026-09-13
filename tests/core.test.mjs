@@ -265,6 +265,39 @@ test('junk listings are kept out of the coin list', async () => {
   }
 });
 
+test('the real account records trades without ever placing one', async () => {
+  const { newState, recordRealTrade, DEFAULT_CONFIG, REAL_NOTICE } = await import('../js/lib/autotrader.js');
+  const cfg = { ...DEFAULT_CONFIG };
+  const st = newState(cfg);
+  const start = st.balance;
+
+  // a closed long, fees taken off
+  const win = recordRealTrade(st, cfg, { symbol: 'ETH', qty: 1, entry: 2000, exit: 2200, fee: 4 });
+  assert.ok(win.ok);
+  assert.equal(win.trade.pnl, 196, '200 gross minus the 4 fee');
+  assert.equal(win.trade.pnlPct, 10);
+  assert.equal(win.trade.real, true);
+  assert.equal(win.trade.reason, 'recorded by you');
+  assert.equal(st.balance, start + 196);
+
+  // a short makes money when price falls
+  const short = recordRealTrade(st, cfg, { symbol: 'SOL', side: 'short', qty: 10, entry: 100, exit: 90, fee: 1 });
+  assert.equal(short.trade.pnl, 99);
+  assert.ok(short.trade.pnlPct > 0, 'a short that fell is a win, not a loss');
+
+  // an open trade, and no duplicate on the same coin
+  assert.ok(recordRealTrade(st, cfg, { symbol: 'BTC', qty: 0.01, entry: 60000 }).ok);
+  assert.equal(recordRealTrade(st, cfg, { symbol: 'BTC', qty: 0.01, entry: 61000 }).ok, false);
+
+  // bad input is refused rather than stored as nonsense
+  assert.equal(recordRealTrade(st, cfg, { symbol: 'BTC', qty: 0, entry: 1 }).ok, false);
+  assert.equal(recordRealTrade(st, cfg, { symbol: 'XYZ', qty: 1, entry: 0 }).ok, false);
+  assert.equal(recordRealTrade(st, cfg, { symbol: '', qty: 1, entry: 1 }).ok, false);
+
+  // the wording must keep saying the app does not trade
+  assert.match(REAL_NOTICE, /never places an order/i);
+});
+
 test('demo trades run on simulated money and book a real result', async () => {
   const { newState, openManual, closeManual, DEFAULT_CONFIG, equity } = await import('../js/lib/autotrader.js');
   const cfg = { ...DEFAULT_CONFIG };

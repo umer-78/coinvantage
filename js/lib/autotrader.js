@@ -159,6 +159,54 @@ export function openManual(state, cfg, symbol, price, { notional, stopPrice, tar
   return { ok: true, position: state.open[symbol] };
 }
 
+/**
+ * Record a trade you actually placed on an exchange.
+ *
+ * This is a journal, not an order router: nothing here reaches an exchange and
+ * the app holds no keys. The point is that the same statistics — win rate,
+ * drawdown, profit factor — get computed over your real trades as over the
+ * simulated ones, so the comparison is like for like.
+ */
+export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry, exit = null, fee = 0, openedAt = Date.now(), closedAt = null, note = '' }) {
+  if (!symbol) return { ok: false, error: 'Which coin?' };
+  const q = +qty, e = +entry;
+  if (!(q > 0)) return { ok: false, error: 'Enter how much you bought, greater than zero.' };
+  if (!(e > 0)) return { ok: false, error: 'Enter the price you bought at.' };
+  if (side !== 'long' && side !== 'short') return { ok: false, error: 'Side must be long or short.' };
+
+  const notional = q * e;
+  const feePaid = Math.max(0, +fee || 0);
+
+  if (exit === null || exit === '' || exit === undefined) {
+    if (state.open[symbol]) return { ok: false, error: `You already have an open ${symbol} trade recorded. Close it first, or record it as a closed trade.` };
+    state.open[symbol] = {
+      symbol, side, real: true,
+      entry: round(e), initialStop: null, stop: null, tp: null,
+      qty: round(q, 10), notional: round(notional, 2),
+      openedAt, openScore: null, movedToBreakEven: false, feePaid: round(feePaid, 4), note,
+    };
+    markEquity(state, openedAt);
+    return { ok: true, position: state.open[symbol] };
+  }
+
+  const x = +exit;
+  if (!(x > 0)) return { ok: false, error: 'Enter the price you sold at, or leave it blank if the trade is still open.' };
+  const gross = side === 'long' ? (x - e) * q : (e - x) * q;
+  const pnl = gross - feePaid;
+  state.balance += pnl;
+  state.closed.push({
+    symbol, side, real: true, note,
+    entry: round(e), exit: round(x), qty: round(q, 10), notional: round(notional, 2),
+    openedAt, exitAt: closedAt || Date.now(), reason: 'recorded by you',
+    pnl: round(pnl, 2), pnlPct: round((side === 'long' ? (x / e - 1) : (e / x - 1)) * 100, 3),
+    feePaid: round(feePaid, 4),
+  });
+  markEquity(state, closedAt || Date.now());
+  return { ok: true, trade: state.closed[state.closed.length - 1] };
+}
+
+export const REAL_NOTICE = 'These are trades you placed yourself on an exchange. CoinVantage records them so you can measure your own results — it never places an order, connects to an exchange, or holds any key.';
+
 /** Close a position by hand at the current price. */
 export function closeManual(state, cfg, symbol, price, at = Date.now()) {
   if (!state.open[symbol]) return { ok: false, error: `No practice position open on ${symbol}.` };

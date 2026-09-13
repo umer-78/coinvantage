@@ -110,6 +110,41 @@ export async function pushUserData(patch) {
   await client.from('user_data').upsert({ user_id: auth.user.id, ...patch, updated_at: new Date().toISOString() });
 }
 
+// ---------------------------------------------------------------- password recovery
+//
+// Two routes exist because one of them needs a key the site owner may never set:
+//  - the app's own 6-digit code flow, which needs an e-mail provider key;
+//  - Supabase's built-in auth mailer, which needs nothing at all.
+// The second is the fallback, so "Forgot password?" always does something.
+
+/** Sends a recovery link using Supabase's own mailer. No provider key needed. */
+export async function sendResetLink(email, redirectTo) {
+  const client = await sb();
+  if (!client) throw new Error('The account backend is not connected on this deployment.');
+  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * The link lands back here as `#access_token=…&type=recovery`. The client is
+ * created with detectSessionInUrl off (it would fight this app's hash router),
+ * so the fragment is read and exchanged by hand, then wiped from the address
+ * bar — a recovery token sitting in the URL is a token in the browser history.
+ */
+export async function consumeRecoveryLink() {
+  const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+  if (!raw.includes('access_token=') || !raw.includes('type=recovery')) return false;
+  const p = new URLSearchParams(raw);
+  const access_token = p.get('access_token');
+  const refresh_token = p.get('refresh_token');
+  history.replaceState(null, '', `${location.pathname}${location.search}#/account`);
+  if (!access_token || !refresh_token) return false;
+  const client = await sb();
+  const { error } = await client.auth.setSession({ access_token, refresh_token });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 // ---------------------------------------------------------------- alerts (server side)
 export async function serverAlerts() {
   const client = await sb();
