@@ -1,6 +1,7 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable } from '../api/market.js';
 import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PAPER_NOTICE, REAL_NOTICE } from '../lib/autotrader.js';
+import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js';
 import { esc, pct, money, compact, dateTime, ago, amount } from '../format.js';
@@ -89,6 +90,14 @@ export async function render(el) {
       <div class="card-h"><h3>Real account</h3><div class="row" style="gap:8px"><span class="chip up">Your own money</span>${has ? '<button class="btn sm ghost" id="realReset">Reset</button>' : ''}</div></div>
       <p class="fine">Record the trades you actually placed on an exchange and they are measured the same way as the accounts above. ${esc(REAL_NOTICE)}</p>
 
+      <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="btn sm" style="cursor:pointer">${icon('exchanges', 14)} Import from Binance
+          <input type="file" id="csvIn" accept=".csv,.tsv,.txt" hidden>
+        </label>
+        <span class="fine">Binance → Orders → Trade History → Export. The file is read in your browser; nothing is uploaded.</span>
+      </div>
+      <p class="fine" id="csvMsg" hidden></p>
+
       <form id="rf" class="row mt" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
         <label class="fld">Coin<select class="inp" name="sym">${tradable.slice(0, 60).map((c) => `<option value="${esc(c.symbol)}">${esc(c.symbol)}</option>`).join('')}</select></label>
         <label class="fld">Side<select class="inp" name="side"><option value="long">Bought</option><option value="short">Sold short</option></select></label>
@@ -124,6 +133,48 @@ export async function render(el) {
   }
 
   function wireReal() {
+    // Import: parse in the browser, match buys to sells FIFO, and show what
+    // happened before writing anything.
+    $('#csvIn', el)?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const msg = $('#csvMsg', el);
+      msg.hidden = false;
+      msg.className = 'fine';
+      msg.textContent = `Reading ${file.name}…`;
+      try {
+        const text = await file.text();
+        const { fills, errors, skipped } = parseTradeCsv(text);
+        if (errors.length) { msg.className = 'fine down'; msg.textContent = errors[0]; return; }
+        const { closed, open } = matchFills(fills);
+        if (!closed.length && !open.length) { msg.className = 'fine down'; msg.textContent = 'No trades could be matched from that file.'; return; }
+
+        const rs = realState() || newState(cfg);
+        let added = 0;
+        for (const t of closed) {
+          const r = recordRealTrade(rs, cfg, {
+            symbol: t.symbol, side: 'long', qty: t.qty, entry: t.entry, exit: t.exit,
+            fee: t.fee, openedAt: t.openedAt, closedAt: t.closedAt, note: 'imported',
+          });
+          if (r.ok) added++;
+        }
+        for (const o of open) {
+          const r = recordRealTrade(rs, cfg, { symbol: o.symbol, side: 'long', qty: o.qty, entry: o.entry, fee: o.fee, openedAt: o.at, note: 'imported' });
+          if (r.ok) added++;
+        }
+        save(REAL_KEY, rs);
+        msg.className = 'fine up';
+        msg.textContent = `Imported ${added} trade${added === 1 ? '' : 's'} from ${fills.length} fills — ${closed.length} closed, ${open.length} still open${skipped ? `, ${skipped} row${skipped === 1 ? '' : 's'} skipped` : ''}.`;
+        toast(`${added} trades imported.`, 'up');
+        draw();
+      } catch (err) {
+        msg.className = 'fine down';
+        msg.textContent = `Could not read that file: ${err.message}`;
+      } finally {
+        e.target.value = '';
+      }
+    });
+
     const f3 = $('#rf', el);
     f3?.addEventListener('submit', (e) => {
       e.preventDefault();
