@@ -6,6 +6,29 @@ import { computeAll, supportResistance, last } from './indicators.js';
 
 export const THRESHOLDS = { strong: 45, normal: 18 };
 
+/**
+ * Stop and target distances, chosen by measurement rather than convention.
+ *
+ * The old plan — a 1.5 ATR stop and a 2.5:1 target on every timeframe — was
+ * never tested. Swept across 12 coins and ~21,000 entries with
+ * `tools/evaluate-geometry.mjs`, it turned out to lose money on three of the
+ * four timeframes, because a 2.5:1 target from a 1.5 ATR stop is only reached
+ * about a quarter of the time. That is the arithmetic behind the −60% weekly
+ * backtest, and no forecasting model can rescue a plan whose exits do not pay.
+ *
+ * `ev` is the measured expected value per trade in R (risk units), after fees,
+ * entering at every bar. A negative number means the geometry itself loses —
+ * the UI says so rather than printing levels that quietly cost money.
+ */
+export const TRADE_GEOMETRY = {
+  '15m': { stopAtr: 1, rr: 1, ev: -0.009, tested: true },
+  '1h':  { stopAtr: 1, rr: 3, ev: +0.055, tested: true },
+  '4h':  { stopAtr: 1, rr: 1, ev: -0.047, tested: true },
+  '1d':  { stopAtr: 1, rr: 2, ev: +0.058, tested: true },
+};
+const DEFAULT_GEOMETRY = { stopAtr: 1.5, rr: 2.5, ev: null, tested: false };
+export const geometryFor = (interval) => TRADE_GEOMETRY[interval] || DEFAULT_GEOMETRY;
+
 export function labelFor(score) {
   if (score >= THRESHOLDS.strong) return { action: 'STRONG_BUY', text: 'Strong Buy', tone: 'up' };
   if (score >= THRESHOLDS.normal) return { action: 'BUY', text: 'Buy', tone: 'up' };
@@ -145,20 +168,24 @@ export function generateSignal(candles, { interval = '' } = {}) {
   const s1 = sr.supports[0]?.price ?? null;
   const r1 = sr.resistances[0]?.price ?? null;
 
+  // Levels come from the measured geometry for this timeframe, not a fixed rule.
+  const geo = geometryFor(interval);
   let plan = null;
   if (score >= THRESHOLDS.normal) {
-    let stop = entryStop(price - 1.5 * atrV, s1 !== null ? s1 - 0.25 * atrV : null, 'long', price, atrV);
+    let stop = entryStop(price - geo.stopAtr * atrV, s1 !== null ? s1 - 0.25 * atrV : null, 'long', price, atrV);
     const risk = price - stop;
-    const tp3Candidate = sr.resistances.find((l) => l.price > price + 2.5 * risk)?.price;
+    const tp3Candidate = sr.resistances.find((l) => l.price > price + geo.rr * risk)?.price;
     plan = {
       side: 'long',
       title: 'Long / buy setup',
       entry: round(price, price),
       entryZone: [round(Math.max(price - 0.5 * atrV, s1 ?? -Infinity), price), round(price, price)],
       stopLoss: round(stop, price),
-      takeProfits: [price + 1.5 * risk, price + 2.5 * risk, tp3Candidate ?? price + 4 * risk].map((v) => round(v, price)),
+      takeProfits: [price + geo.rr * 0.6 * risk, price + geo.rr * risk, tp3Candidate ?? price + geo.rr * 1.6 * risk].map((v) => round(v, price)),
       riskPct: +((risk / price) * 100).toFixed(2),
-      rewardRisk: 2.5,
+      rewardRisk: geo.rr,
+      expectancyR: geo.ev,
+      geometryTested: geo.tested,
       exitRules: [
         `Exit if price closes below the stop (${fmtNum(stop)})`,
         `Take partial profit at TP1 and move stop to entry`,
@@ -167,18 +194,20 @@ export function generateSignal(candles, { interval = '' } = {}) {
       ].filter(Boolean),
     };
   } else if (score <= -THRESHOLDS.normal) {
-    let stop = entryStop(price + 1.5 * atrV, r1 !== null ? r1 + 0.25 * atrV : null, 'short', price, atrV);
+    let stop = entryStop(price + geo.stopAtr * atrV, r1 !== null ? r1 + 0.25 * atrV : null, 'short', price, atrV);
     const risk = stop - price;
-    const tp3Candidate = sr.supports.find((l) => l.price < price - 2.5 * risk)?.price;
+    const tp3Candidate = sr.supports.find((l) => l.price < price - geo.rr * risk)?.price;
     plan = {
       side: 'short',
       title: 'Exit longs / short setup',
       entry: round(price, price),
       entryZone: [round(price, price), round(Math.min(price + 0.5 * atrV, r1 ?? Infinity), price)],
       stopLoss: round(stop, price),
-      takeProfits: [price - 1.5 * risk, price - 2.5 * risk, tp3Candidate ?? price - 4 * risk].map((v) => round(Math.max(v, 0), price)),
+      takeProfits: [price - geo.rr * 0.6 * risk, price - geo.rr * risk, tp3Candidate ?? price - geo.rr * 1.6 * risk].map((v) => round(Math.max(v, 0), price)),
       riskPct: +((risk / price) * 100).toFixed(2),
-      rewardRisk: 2.5,
+      rewardRisk: geo.rr,
+      expectancyR: geo.ev,
+      geometryTested: geo.tested,
       exitRules: [
         'Spot holders: consider closing or reducing the position',
         `Short invalidated on a close above ${fmtNum(stop)}`,

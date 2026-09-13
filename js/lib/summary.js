@@ -112,6 +112,20 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     });
   }
 
+  // The geometry's own expectancy, measured over ~21,000 entries. If the levels
+  // themselves lose money there is no honest way to present them as a trade.
+  if (p && p.expectancyR !== null && p.expectancyR !== undefined) {
+    if (p.expectancyR <= 0) {
+      caveats.push(`Tested across 12 coins, entries on this timeframe with these stop and target distances came out at ${p.expectancyR.toFixed(3)}R per trade — slightly negative before you add slippage. The levels are shown for reference; on the evidence this timeframe is one to read, not to trade.`);
+      if (verdict === 'BUY' || verdict === 'STRONG BUY') { verdict = 'BUY (WEAK EDGE)'; tone = 'warn'; }
+    } else {
+      steps.push({
+        label: 'Does this pay?',
+        text: `Measured over about 21,000 entries across 12 coins, this stop and target combination returned ${p.expectancyR > 0 ? '+' : ''}${p.expectancyR.toFixed(3)}R per trade after fees. Small, positive, and only true if you take the exits as written.`,
+      });
+    }
+  }
+
   if (acc !== null && acc < 52) caveats.push(`The forecast has no measured edge on this coin and timeframe (${acc}%), so weight the chart signal more heavily here.`);
   if (strength < 25 && !conflict) caveats.push('This is a weak reading. A small score means the indicators barely agree, which is a reason to size down or skip it.');
   caveats.push('This is a reading of public market data, not advice. Use a stop-loss on every trade and only risk what you can afford to lose.');

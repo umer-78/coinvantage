@@ -14,6 +14,7 @@
 
 import { computeAll } from './indicators.js';
 import { pooledProb } from './pooled.js';
+import { tripleBarrier } from './barrier.js';
 
 // ---------------------------------------------------------------- helpers
 const clip = (v, lo = -5, hi = 5) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 0);
@@ -432,7 +433,7 @@ export const MODEL_INFO = {
 // Candle spacing → the timeframe key the pooled model was trained under.
 const INTERVAL_FOR_MS = { 9e5: '15m', 36e5: '1h', 144e5: '4h', 864e5: '1d' };
 
-export function forecast(candles, { horizon = 12, window = 40, fast = false, intervalMs = null, folds = 3, interval = null } = {}) {
+export function forecast(candles, { horizon = 12, window = 40, fast = false, intervalMs = null, folds = 3, interval = null, labelMode = 'direction', barrierUp = 2, barrierDown = 1 } = {}) {
   const n = candles.length;
   const H = horizon;
   if (n < 200) return { ok: false, reason: 'Need at least 200 candles of history for the AI forecast.' };
@@ -447,7 +448,25 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   const idx = [];
   for (let i = 0; i < n - H; i++) if (feats[i]) idx.push(i);
   if (idx.length < 150) return { ok: false, reason: 'Not enough clean history to train the models.' };
-  const label = (i) => (closes[i + H] > closes[i] ? 1 : 0);
+  // What the models are trained to predict.
+  //
+  // 'direction' is the original question — is the close higher H bars later?
+  // It counts a +0.01% drift as a win and ignores the path, which is most of
+  // why it scores near a coin flip.
+  //
+  // 'barrier' asks the question a trade actually turns on: does price reach the
+  // profit target before the stop? Bounded, decidable, and the same thing the
+  // entry/stop/target plan on the page depends on. Measured separately, because
+  // it is a different question and its accuracy is NOT comparable to the other.
+  const barrierOpts = { up: barrierUp, down: barrierDown, maxBars: H * 3 };
+  const barrierCache = new Map();
+  const barrierAt = (i) => {
+    if (!barrierCache.has(i)) barrierCache.set(i, tripleBarrier(candles, i, ind.atr[i], barrierOpts));
+    return barrierCache.get(i);
+  };
+  const label = labelMode === 'barrier'
+    ? (i) => { const b = barrierAt(i); return b.label === null ? (closes[i + H] > closes[i] ? 1 : 0) : b.label; }
+    : (i) => (closes[i + H] > closes[i] ? 1 : 0);
   const fret = (i) => Math.log(closes[i + H] / closes[i]);
   const zAt = (i) => Math.log(closes[i] / closes[Math.max(0, i - H)]) / ((rollingSigma(closes, i, 100) || 1e-9) * Math.sqrt(H));
   const holt = holtSeries(closes);
@@ -742,7 +761,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
       accuracy: ensembleAcc, samples: eN, baseline,
       confidentAccuracy: cN >= 12 ? cHit / cN : null, confidentCoverage: eN ? cN / eN : 0,
       validationFrom: candles[idx[valStart]]?.t, validationTo: candles[idx[idx.length - 1]]?.t,
-      method: stacking ? 'stacked' : 'weighted', brier: brierScore,
+      method: stacking ? 'stacked' : 'weighted', brier: brierScore, labelMode,
       calibrationSlope: +calA.toFixed(3),
     },
     patterns: pat,
