@@ -457,3 +457,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+
+/* The plain-English trade summary: the answer, before the numbers. */
+.summary { padding: 14px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); }
+.summary .steps { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; }
+.summary dt { font-weight: 700; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.summary dd { margin: 0; font-size: 14px; color: var(--text-2); }
+@media (max-width: 560px) {
+  .summary .steps { grid-template-columns: 1fr; gap: 2px; }
+  .summary dd { margin-bottom: 8px; }
+}

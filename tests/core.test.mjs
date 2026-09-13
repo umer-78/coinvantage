@@ -443,6 +443,54 @@ test('second-by-second candles bucket correctly', async () => {
   assert.equal(offset[0].t, base, 'a partial bucket still starts on the boundary');
 });
 
+test('the trade summary answers what, when, when to sell and where you are wrong', async () => {
+  const { tradeSummary, summaryMarkdown } = await import('../js/lib/summary.js');
+  const fmt = (v) => `$${Number(v).toFixed(0)}`;
+
+  const signal = {
+    ok: true, score: 31, coinSymbol: 'BTC', text: 'Buy',
+    plan: { side: 'long', entryZone: [76946, 77248], stopLoss: 76343, takeProfits: [78605, 79509, 79652], riskPct: 1.17 },
+    waitFor: [],
+  };
+  const s = tradeSummary({
+    signal, forecast: { probUpPct: 63, validatedAccuracyPct: 58 },
+    timing: { rising: true, bars: 6, targetPrice: 79000, turnBars: 8 },
+    interval: '4h', horizonText: '1 day', fmt,
+  });
+
+  assert.equal(s.verdict, 'BUY');
+  const labels = s.steps.map((x) => x.label);
+  for (const need of ['What to buy', 'When to buy', 'When to sell', 'Where you are wrong', 'How much', 'How long']) {
+    assert.ok(labels.includes(need), `the summary must answer "${need}" — got ${labels.join(', ')}`);
+  }
+  const sell = s.steps.find((x) => x.label === 'When to sell').text;
+  assert.match(sell, /\$78605/, 'the first target has to be in the words, not just a table');
+  const wrong = s.steps.find((x) => x.label === 'Where you are wrong').text;
+  assert.match(wrong, /\$76343/);
+  assert.match(wrong, /1\.17%/);
+  assert.ok(s.caveats.some((c) => /stop-loss/i.test(c)));
+
+  // a conflict downgrades the verdict and the confidence rather than selling it
+  const clash = tradeSummary({
+    signal, forecast: { probUpPct: 41, validatedAccuracyPct: 58 },
+    interval: '4h', horizonText: '1 day', fmt,
+  });
+  assert.equal(clash.verdict, 'NO CLEAR EDGE');
+  assert.equal(clash.confidence, 'low');
+  assert.ok(!clash.steps.some((x) => x.label === 'When to buy'), 'no entry plan is offered when the readings disagree');
+
+  // no plan at all → it says what to wait for instead of inventing a trade
+  const idle = tradeSummary({
+    signal: { ok: true, score: 4, coinSymbol: 'BTC', plan: null, waitFor: ['Close above 79,000 on rising volume'] },
+    interval: '4h', fmt,
+  });
+  assert.equal(idle.verdict, 'WAIT');
+  assert.match(idle.steps.find((x) => x.label === 'What to wait for').text, /79,000/);
+
+  // and it renders to markdown for the assistant and exports
+  assert.match(summaryMarkdown(s), /\*\*When to sell:\*\*/);
+});
+
 test('a buy signal that contradicts the forecast is flagged, not sold confidently', async () => {
   const { conflictCheck } = await import('../js/lib/analyst.js');
 
