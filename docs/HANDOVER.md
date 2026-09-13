@@ -52,6 +52,40 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
       errors, 25 unit tests green, Supabase advisors clean of real issues.
       Last run 2026-09-13.
 
+## Open work (as of 2026-09-13 evening)
+
+Umer picked these four, plus the Binance import which is DONE and live.
+
+- [ ] **Portfolio performance chart** — the Real account's value over time against
+      simply holding Bitcoin. `js/views/trader.js` already has `state.equityCurve`
+      and a LineChart on the AI account; do the same for the real one and overlay
+      a buy-and-hold BTC line normalised to the same starting balance.
+- [ ] **Watchlist alerts digest** — one daily summary of everything on the
+      watchlist: what moved, what triggered, what the engine says now. Server side,
+      in `supabase/functions/cv/alerts.ts`, on its own pg_cron schedule.
+- [ ] **Coin comparison AI** — let the assistant answer "compare BTC, ETH and SOL"
+      with a ranked table. `scanMarketMulti` in `js/ai/context.js` already builds
+      per-coin readings; add a `compare` intent in `js/lib/analyst.js`.
+- [ ] **Export and reports** — download trades, signals and the track record as
+      CSV, and a printable summary for handing to a client.
+
+### Repair / maintenance sweep to run each time
+1. `node --check` every file in js/, then `node --test tests/*.test.mjs` (31 tests).
+2. Walk every route on the live site and confirm zero console errors.
+3. Re-run the Supabase security advisors; confirm nothing new.
+4. Confirm engine parity: `js/lib/{signals,predict,indicators,barrier}.js` must be
+   byte-identical to `supabase/functions/cv/engine/` — the /cv/selftest endpoint
+   depends on it. `md5sum` both and compare.
+5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
+
+### Known, deliberate, do not "fix"
+- 15m and 4h trade geometry has NEGATIVE measured expectancy at every configuration
+  tested. The UI says so and downgrades the verdict to BUY (WEAK EDGE). Do not
+  quietly swap in nicer-looking levels — re-measure with tools/evaluate-geometry.mjs.
+- The app never places orders and never asks for exchange API keys. Four separate
+  requests to add real trading were declined; the Real account is a journal plus
+  CSV import. Keep it that way.
+
 ## Measured numbers currently published (do not change without re-measuring)
 - Forecast direction accuracy: 54.0% overall — 15m 57.1%, 1h 53.0%, 4h 58.9%, 1d 47.0%
   (672 tests, 12 coins, naive baseline 51.3%). Confident subset: 56.9% over 38% of forecasts.
