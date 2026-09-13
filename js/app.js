@@ -338,6 +338,37 @@ getAppSettings().then((s) => {
 $$('[data-app-name]').forEach((n) => { n.textContent = CONFIG.APP_NAME; });
 applyTheme(settings.get().theme || 'dark');
 applyDir();
+
+// A password-recovery link lands back on the site as `#access_token=…&type=recovery`.
+// That has to be handled before the router sees the hash, or the app just tries to
+// route to a nonsense page and the reader is stuck.
+(async () => {
+  if (!location.hash.includes('type=recovery')) return;
+  try {
+    const { consumeRecoveryLink } = await import('./api/backend.js');
+    const { changePassword } = await import('./api/security.js');
+    const ok = await consumeRecoveryLink();
+    if (!ok) return;
+    const m = modal(`<h3>Set a new password</h3>
+      <p class="fine">You followed a recovery link, so you can choose a new password now.</p>
+      <form class="stack mt" style="gap:10px" id="rp">
+        <label class="fld">New password<input class="inp" name="pw" type="password" autocomplete="new-password" minlength="10" required autofocus></label>
+        <p class="fine">At least 10 characters.</p>
+        <button class="btn primary">Save new password</button>
+        <p class="fine down" id="rpErr" hidden></p>
+      </form>`);
+    const f = m.el.querySelector('#rp'), err = m.el.querySelector('#rpErr');
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.hidden = true;
+      try {
+        await changePassword(f.pw.value);
+        m.close();
+        toast('Password updated — you are signed in.', 'up');
+      } catch (e2) { err.textContent = e2.message; err.hidden = false; }
+    });
+  } catch (e) { console.warn('recovery link', e); }
+})();
 // Put the app on the exchange's clock before anything is timestamped, and keep
 // it there — a device clock that drifts makes every "2m ago" and every live /
 // stale check wrong.
@@ -359,7 +390,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260913-165454";
+export const BUILD = "20260913-170834";
 
 async function checkForUpdate() {
   try {

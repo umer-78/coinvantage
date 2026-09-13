@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable } from '../api/market.js';
-import { newState, replaySymbol, stats, equity, closeManual, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
+import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PAPER_NOTICE, REAL_NOTICE } from '../lib/autotrader.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js';
 import { esc, pct, money, compact, dateTime, ago, amount } from '../format.js';
@@ -72,6 +72,92 @@ export async function render(el) {
   }
 
   // ---------------------------------------------------------------- view
+  // --- the real account -------------------------------------------------
+  // Trades actually placed on an exchange, typed in here. CoinVantage records
+  // them; it never places one. Same statistics as the simulated accounts so the
+  // three can be compared honestly.
+  const REAL_KEY = 'realTradeState';
+  const realState = () => load(REAL_KEY, null);
+
+  function realCard() {
+    const rs = realState();
+    const has = rs && (Object.keys(rs.open).length || rs.closed.length);
+    const s3 = has ? stats(rs, st.prices) : null;
+    const open = has ? Object.entries(rs.open) : [];
+    const closed = has ? [...rs.closed].reverse().slice(0, 25) : [];
+    return `<div class="card mt">
+      <div class="card-h"><h3>Real account</h3><div class="row" style="gap:8px"><span class="chip up">Your own money</span>${has ? '<button class="btn sm ghost" id="realReset">Reset</button>' : ''}</div></div>
+      <p class="fine">Record the trades you actually placed on an exchange and they are measured the same way as the accounts above. ${esc(REAL_NOTICE)}</p>
+
+      <form id="rf" class="row mt" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <label class="fld">Coin<select class="inp" name="sym">${tradable.slice(0, 60).map((c) => `<option value="${esc(c.symbol)}">${esc(c.symbol)}</option>`).join('')}</select></label>
+        <label class="fld">Side<select class="inp" name="side"><option value="long">Bought</option><option value="short">Sold short</option></select></label>
+        <label class="fld">Amount<input class="inp" name="qty" type="number" step="any" min="0" placeholder="0.05" style="width:100px" required></label>
+        <label class="fld">Price in<input class="inp" name="entry" type="number" step="any" min="0" placeholder="60000" style="width:110px" required></label>
+        <label class="fld">Price out<input class="inp" name="exit" type="number" step="any" min="0" placeholder="still open" style="width:110px"></label>
+        <label class="fld">Fee<input class="inp" name="fee" type="number" step="any" min="0" placeholder="0" style="width:80px"></label>
+        <button class="btn primary">Record trade</button>
+      </form>
+      <p class="fine down" id="rfErr" hidden></p>
+
+      ${s3 ? `<div class="grid g4 mt">
+        <div class="stat"><span class="k">Realised result</span><span class="v ${s3.returnPct >= 0 ? 'up' : 'down'}">${pct(s3.returnPct)}</span><span class="s fine">${money(s3.equity - s3.startingBalance)} on a ${money(s3.startingBalance)} basis</span></div>
+        <div class="stat"><span class="k">Win rate</span><span class="v">${s3.winRate === null ? '—' : `${s3.winRate}%`}</span><span class="s fine">${s3.wins}W / ${s3.losses}L${s3.profitFactor ? ` · PF ${s3.profitFactor}` : ''}</span></div>
+        <div class="stat"><span class="k">Max drawdown</span><span class="v down">${pct(-s3.maxDrawdownPct, 1)}</span></div>
+        <div class="stat"><span class="k">Trades</span><span class="v">${s3.trades}</span><span class="s fine">${s3.openCount} open</span></div>
+      </div>` : ''}
+
+      ${open.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Side</th><th>In at</th><th>Now</th><th>Size</th><th>Open P&amp;L</th><th></th></tr></thead><tbody>
+        ${open.map(([sym, p]) => {
+          const px = st.prices[sym] ?? p.entry;
+          const pnl = (p.side === 'short' ? (p.entry - px) : (px - p.entry)) * p.qty;
+          return `<tr><td class="l"><b>${esc(sym)}</b></td><td>${p.side === 'short' ? 'Short' : 'Long'}</td><td>${money(p.entry)}</td><td>${money(px)}</td><td>${money(p.notional)}</td>
+            <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b></td>
+            <td><button class="btn sm" data-realclose="${esc(sym)}">Close at live price</button></td></tr>`;
+        }).join('')}</tbody></table></div>` : ''}
+
+      ${closed.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Closed</th><th>In</th><th>Out</th><th>Result</th></tr></thead><tbody>
+        ${closed.map((t) => `<tr><td class="l"><b>${esc(t.symbol)}</b>${t.side === 'short' ? ' <small class="muted">short</small>' : ''}</td><td class="l fine">${dateTime(t.exitAt, false)}</td><td>${money(t.entry)}</td><td>${money(t.exit)}</td>
+          <td class="${t.pnl >= 0 ? 'up' : 'down'}"><b>${t.pnl >= 0 ? '+' : '−'}${money(Math.abs(t.pnl))}</b> <small>${pct(t.pnlPct)}</small></td></tr>`).join('')}
+      </tbody></table></div>` : '<p class="fine mt">No real trades recorded yet.</p>'}
+    </div>`;
+  }
+
+  function wireReal() {
+    const f3 = $('#rf', el);
+    f3?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const err = $('#rfErr', el);
+      err.hidden = true;
+      const rs = realState() || newState(cfg);
+      const r = recordRealTrade(rs, cfg, {
+        symbol: f3.sym.value, side: f3.side.value,
+        qty: f3.qty.value, entry: f3.entry.value,
+        exit: f3.exit.value === '' ? null : f3.exit.value,
+        fee: f3.fee.value || 0,
+      });
+      if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
+      save(REAL_KEY, rs);
+      toast(r.trade ? `Recorded — ${r.trade.pnl >= 0 ? 'profit' : 'loss'} ${r.trade.pnlPct}%.` : `Open ${f3.sym.value} trade recorded.`, r.trade && r.trade.pnl < 0 ? 'down' : 'up');
+      draw();
+    });
+    $$('[data-realclose]', el).forEach((b) => b.addEventListener('click', () => {
+      const sym = b.dataset.realclose;
+      const rs = realState();
+      const px = st.prices[sym] ?? rs.open[sym]?.entry;
+      const r = closeManual(rs, cfg, sym, px);
+      if (!r.ok) { toast(r.error, 'down'); return; }
+      save(REAL_KEY, rs);
+      toast(`${sym} closed at ${money(px)}.`, r.trade.pnl >= 0 ? 'up' : 'down');
+      draw();
+    }));
+    $('#realReset', el)?.addEventListener('click', () => {
+      save(REAL_KEY, newState(cfg));
+      toast('Real account cleared.', 'info');
+      draw();
+    });
+  }
+
   // Trades you placed yourself, from a coin page. Kept in their own account so
   // the AI's record stays a record of the AI.
   const MY_KEY = 'myDemoState';
@@ -130,13 +216,14 @@ export async function render(el) {
   }
 
   function draw() {
-    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}<div class="mt">${startCard()}</div>`; wireMyDemo(); return; }
+    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${startCard()}</div>`; wireMyDemo(); wireReal(); return; }
     const s = stats(state, st.prices);
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
 
     $('#body', el).innerHTML = `
       ${myDemoCard()}
+      ${realCard()}
       <h3 class="mt" style="margin-bottom:8px">The AI's own account</h3>
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
@@ -186,6 +273,7 @@ export async function render(el) {
 
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
     wireMyDemo();
+    wireReal();
 
     st.charts.forEach((c) => c.destroy());
     st.charts = [];
