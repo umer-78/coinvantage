@@ -7,7 +7,7 @@ export const title = 'News';
 
 export async function render(el, [coinParam]) {
   el.innerHTML = `
-    <div class="page-head"><div><h1>Crypto news</h1><p>Headlines from major crypto outlets, refreshed every 20 minutes. Links open on the publisher's site.</p></div>
+    <div class="page-head"><div><h1>News</h1><p>Headlines from major crypto outlets, refreshed every 20 minutes. Links open on the publisher's site.</p></div>
       <input class="inp" id="q" placeholder="Filter headlines…" style="max-width:240px"></div>
     <div id="body">${skeleton(8, 22)}</div>`;
 

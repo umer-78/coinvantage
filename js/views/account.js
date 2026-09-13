@@ -301,7 +301,7 @@ export async function render(el, [flag]) {
           <div class="stat"><span class="k">Forecasts you were shown</span><span class="v">${sc.shown}</span><span class="s fine">${sc.open} still open</span></div>
           <div class="stat"><span class="k">Scored so far</span><span class="v">${sc.resolved}</span><span class="s fine">${sc.right} called right</span></div>
           <div class="stat"><span class="k">Your hit rate</span><span class="v ${sc.accuracy === null ? '' : sc.accuracy >= 55 ? 'up' : sc.accuracy < 50 ? 'down' : ''}">${sc.accuracy === null ? '—' : `${sc.accuracy.toFixed(0)}%`}</span><span class="s fine">on what you actually viewed</span></div>
-          <div class="stat"><span class="k">Coins you follow most</span><span class="v" style="font-size:15px">${topCoins(acts) || '—'}</span></div>
+          <div class="stat"><span class="k">Coins you follow most</span><span class="v" style="font-size:16px">${topCoins(acts) || '—'}</span></div>
         </div>
 
         ${fcs.length ? `<h4 class="mt fine">Forecasts you were shown</h4>

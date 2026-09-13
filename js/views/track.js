@@ -14,7 +14,7 @@ const rate = (hit, n) => (n ? (hit / n) * 100 : null);
 
 export async function render(el) {
   el.innerHTML = `
-    <div class="page-head"><div><h1>Signal track record</h1><p>Every signal below was written to the database <b>before</b> the outcome was known, then scored automatically when its horizon passed.</p></div>
+    <div class="page-head"><div><h1>Track record</h1><p>Every signal below was written to the database <b>before</b> the outcome was known, then scored automatically when its horizon passed.</p></div>
       <div class="seg" id="iv"><button data-v="all" class="on">All</button><button data-v="15m">15m</button><button data-v="1h">1h</button><button data-v="4h">4h</button><button data-v="1d">1d</button></div></div>
     <div class="card" id="dataCheck"><div class="row"><span class="spinner"></span><b>Checking live data against the exchange…</b></div></div>
     <div id="body">${skeleton(8, 24)}</div>`;

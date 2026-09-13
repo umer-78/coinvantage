@@ -11,7 +11,7 @@ export async function render(el, [preset]) {
   const options = all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 120);
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Exchange price comparison</h1><p>The same coin on ${EXCHANGE_NAMES.length} exchanges: live price, spread, volume and where it's cheapest right now.</p></div>
+      <div><h1>Exchanges</h1><p>The same coin on ${EXCHANGE_NAMES.length} exchanges: live price, spread, volume and where it's cheapest right now.</p></div>
       <div class="row">
         <select class="inp" id="base">${options.map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.base ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
         <button class="btn" id="refresh">${icon('refresh', 16)} Refresh</button>

@@ -65,7 +65,7 @@ export function openAuth(mode = 'in') {
         <button class="btn primary" id="go">${icon('bolt', 16)} ${esc(f.cta)}</button>
         <p class="fine down" id="err" hidden></p>
       </form>
-      <div class="row mt" style="gap:12px;font-size:12.5px">
+      <div class="row mt" style="gap:12px;font-size:12px">
         ${cur !== 'in' ? '<a href="#" data-go="in">Sign in instead</a>' : ''}
         ${cur !== 'up' ? '<a href="#" data-go="up">Create an account</a>' : ''}
         ${cur !== 'reset' ? '<a href="#" data-go="reset">Forgot password?</a>' : ''}

@@ -13,7 +13,7 @@ export async function render(el, [preset]) {
   const all = await markets().catch(() => []);
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Compare coins</h1><p>Overlay performance, volatility, drawdowns and how closely coins move together.</p></div>
+      <div><h1>Compare</h1><p>Overlay performance, volatility, drawdowns and how closely coins move together.</p></div>
       <div class="seg" id="per">${Object.keys(PERIODS).map((p) => `<button data-v="${p}" class="${p === st.period ? 'on' : ''}">${p.toUpperCase()}</button>`).join('')}</div>
     </div>
     <div class="card">

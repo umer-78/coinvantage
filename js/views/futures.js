@@ -11,7 +11,7 @@ export async function render(el, [symParam]) {
   const st = { sym: (symParam || 'BTC').toUpperCase(), liqs: [], charts: [], stop: null, disposed: false };
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Futures &amp; derivatives</h1><p>Leverage data from Binance USD-M perpetuals: what traders are paying to hold positions, how crowded those positions are, and who is being liquidated right now.</p></div></div>
+    <div class="page-head"><div><h1>Futures</h1><p>Leverage data from Binance USD-M perpetuals: what traders are paying to hold positions, how crowded those positions are, and who is being liquidated right now.</p></div></div>
     <div class="coin-layout" id="layout">
       <div class="stack" style="gap:14px">
         <div class="card" id="coinCard">${skeleton(5, 22)}</div>
