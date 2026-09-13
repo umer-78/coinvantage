@@ -398,3 +398,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 
 /* A losing backtest gets a red banner, not a quiet number. */
 .banner.down { border-color: var(--down); background: var(--down-soft); color: var(--text); }
+
+/* --- chart drawing tools ------------------------------------------------- */
+.draw-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.draw-tools .fine { flex: 1 1 220px; min-width: 0; }
+#drawBtn[aria-expanded="true"] { background: var(--surface-3); color: var(--text); }
+.cc-canvas { touch-action: none; }
