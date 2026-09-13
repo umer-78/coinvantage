@@ -443,6 +443,50 @@ test('second-by-second candles bucket correctly', async () => {
   assert.equal(offset[0].t, base, 'a partial bucket still starts on the boundary');
 });
 
+test('trade levels come from measurement, and losing geometry is admitted', async () => {
+  const { TRADE_GEOMETRY, geometryFor, generateSignal } = await import('../js/lib/signals.js');
+  const { tradeSummary } = await import('../js/lib/summary.js');
+
+  // every shipped timeframe must carry a measured expectancy, not a guess
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const g = geometryFor(iv);
+    assert.equal(g.tested, true, `${iv} geometry must be measured`);
+    assert.equal(typeof g.ev, 'number');
+    assert.ok(g.stopAtr > 0 && g.rr > 0);
+  }
+  // an unmeasured timeframe falls back and says so
+  assert.equal(geometryFor('1w').tested, false);
+
+  // the plan carries the expectancy through to the UI
+  const c = demoCandles('bitcoin', '1h', 600);
+  const sig = generateSignal(c, { interval: '1h' });
+  if (sig.plan) {
+    assert.equal(sig.plan.expectancyR, TRADE_GEOMETRY['1h'].ev);
+    assert.equal(sig.plan.rewardRisk, TRADE_GEOMETRY['1h'].rr);
+  }
+
+  // a negative-expectancy timeframe must not be presented as a clean buy
+  const losing = tradeSummary({
+    signal: { ok: true, score: 40, coinSymbol: 'BTC',
+      plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: -0.047, geometryTested: true },
+      waitFor: [] },
+    forecast: { probUpPct: 60, validatedAccuracyPct: 58 }, interval: '4h', fmt: String,
+  });
+  assert.match(losing.verdict, /WEAK EDGE/, 'a losing setup cannot be labelled a plain BUY');
+  assert.ok(losing.caveats.some((x) => /negative|slightly negative/i.test(x)), 'and the reader is told why');
+
+  // a positive one gets the "does this pay?" line with the real number
+  const paying = tradeSummary({
+    signal: { ok: true, score: 40, coinSymbol: 'BTC',
+      plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: 0.055, geometryTested: true },
+      waitFor: [] },
+    forecast: { probUpPct: 60, validatedAccuracyPct: 58 }, interval: '1h', fmt: String,
+  });
+  const pay = paying.steps.find((x) => x.label === 'Does this pay?');
+  assert.ok(pay, 'a positive-expectancy setup should say so');
+  assert.match(pay.text, /\+0\.055R/);
+});
+
 test('the trade summary answers what, when, when to sell and where you are wrong', async () => {
   const { tradeSummary, summaryMarkdown } = await import('../js/lib/summary.js');
   const fmt = (v) => `$${Number(v).toFixed(0)}`;
