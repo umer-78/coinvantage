@@ -563,48 +563,37 @@ test('second-by-second candles bucket correctly', async () => {
   assert.equal(offset[0].t, base, 'a partial bucket still starts on the boundary');
 });
 
-test('the score is only called evidence inside the band where it was measured', async () => {
-  const { SIGNAL_EDGE, edgeBand } = await import('../js/lib/signals.js');
+test('no score band is presented as a tradeable edge, because none survived the test', async () => {
+  const { SIGNAL_EDGE_TESTED, edgeBand } = await import('../js/lib/signals.js');
   const { tradeSummary } = await import('../js/lib/summary.js');
 
-  // only bands that cleared n>=300 and lift>=1.10 are published
-  for (const [iv, b] of Object.entries(SIGNAL_EDGE)) {
-    assert.ok(b.samples >= 300, `${iv} band published on too few samples`);
-    assert.ok(b.lift >= 1.10, `${iv} band published without a real lift`);
-    assert.ok(b.hitRate > b.baseRate, `${iv} band must beat its own base rate`);
+  // Every published band must record that it FAILED the sequential test — this
+  // guards against quietly reinstating a bucket average as if it were an edge.
+  for (const [iv, t] of Object.entries(SIGNAL_EDGE_TESTED)) {
+    assert.equal(t.beatsRandom, false, `${iv} is marked as beating random — re-measure before claiming that`);
+    assert.ok(t.trades >= 300, `${iv} conclusion drawn from too few trades`);
+    assert.ok(typeof t.randomR === 'number', `${iv} has no random control to compare against`);
   }
-  // 15m scored 60.6% in its top bucket but on 99 samples — deliberately excluded
-  assert.equal(SIGNAL_EDGE['15m'], undefined, '15m has no band large enough to trust');
-  assert.equal(SIGNAL_EDGE['1d'], undefined, '1d lift was under 1.10');
+  // the 1h band, which looked strongest as a bucket, lost to random entries
+  assert.ok(SIGNAL_EDGE_TESTED['1h'].tradedR < SIGNAL_EDGE_TESTED['1h'].randomR);
 
-  assert.equal(edgeBand('1h', 50).inside, true);
-  assert.equal(edgeBand('1h', 70).inside, false, 'above the band is outside it — higher is not better');
-  assert.equal(edgeBand('1h', 20).inside, false);
-  assert.equal(edgeBand('1d', 50).band, null);
+  // edgeBand no longer hands anyone a band to treat as evidence
+  assert.equal(edgeBand('1h', 50).band, null);
+  assert.equal(edgeBand('1h', 50).inside, false);
+  assert.ok(edgeBand('1h', 50).tested, 'but the test result is still available to show');
+  assert.equal(edgeBand('1d', 50).tested, null, 'untested timeframes claim nothing');
 
-  const mk = (score, interval) => tradeSummary({
-    signal: { ok: true, score, coinSymbol: 'BTC',
+  const sum = tradeSummary({
+    signal: { ok: true, score: 50, coinSymbol: 'BTC',
       plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: 0.055, geometryTested: true },
       waitFor: [] },
-    forecast: { probUpPct: 60, validatedAccuracyPct: 58 }, interval, fmt: String,
+    forecast: { probUpPct: 60, validatedAccuracyPct: 58 }, interval: '1h', fmt: String,
   });
-
-  // inside the band: stated as measured evidence, with the numbers behind it
-  const inBand = mk(50, '1h');
-  const tested = inBand.steps.find((x) => x.label === 'Tested zone');
-  assert.ok(tested, 'a score inside the measured band should say so');
-  assert.match(tested.text, /35\.4%/);
-  assert.match(tested.text, /486 tested entries/);
-
-  // outside it: the reader is told the number is description, not evidence
-  const outBand = mk(75, '1h');
-  assert.ok(!outBand.steps.some((x) => x.label === 'Tested zone'));
-  assert.ok(outBand.caveats.some((c) => /higher score does not reliably mean a better trade/i.test(c)));
-
-  // a timeframe with no measured band makes no claim either way
-  const noBand = mk(50, '1d');
-  assert.ok(!noBand.steps.some((x) => x.label === 'Tested zone'));
-  assert.ok(!noBand.caveats.some((c) => /measured edge \(/.test(c)));
+  assert.ok(!sum.steps.some((x) => x.label === 'Tested zone'), 'no step may present the score as evidence');
+  const said = sum.caveats.join(' ');
+  assert.match(said, /not a prediction of profit/i);
+  assert.match(said, /entering at random/i);
+  assert.match(said, /higher score does not mean a better trade/i);
 });
 
 test('trade levels come from measurement, and losing geometry is admitted', async () => {
