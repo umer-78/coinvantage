@@ -80,28 +80,41 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it. `md5sum` both and compare.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
-### Measured: the score is NOT a gradient (2026-09-13)
+### Measured: the score is descriptive, not tradeable (2026-09-14)
 
-`tools/evaluate-signal-edge.mjs` replays every bar across 12 coins, computes the
-score the site would have shown, and scores the trade that followed with the
-triple-barrier test. Base rates and lifts, by timeframe:
+Two tests, and the second overturned the first. Both are kept here because the
+first one was briefly published and the mistake should not be repeated.
+
+**Test 1 — bucket averages** (`tools/evaluate-signal-edge.mjs`). Group every bar
+by the score shown, average the outcome:
 
 | Timeframe | Base (every bar) | Best band | Hit | Lift | n |
 |---|---|---|---|---|---|
 | 15m | 49.4% | 60..100 | 60.6% | 1.23 | 99 (too few) |
-| 1h  | 27.5% | 45..59  | 35.4% | 1.29 | 486 ✔ published |
-| 4h  | 47.6% | 18..29  | 52.6% | 1.10 | 498 ✔ published |
-| 1d  | 35.0% | 30..44  | 37.9% | 1.08 | 596 (lift too low) |
+| 1h  | 27.5% | 45..59  | 35.4% | 1.29 | 486 |
+| 4h  | 47.6% | 18..29  | 52.6% | 1.10 | 498 |
+| 1d  | 35.0% | 30..44  | 37.9% | 1.08 | 596 |
 
-The relationship is **not monotonic**. On 4h a score of 60+ did WORSE than an
-average bar (45.5% vs 47.6%); on 1h the 60+ bucket was worse than 45-59. Only
-bands at n>=300 AND lift>=1.10 are published in `SIGNAL_EDGE`, and the UI says
-plainly, outside those bands, that a higher score does not mean a better trade.
+Also note: the relationship is **not monotonic**. On 4h, 60+ did WORSE than an
+average bar (45.5% vs 47.6%).
 
-Note on method: the barrier test always measures a LONG (target above, stop
-below), so the positive EV on strongly NEGATIVE scores is mean reversion after
-selloffs, not the signal being right. Do not read those rows as "the sell signal
-works" — that needs its own short-side test, which has not been run.
+**Test 2 — trade it** (`tools/evaluate-band-strategy.mjs`). Take only those
+signals, in sequence, one position at a time, with fees, compounding:
+
+| Band | Traded | Random control | Verdict |
+|---|---|---|---|
+| 1h 45..59 | **+0.040 R** over 712 trades | **+0.126 R** | 3x WORSE than random |
+| 4h 18..29 | +0.044 R over 752 trades | +0.019 R | margin too small to call |
+
+The bucket average was inflated by overlapping positions a real account could
+never have held at once, and by partial credit for trades that merely ended
+slightly up. **No band is tradeable.** `SIGNAL_EDGE_TESTED` records the failure
+so nobody reinstates the bucket number as if it were an edge; a unit test asserts
+`beatsRandom === false` for every entry.
+
+Method note: the barrier test always measures a LONG, so positive EV on strongly
+NEGATIVE scores is mean reversion after selloffs, not the sell signal working.
+A short-side test has not been run.
 
 ### Known, deliberate, do not "fix"
 - 15m and 4h trade geometry has NEGATIVE measured expectancy at every configuration

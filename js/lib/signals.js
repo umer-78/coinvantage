@@ -27,33 +27,49 @@ export const TRADE_GEOMETRY = {
   '1d':  { stopAtr: 1, rr: 2, ev: +0.058, tested: true },
 };
 /**
- * Where the score has actually worked — measured, not assumed.
+ * What the score is, and what it is not — settled by measurement.
  *
- * `tools/evaluate-signal-edge.mjs` replays every bar across 12 coins, computes
- * the score the site would have shown, and scores the trade that followed. The
- * result is uncomfortable and worth stating plainly: **a higher score does not
- * reliably mean a better trade.** The relationship is not a gradient. On the 4h
- * chart a score of 60+ performed WORSE than the average bar (45.5% vs 47.6%),
- * and on the 1h chart the 60+ bucket was worse than the 45-59 one.
+ * Two tests were run, and they disagreed. The weaker one was published first and
+ * this comment exists so the mistake is not repeated.
  *
- * Two bands did show a real, repeated edge on a large enough sample, and only
- * those two are marked. Everything else is presented as no measured edge, which
- * is the honest description of a flat lift.
+ * TEST 1 — bucket averages (`tools/evaluate-signal-edge.mjs`). Group every bar by
+ * the score it showed, then average the outcome. On the 1h chart, scores of
+ * 45-59 hit target 35.4% against a 27.5% base rate: a 1.29x lift on 486 samples,
+ * which looks like a real edge.
  *
- * A band qualifies only at n >= 300 and lift >= 1.10 over that timeframe's own
- * base rate — small buckets that look spectacular (15m 60+ hit 60.6%, but on 99
- * samples) are deliberately excluded.
+ * TEST 2 — trade it (`tools/evaluate-band-strategy.mjs`). Take only those
+ * signals, in sequence, one position at a time, with fees, and compound the
+ * result. That is what a person can actually do, and it tells a different story:
+ *
+ *   1h, scores 45-59 : +0.040 R per trade over 712 trades, profitable on 8/12
+ *                      coins — against +0.126 R for RANDOM entries under the
+ *                      same rules. Three times worse than not choosing at all.
+ *   4h, scores 18-29 : +0.044 R over 752 trades vs +0.019 R random. A margin too
+ *                      small to call an edge.
+ *
+ * The bucket average was inflated by two things a real account does not get:
+ * overlapping positions it could never have held simultaneously, and partial
+ * credit for trades that merely ended slightly up. Neither survives contact with
+ * sequencing.
+ *
+ * So: no score band has been shown to be tradeable. The score describes how
+ * strongly the indicators agree right now. It does not predict profit, it is not
+ * a gradient — on the 4h chart, 60+ did worse than an average bar — and the UI
+ * says so rather than implying otherwise.
  */
-export const SIGNAL_EDGE = {
-  '1h': { lo: 45, hi: 59, hitRate: 35.4, baseRate: 27.5, ev: 0.415, baseEv: 0.097, samples: 486, lift: 1.29 },
-  '4h': { lo: 18, hi: 29, hitRate: 52.6, baseRate: 47.6, ev: 0.049, baseEv: -0.050, samples: 498, lift: 1.10 },
+export const SIGNAL_EDGE_TESTED = {
+  '1h': { lo: 45, hi: 59, bucketLift: 1.29, tradedR: 0.040, randomR: 0.126, trades: 712, beatsRandom: false },
+  '4h': { lo: 18, hi: 29, bucketLift: 1.10, tradedR: 0.044, randomR: 0.019, trades: 752, beatsRandom: false },
 };
 
-/** The measured band for this timeframe, and whether the score sits inside it. */
+/**
+ * No band is presented as evidence, because none earned it. Returns the test
+ * result for this timeframe so the UI can say what was tried and what it found.
+ */
 export function edgeBand(interval, score) {
-  const band = SIGNAL_EDGE[interval];
-  if (!band) return { band: null, inside: false };
-  return { band, inside: score >= band.lo && score <= band.hi };
+  const t = SIGNAL_EDGE_TESTED[interval];
+  if (!t) return { band: null, inside: false, tested: null };
+  return { band: null, inside: false, tested: { ...t, inBand: score >= t.lo && score <= t.hi } };
 }
 
 const DEFAULT_GEOMETRY = { stopAtr: 1.5, rr: 2.5, ev: null, tested: false };
