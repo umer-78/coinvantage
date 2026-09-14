@@ -113,20 +113,14 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     });
   }
 
-  // Where the score has actually worked. Replaying every bar showed the score is
-  // not a smooth gradient of quality — on some timeframes the very highest
-  // scores did worse than average — so the only honest thing to report is the
-  // narrow band that measured better, and silence everywhere else.
-  const { band, inside } = edgeBand(interval, signal.score);
-  if (band && !conflict) {
-    if (inside) {
-      steps.push({
-        label: 'Tested zone',
-        text: `A score of ${signal.score} sits in the band where this engine has actually worked on the ${interval} chart: ${band.hitRate}% of those trades reached target versus ${band.baseRate}% for an average bar, over ${band.samples} tested entries. That is ${(band.lift).toFixed(2)}× the base rate — the one band on this timeframe with a measured edge.`,
-      });
-    } else {
-      caveats.push(`On the ${interval} chart only scores of ${band.lo}–${band.hi} have shown a measured edge (${band.hitRate}% vs ${band.baseRate}% base rate over ${band.samples} entries). A score of ${signal.score} is outside that band, so treat the strength number as description, not evidence — a higher score does not reliably mean a better trade.`);
-    }
+  // What the score means, stated from the test rather than from the look of it.
+  // Grouping bars by score showed one band with apparent lift; trading that band
+  // in sequence, one position at a time, did worse than entering at random. The
+  // reader gets the second result, because it is the one that matches what they
+  // can actually do.
+  const { tested } = edgeBand(interval, signal.score);
+  if (tested && !conflict) {
+    caveats.push(`What the score is: how strongly the indicators agree right now, not a prediction of profit. Trading the best-looking band on this timeframe (scores ${tested.lo}\u2013${tested.hi}) returned ${tested.tradedR >= 0 ? '+' : ''}${tested.tradedR.toFixed(3)}R per trade over ${tested.trades} tested trades, against ${tested.randomR >= 0 ? '+' : ''}${tested.randomR.toFixed(3)}R for entering at random under the same rules. A higher score does not mean a better trade.`);
   }
 
   // The geometry's own expectancy, measured over ~21,000 entries. If the levels
