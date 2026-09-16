@@ -1,0 +1,6 @@
+# Minimal config so `supabase functions deploy cv` targets the right project
+# without an interactive link step.
+project_id = "cjpljmzustvgsmueqese"
+
+[functions.cv]
+verify_jwt = false
