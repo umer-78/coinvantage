@@ -13,6 +13,14 @@ export async function render(el, [symParam]) {
   // then sit there while the pill said "streaming", so the frozen numbers looked
   // live by association. Now they refresh, and each panel says when it was read.
   const REFRESH_MS = 60e3;
+  // The floor for showing a liquidation. It was $3,000, chosen for Binance's
+  // feed; OKX carries far more small alt positions, so that floor hid every row
+  // and the card sat on "waiting" while the socket was demonstrably live. The
+  // number is defined once and the caption is written from it, so the two can
+  // no longer disagree about what is being hidden.
+  // Sampled from the live feed: median liquidation $365, largest $2,799 over a
+  // hundred seconds. Not one of them would have cleared the old $3,000 floor.
+  const MIN_LIQ_USD = 250;
   const tsLine = (at) => `<span class="fine" title="${esc(dateTime(at, true))}">read ${esc(ago(at))}</span>`;
 
   el.innerHTML = `
@@ -22,7 +30,7 @@ export async function render(el, [symParam]) {
         <div class="card" id="coinCard">${skeleton(5, 22)}</div>
         <div class="card" id="tableCard">${skeleton(8, 22)}</div>
       </div>
-      <div class="card" id="liqCard"><div class="card-h"><h3>Live liquidations</h3><span class="live-pill" id="liqPill"><i></i><span>connecting…</span></span></div><div id="liqList"><p class="fine muted">Waiting for the first liquidation…</p></div><p class="fine mt">Every row is a real leveraged position force-closed on a futures exchange — the pill above names which one is feeding this list. Binance is used when it is reachable; where its stream is blocked the list switches to OKX automatically. This is a sample, not a tally: Binance pushes at most one liquidation per symbol per second, and rows under $3,000 are hidden — so during a cascade you are seeing far fewer events than actually happened. Read the sizes, not the count.</p></div>
+      <div class="card" id="liqCard"><div class="card-h"><h3>Live liquidations</h3><span class="live-pill" id="liqPill"><i></i><span>connecting…</span></span></div><div id="liqList"><p class="fine muted">Waiting for the first liquidation — quiet stretches are normal, and the pill above tells you whether the feed is actually live.</p></div><p class="fine mt">Every row is a real leveraged position force-closed on a futures exchange — the pill above names which one is feeding this list. Binance is used when it is reachable; where its stream is blocked the list switches to OKX automatically. This is a sample, not a tally: the exchange pushes at most one liquidation per symbol per second, and rows under ${money(MIN_LIQ_USD)} are hidden — so during a cascade you are seeing far fewer events than actually happened. Read the sizes, not the count.</p></div>
     </div>`;
 
   // ---------------------------------------------------------------- market table
@@ -141,7 +149,7 @@ export async function render(el, [symParam]) {
     if (!ev) { if (st.liqState !== 'streaming' || status === 'failed' || status === 'switching') setPill(status); return; }
     // a row whose size could not be priced is still a real liquidation, so it
     // is kept rather than silently dropped by a threshold it cannot be compared to
-    if (ev.usd !== null && ev.usd < 3000) return;
+    if (ev.usd !== null && ev.usd < MIN_LIQ_USD) return;
     st.liqs.unshift(ev);
     st.liqs = st.liqs.slice(0, 25);
     if (pending) return;
