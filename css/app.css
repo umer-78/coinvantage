@@ -229,6 +229,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .mtf > div { text-align: center; padding: 8px 4px; border-radius: 10px; background: var(--surface-2); }
 .mtf .k { font-size: 11px; color: var(--text-muted); font-weight: 700; }
 .mtf .v { font-size: 12px; font-weight: 700; }
+/* The combined reading leads the card: switching timeframes changes the detail
+   below it, never this line, so the app stops reading as three rival verdicts. */
+.combined { font-size: 13px; line-height: 1.5; padding: 10px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+.mtf > div.on { outline: 1px solid var(--accent); outline-offset: -1px; }
+.mtf > div.on .k { color: var(--accent); }
+
 
 .prob { display: flex; align-items: center; gap: 16px; }
 .prob-ring { position: relative; width: 116px; height: 116px; flex: none; }
