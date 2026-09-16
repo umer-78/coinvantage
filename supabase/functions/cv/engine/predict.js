@@ -776,15 +776,47 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
 // timeframes, each made only from data available at that moment, re-run on
 // 2026-09-12 with `tools/evaluate-engine.mjs` against fresh Binance candles.
 // Update these numbers only by re-running that tool — never by estimating.
+/**
+ * Walk-forward accuracy, re-measured after the 1m and 5m models were trained
+ * and every pooled model refitted. 240 forecasts per timeframe, 1,440 in total,
+ * on 12 coins, each one produced using only the candles that existed at that
+ * moment.
+ *
+ * Every accuracy now ships with the BASELINE for the same rows — the score you
+ * get by ignoring the model and always naming whichever direction was more
+ * common in that window. The old block published bare accuracies with no
+ * baseline, which is how 58.9% on the 4h chart came to look like a strong
+ * result when the market in that window went one way 75.4% of the time. It was
+ * never an edge; nothing had been subtracted from it.
+ *
+ * Read together, the honest summary is: no edge overall (49.6% against a 51.0%
+ * baseline), a small positive on 5m, and negatives on 1m, 1h and 4h. The three
+ * "beats" are all within a couple of points on 240 correlated samples, which is
+ * not enough to call skill — they are reported as measured, not as promises.
+ */
 export const TESTED_ACCURACY = {
-  all: 54.0, '15m': 57.1, '1h': 53.0, '4h': 58.9, '1d': 47.0,
-  tests: 672, coins: 12,
-  // When the blend is confident enough to take a side, it is right more often.
-  // Coverage is the share of forecasts that clear that bar.
-  confident: 56.9, confidentCoverage: 38, brier: 0.248,
-  // The timeframes where it has no measured edge, so the UI can say so plainly.
-  noEdge: ['1d'],
+  // accuracy, and what it had to beat
+  all: 49.6, allBaseline: 51.0,
+  '1m': 44.6, '5m': 55.0, '15m': 52.5, '1h': 48.8, '4h': 43.8, '1d': 52.9,
+  baseline: { '1m': 53.8, '5m': 52.5, '15m': 51.2, '1h': 64.2, '4h': 75.4, '1d': 52.1 },
+  testsPerInterval: 240, tests: 1440, coins: 12,
+  brier: { '1m': 0.271, '5m': 0.246, '15m': 0.259, '1h': 0.264, '4h': 0.263, '1d': 0.252 },
+  // Share of outcomes that landed inside the range the forecast drew.
+  band50: { '1m': 46.7, '5m': 57.9, '15m': 57.5, '1h': 50.0, '4h': 40.0, '1d': 47.5 },
+  band80: { '1m': 70.0, '5m': 79.6, '15m': 78.3, '1h': 72.5, '4h': 67.5, '1d': 70.0 },
+  // Timeframes where the model scored at or below the do-nothing baseline.
+  noEdge: ['1m', '1h', '4h'],
+  beatsBaselineOverall: false,
+  caveat: 'Twelve coins over one market window: crypto moves together, so 240 forecasts on a timeframe are nowhere near 240 independent tests.',
 };
+
+/** Accuracy and the number it had to beat, for one timeframe. */
+export function accuracyFor(interval) {
+  const acc = typeof TESTED_ACCURACY[interval] === 'number' ? TESTED_ACCURACY[interval] : null;
+  const base = TESTED_ACCURACY.baseline[interval] ?? null;
+  if (acc === null || base === null) return null;
+  return { accuracyPct: acc, baselinePct: base, edgePts: +(acc - base).toFixed(1), beatsBaseline: acc > base };
+}
 
 // Compact version for prompts / scanner rows
 export function summarizeForecast(f) {

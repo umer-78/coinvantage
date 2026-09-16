@@ -871,10 +871,22 @@ test('a timeframe with no measured edge can never be sold as a confident call', 
   const { tradeSummary, reconcileTimeframes } = await import('../js/lib/summary.js');
   const { TESTED_ACCURACY } = await import('../js/lib/predict.js');
 
-  // The published table says the daily forecast is below a coin flip. Anything
-  // that renders a confident verdict there is contradicting the app's own test.
-  assert.ok(TESTED_ACCURACY.noEdge.includes('1d'));
-  assert.ok(TESTED_ACCURACY['1d'] < 50, 'the 1d number is the whole reason for this rule');
+  // Whichever timeframes the table lists as having no edge, the UI must not
+  // render a confident verdict on them. The test picks one from the list rather
+  // than naming a timeframe, so re-measuring can move the list without silently
+  // disabling the rule.
+  assert.ok(TESTED_ACCURACY.noEdge.length, 'the table must record which timeframes failed');
+  const weak = TESTED_ACCURACY.noEdge[0];
+  const strong = ['1m', '5m', '15m', '1h', '4h', '1d'].find((iv) => !TESTED_ACCURACY.noEdge.includes(iv));
+  // every listed timeframe must genuinely be at or below its own baseline
+  for (const iv of TESTED_ACCURACY.noEdge) {
+    assert.ok(TESTED_ACCURACY[iv] <= TESTED_ACCURACY.baseline[iv], `${iv} is listed as no-edge but beats its baseline`);
+  }
+  // and an accuracy may never be published without the number it had to beat
+  for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
+    assert.equal(typeof TESTED_ACCURACY[iv], 'number', `${iv} has no measured accuracy`);
+    assert.equal(typeof TESTED_ACCURACY.baseline[iv], 'number', `${iv} publishes an accuracy with no baseline beside it`);
+  }
 
   const strongDaily = {
     ok: true, score: 67, coinSymbol: 'BTC', text: 'Extended up', tone: 'up',
@@ -883,18 +895,18 @@ test('a timeframe with no measured edge can never be sold as a confident call', 
   };
   const s = tradeSummary({
     signal: strongDaily, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
-    interval: '1d', horizonText: '2 weeks', fmt: String,
+    interval: weak, horizonText: '2 weeks', fmt: String,
   });
 
   assert.notEqual(s.confidence, 'high', 'the worst-measured timeframe cannot be the most confident one');
   assert.doesNotMatch(s.verdict, /\bBUY\b|\bSELL\b/i, 'the verdict must describe the reading, never instruct');
-  assert.ok(s.confidenceWhy && /1d/.test(s.confidenceWhy), 'and the label says what it is based on');
+  assert.ok(s.confidenceWhy && s.confidenceWhy.includes(weak), 'and the label says what it is based on');
   assert.ok(s.caveats.some((c) => /below a coin flip/i.test(c)), 'the reader is told the daily forecast has no edge');
 
   // the same setup on a timeframe that does have a record is allowed to rate higher
   const measured = tradeSummary({
     signal: { ...strongDaily, text: 'Leaning up' }, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
-    interval: '15m', horizonText: '1 hour', fmt: String,
+    interval: strong, horizonText: '1 hour', fmt: String,
   });
   assert.ok(!measured.caveats.some((c) => /below a coin flip/i.test(c)));
 });
