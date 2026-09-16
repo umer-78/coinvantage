@@ -53,8 +53,8 @@ export async function render(el) {
       const card = (k, v, sub = '') => `<div class="card"><div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="s fine">${sub}</span></div></div>`;
       panel.innerHTML = `
         <div class="admin-grid">
-          ${card('Users', s.users, `${s.premium} premium`)}
-          ${card('Visitors (30d)', compact(s.visitors, ''), `${compact(s.views, '')} page views`)}
+          ${card('Users', s.users, `${s.premium} with premium (paid or granted)`)}
+          ${card('Visitors · last 30d', compact(s.visitors, ''), `${compact(s.views, '')} page views${s.viewsCapped ? ' — at least, the read is capped' : ''}`)}
           ${card('Alerts', s.activeAlerts, `${s.triggered} triggered`)}
           ${card('Telegram linked', s.telegram)}
           ${card('Signals logged', compact(s.signals, ''))}
@@ -78,15 +78,29 @@ export async function render(el) {
       panel.innerHTML = skeleton(6, 24);
       const client = await sb();
       const since = new Date(Date.now() - 90 * 864e5).toISOString();
-      const [{ data: profs }, { data: views }] = await Promise.all([
+      const VIEW_CAP = 50000;
+      const [{ data: profs }, { data: views }, { data: subs }] = await Promise.all([
         client.from('profiles').select('created_at,premium_until,telegram_chat_id,email_verified').limit(5000),
-        client.from('page_views').select('path,created_at,device,session_id,referrer').gte('created_at', since).limit(50000),
+        // newest first, so hitting the cap drops the OLDEST rows rather than an
+        // arbitrary subset — an unordered limit made this a random sample of the
+        // window while the tile called it a total
+        client.from('page_views').select('path,created_at,device,session_id,referrer').gte('created_at', since).order('created_at', { ascending: false }).limit(VIEW_CAP),
+        client.from('subscriptions').select('user_id,premium_until,amount,currency,created_at').limit(5000),
       ]);
       const users = profs || [], vs = views || [];
+      const viewsCapped = vs.length >= VIEW_CAP;
       const now = Date.now();
 
       const inLast = (days, rows, key) => rows.filter((r) => now - new Date(r[key]).getTime() < days * 864e5).length;
+      // "premium" and "paying" are not the same thing: an admin grant sets
+      // premium_until without any money changing hands. The overview tile and
+      // this one used to be the identical computation under two different
+      // labels, so the panel contradicted itself about how many customers there
+      // were. Paying is counted from the subscriptions table instead.
       const premium = users.filter((u) => u.premium_until && new Date(u.premium_until) > new Date()).length;
+      const payingIds = new Set((subs || []).filter((r) => r.premium_until && new Date(r.premium_until) > new Date()).map((r) => r.user_id));
+      const paying = payingIds.size;
+      const granted = Math.max(0, premium - paying);
 
       // signups per week
       const weeks = {};
@@ -124,10 +138,10 @@ export async function render(el) {
       panel.innerHTML = `
         <div class="admin-grid">
           <div class="card"><div class="stat"><span class="k">Total accounts</span><span class="v">${users.length}</span><span class="s fine">${inLast(7, users, 'created_at')} in 7 days</span></div></div>
-          <div class="card"><div class="stat"><span class="k">Paying now</span><span class="v ${premium ? 'up' : ''}">${premium}</span><span class="s fine">${users.length ? ((premium / users.length) * 100).toFixed(1) : 0}% of accounts</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Paying now</span><span class="v ${paying ? 'up' : ''}">${paying}</span><span class="s fine">${users.length ? ((paying / users.length) * 100).toFixed(1) : 0}% of accounts${granted ? ` · ${granted} more granted free` : ''}</span></div></div>
           <div class="card"><div class="stat"><span class="k">Verified e-mail</span><span class="v">${users.filter((u) => u.email_verified).length}</span></div></div>
           <div class="card"><div class="stat"><span class="k">Telegram linked</span><span class="v">${users.filter((u) => u.telegram_chat_id).length}</span></div></div>
-          <div class="card"><div class="stat"><span class="k">Sessions (90d)</span><span class="v">${compact(sessions.length, '')}</span><span class="s fine">${compact(vs.length, '')} page views</span></div></div>
+          <div class="card"><div class="stat"><span class="k">Sessions · last 90d</span><span class="v">${viewsCapped ? '≥' : ''}${compact(sessions.length, '')}</span><span class="s fine">${viewsCapped ? 'at least ' : ''}${compact(vs.length, '')} page views${viewsCapped ? ` — the read stops at ${compact(VIEW_CAP, '')} rows` : ''}</span></div></div>
           <div class="card"><div class="stat"><span class="k">Came back another day</span><span class="v">${sessions.length ? ((returning / sessions.length) * 100).toFixed(0) : 0}%</span><span class="s fine">${returning} of ${sessions.length}</span></div></div>
         </div>
 
