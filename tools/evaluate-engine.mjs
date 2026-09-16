@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { forecast } from '../js/lib/predict.js';
 const [, , file, shard = '0', shards = '1', outFile, perSeries = '14'] = process.argv;
 const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-const HMAP = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+const HMAP = { '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
 const out = [];
 const keys = Object.keys(data).sort().filter((_, i) => i % +shards === +shard);
 for (const key of keys) {

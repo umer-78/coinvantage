@@ -40,7 +40,7 @@ test('signal engine returns a coherent trade plan', () => {
   const s = generateSignal(c, { interval: '1h' });
   assert.ok(s.ok);
   assert.ok(s.score >= -100 && s.score <= 100);
-  assert.equal(labelFor(60).action, 'STRONG_BUY');
+  assert.equal(labelFor(60).action, 'EXTENDED_UP');
   if (s.plan?.side === 'long') {
     assert.ok(s.plan.stopLoss < s.price);
     assert.ok(s.plan.takeProfits[0] > s.price);
@@ -625,7 +625,7 @@ test('trade levels come from measurement, and losing geometry is admitted', asyn
       waitFor: [] },
     forecast: { probUpPct: 60, validatedAccuracyPct: 58 }, interval: '4h', fmt: String,
   });
-  assert.match(losing.verdict, /WEAK EDGE/, 'a losing setup cannot be labelled a plain BUY');
+  assert.equal(losing.tone, 'warn', 'a losing setup cannot be presented as a clean reading');
   assert.ok(losing.caveats.some((x) => /negative|slightly negative/i.test(x)), 'and the reader is told why');
 
   // a positive one gets the "does this pay?" line with the real number
@@ -645,7 +645,7 @@ test('the trade summary answers what, when, when to sell and where you are wrong
   const fmt = (v) => `$${Number(v).toFixed(0)}`;
 
   const signal = {
-    ok: true, score: 31, coinSymbol: 'BTC', text: 'Buy',
+    ok: true, score: 31, coinSymbol: 'BTC', text: 'Leaning up',
     plan: { side: 'long', entryZone: [76946, 77248], stopLoss: 76343, takeProfits: [78605, 79509, 79652], riskPct: 1.17 },
     waitFor: [],
   };
@@ -655,12 +655,12 @@ test('the trade summary answers what, when, when to sell and where you are wrong
     interval: '4h', horizonText: '1 day', fmt,
   });
 
-  assert.equal(s.verdict, 'BUY');
+  assert.equal(s.verdict, 'LEANING UP');
   const labels = s.steps.map((x) => x.label);
-  for (const need of ['What to buy', 'When to buy', 'When to sell', 'Where you are wrong', 'How much', 'How long']) {
+  for (const need of ['What this is', 'Entry zone, if you take it', 'Where to take profit', 'Where you are wrong', 'How much', 'How long']) {
     assert.ok(labels.includes(need), `the summary must answer "${need}" — got ${labels.join(', ')}`);
   }
-  const sell = s.steps.find((x) => x.label === 'When to sell').text;
+  const sell = s.steps.find((x) => x.label === 'Where to take profit').text;
   assert.match(sell, /\$78605/, 'the first target has to be in the words, not just a table');
   const wrong = s.steps.find((x) => x.label === 'Where you are wrong').text;
   assert.match(wrong, /\$76343/);
@@ -672,20 +672,20 @@ test('the trade summary answers what, when, when to sell and where you are wrong
     signal, forecast: { probUpPct: 41, validatedAccuracyPct: 58 },
     interval: '4h', horizonText: '1 day', fmt,
   });
-  assert.equal(clash.verdict, 'NO CLEAR EDGE');
+  assert.equal(clash.verdict, 'READINGS DISAGREE');
   assert.equal(clash.confidence, 'low');
-  assert.ok(!clash.steps.some((x) => x.label === 'When to buy'), 'no entry plan is offered when the readings disagree');
+  assert.ok(!clash.steps.some((x) => x.label === 'Entry zone, if you take it'), 'no entry plan is offered when the readings disagree');
 
   // no plan at all → it says what to wait for instead of inventing a trade
   const idle = tradeSummary({
     signal: { ok: true, score: 4, coinSymbol: 'BTC', plan: null, waitFor: ['Close above 79,000 on rising volume'] },
     interval: '4h', fmt,
   });
-  assert.equal(idle.verdict, 'WAIT');
+  assert.equal(idle.verdict, 'NO CLEAR TREND');
   assert.match(idle.steps.find((x) => x.label === 'What to wait for').text, /79,000/);
 
   // and it renders to markdown for the assistant and exports
-  assert.match(summaryMarkdown(s), /\*\*When to sell:\*\*/);
+  assert.match(summaryMarkdown(s), /\*\*Where to take profit:\*\*/);
 });
 
 test('a buy signal that contradicts the forecast is flagged, not sold confidently', async () => {
@@ -712,7 +712,7 @@ test('a buy signal that contradicts the forecast is flagged, not sold confidentl
   const answer = ruleBasedAnswer('should i buy?', {
     coin: { name: 'Bitcoin', symbol: 'BTC', price: 77248, change24h: -0.11 },
     interval: '4h',
-    signal: { ...sig, text: 'Buy', tone: 'up', price: 77248,
+    signal: { ...sig, text: 'Leaning up', tone: 'up', price: 77248,
       reasons: { bullish: ['Price above 200 EMA'], bearish: [] },
       levels: { supports: [{ price: 76000 }], resistances: [{ price: 79000 }] },
       indicators: { rsi: 55, atr: 500, ema50: 76500 },
@@ -877,7 +877,7 @@ test('a timeframe with no measured edge can never be sold as a confident call', 
   assert.ok(TESTED_ACCURACY['1d'] < 50, 'the 1d number is the whole reason for this rule');
 
   const strongDaily = {
-    ok: true, score: 67, coinSymbol: 'BTC', text: 'Strong Buy', tone: 'up',
+    ok: true, score: 67, coinSymbol: 'BTC', text: 'Extended up', tone: 'up',
     plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: 0.058 },
     waitFor: [],
   };
@@ -887,13 +887,13 @@ test('a timeframe with no measured edge can never be sold as a confident call', 
   });
 
   assert.notEqual(s.confidence, 'high', 'the worst-measured timeframe cannot be the most confident one');
-  assert.doesNotMatch(s.verdict, /STRONG/i, 'no verdict promises strength the band test disproved');
+  assert.doesNotMatch(s.verdict, /\bBUY\b|\bSELL\b/i, 'the verdict must describe the reading, never instruct');
   assert.ok(s.confidenceWhy && /1d/.test(s.confidenceWhy), 'and the label says what it is based on');
   assert.ok(s.caveats.some((c) => /below a coin flip/i.test(c)), 'the reader is told the daily forecast has no edge');
 
   // the same setup on a timeframe that does have a record is allowed to rate higher
   const measured = tradeSummary({
-    signal: { ...strongDaily, text: 'Buy' }, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
+    signal: { ...strongDaily, text: 'Leaning up' }, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
     interval: '15m', horizonText: '1 hour', fmt: String,
   });
   assert.ok(!measured.caveats.some((c) => /below a coin flip/i.test(c)));
@@ -1010,4 +1010,67 @@ test('the shape matcher is published as a picture, not as an edge it failed to e
   assert.match(lost.headline, /history rather than as a lean|not taking a side/i);
   assert.equal(lost.tone, 'warn');
   assert.ok(lost.lines.some((l) => /12 coins/.test(l)), 'the cross-coin result travels with every reading');
+});
+
+test('the track record reads the outcome words the scorer actually writes', async () => {
+  const fs = await import('node:fs/promises');
+  const scorer = await fs.readFile(new URL('../supabase/functions/cv/track.ts', import.meta.url), 'utf8');
+  const view = await fs.readFile(new URL('../js/views/track.js', import.meta.url), 'utf8');
+
+  // Every literal the server can store in plan_result.
+  const written = new Set([...scorer.matchAll(/planResult = '([a-z0-9]+)'/g)].map((m) => m[1]));
+  assert.ok(written.size >= 4, `expected the scorer to write several outcomes, found ${[...written]}`);
+
+  // The page used to test for 'win' and 'loss', which the scorer has never
+  // written, so every plan statistic rendered as an em dash. This fails if that
+  // vocabulary drifts apart again.
+  for (const word of written) {
+    if (word === 'none') continue;
+    assert.ok(view.includes(`'${word}'`), `the track page never mentions plan_result '${word}' — its statistics will silently read as empty`);
+  }
+  assert.ok(!/plan_result === 'win'|plan_result === 'loss'/.test(view), 'the page is matching outcome words the server does not write');
+
+  // and it must compare the hit rate against a baseline computed from the rows,
+  // not against a hardcoded guess about which way crypto drifts
+  assert.ok(/baseline/i.test(view), 'the track record must show what the hit rate has to beat');
+  assert.ok(!/always predict up" scores about 51%/.test(view), 'the baseline must be measured, not assumed');
+});
+
+test('the score is labelled as what it measured, never as an instruction', async () => {
+  const { labelFor, upRateFor, SCORE_BUCKETS_TESTED, THRESHOLDS } = await import('../js/lib/signals.js');
+
+  // Sorting 244,000 bars by score showed the share that rose FALLS as the score
+  // rises. A label that says "Buy" for the bars least likely to rise is not a
+  // wording preference, it is a false statement, so no label may contain one.
+  for (const score of [100, 70, 45, 25, 0, -25, -45, -70, -100]) {
+    const l = labelFor(score);
+    assert.doesNotMatch(l.text, /\b(buy|sell)\b/i, `labelFor(${score}) says "${l.text}"`);
+    assert.doesNotMatch(l.action, /BUY|SELL/, `labelFor(${score}) action is "${l.action}"`);
+  }
+
+  // and the measured record has to travel with the reading
+  assert.equal(SCORE_BUCKETS_TESTED.higherScoreMeansHigherChance, false);
+  assert.equal(SCORE_BUCKETS_TESTED.invertingItAlsoFails, true);
+  assert.ok(SCORE_BUCKETS_TESTED.bars > 100000);
+  for (const [iv, b] of Object.entries(SCORE_BUCKETS_TESTED.upRateByBucket)) {
+    assert.ok(b.extendedUp < b.extendedDown, `${iv}: the top bucket is recorded as better than the bottom — re-measure before claiming that`);
+    assert.ok(b.extendedUp < 50, `${iv}: the top bucket is recorded above a coin flip`);
+  }
+
+  const top = upRateFor('1h', 70);
+  assert.equal(top.bucket, 'extendedUp');
+  assert.ok(top.upRatePct < 50);
+  assert.equal(upRateFor('1w', 70), null, 'unmeasured timeframes claim nothing');
+
+  // the summary must carry it too
+  const { tradeSummary } = await import('../js/lib/summary.js');
+  const s = tradeSummary({
+    signal: { ok: true, score: 67, coinSymbol: 'BTC', text: labelFor(67).text, tone: 'up',
+      plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: 0.055 }, waitFor: [] },
+    forecast: null, interval: '1h', fmt: String,
+  });
+  assert.doesNotMatch(s.verdict, /\bBUY\b|\bSELL\b/i);
+  assert.match(s.headline, /not a recommendation/i);
+  assert.ok(s.caveats.some((c) => /FALLS as this score rises/.test(c)), 'the direction of the measured effect must be stated');
+  void THRESHOLDS;
 });

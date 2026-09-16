@@ -17,7 +17,11 @@ import { buildFeatures } from '../js/lib/predict.js';
 
 const [, , file, outFile = 'js/lib/pooled.js'] = process.argv;
 const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-const HMAP = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+// The app offers ten timeframes and only four had a model, so a forecast on the
+// 1m or 5m chart fell back to the per-coin models alone. These horizons match
+// the ones the coin page uses, so the model is fitted to the question actually
+// being asked.
+const HMAP = { '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
 
 // evaluate-engine.mjs starts testing at max(1500, 60% of the series). Training
 // stops before 55% minus a horizon, so no training row can share a candle with

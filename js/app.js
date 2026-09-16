@@ -395,14 +395,22 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260916-130124";
+export const BUILD = 'DEV';
+
+// A build stamp is exactly what the deploy script writes: 20260916-130124.
+// Anything else — an HTML error page, a proxy notice, an offline fallback — is
+// not a version, and acting on it used to unregister the service worker, delete
+// every cache and reload the page. Offline, that left nothing to reload into.
+const BUILD_STAMP = /^\d{8}-\d{6}$/;
 
 async function checkForUpdate() {
+  if (navigator.onLine === false) return;
   try {
     const res = await fetch(`version.txt?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return;
     const latest = (await res.text()).trim();
-    if (!latest || latest === BUILD) { sessionStorage.removeItem('cv:reloaded'); return; }
+    if (!BUILD_STAMP.test(latest)) return;
+    if (latest === BUILD) { sessionStorage.removeItem('cv:reloaded'); return; }
     if (sessionStorage.getItem('cv:reloaded') === latest) return; // already tried
     sessionStorage.setItem('cv:reloaded', latest);
     for (const reg of await navigator.serviceWorker?.getRegistrations?.() ?? []) await reg.unregister();
