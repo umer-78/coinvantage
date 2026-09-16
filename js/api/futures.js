@@ -134,35 +134,44 @@ export async function futuresOverview(symbols) {
 const SILENCE_MS = 20000;
 
 // OKX reports liquidation size in contracts, so each instrument's contract
-// value is needed to turn that into an amount of coin. The endpoint is flaky
-// from some networks, so a failure is NOT cached — an earlier version stored the
-// empty result forever and every row then showed a dash where its size should
-// be. A mirror host is tried too, and a failed lookup is retried after a minute.
-const OKX_HOSTS = ['https://www.okx.com', 'https://aws.okx.com'];
-const OKX_RETRY_MS = 60000;
-let okxContractsCache = { map: null, at: 0, inflight: null };
+// value is needed to turn that into an amount of coin.
+//
+// This was originally one request for the whole instrument list, which failed
+// from this network — measured in the browser, /public/time answers fine while
+// /public/instruments?instType=SWAP does not, so it is the megabyte of response
+// that does not get through rather than CORS or a block. Asking for a single
+// instId returns a few hundred bytes and works every time.
+//
+// So values are looked up lazily, per symbol, the first time one is liquidated,
+// and cached. A symbol that cannot be resolved is remembered as unknown for ten
+// minutes rather than re-requested on every frame.
+const OKX_REST = 'https://www.okx.com';
+const UNKNOWN_TTL = 600000;
+const okxCtVal = new Map();   // instId -> { value: number|null, at: number }
+const okxPending = new Map(); // instId -> Promise
 
-function okxContracts() {
-  if (okxContractsCache.map) return Promise.resolve(okxContractsCache.map);
-  if (okxContractsCache.inflight) return okxContractsCache.inflight;
-  if (Date.now() - okxContractsCache.at < OKX_RETRY_MS) return Promise.resolve(null);
+async function okxContractValue(instId) {
+  const hit = okxCtVal.get(instId);
+  if (hit && (hit.value !== null || Date.now() - hit.at < UNKNOWN_TTL)) return hit.value;
+  if (okxPending.has(instId)) return okxPending.get(instId);
 
-  okxContractsCache.inflight = (async () => {
-    for (const host of OKX_HOSTS) {
-      try {
-        const j = await fetch(`${host}/api/v5/public/instruments?instType=SWAP`).then((r) => r.json());
-        const m = new Map();
-        for (const d of j?.data || []) {
-          const val = Number(d.ctVal) * (Number(d.ctMult) || 1);
-          if (Number.isFinite(val) && val > 0) m.set(d.instId, val);
-        }
-        if (m.size) { okxContractsCache = { map: m, at: Date.now(), inflight: null }; return m; }
-      } catch { /* try the next host */ }
+  const p = (async () => {
+    try {
+      const j = await fetch(`${OKX_REST}/api/v5/public/instruments?instType=SWAP&instId=${encodeURIComponent(instId)}`).then((r) => r.json());
+      const d = (j?.data || [])[0];
+      const v = d ? Number(d.ctVal) * (Number(d.ctMult) || 1) : NaN;
+      const value = Number.isFinite(v) && v > 0 ? v : null;
+      okxCtVal.set(instId, { value, at: Date.now() });
+      return value;
+    } catch {
+      okxCtVal.set(instId, { value: null, at: Date.now() });
+      return null;
+    } finally {
+      okxPending.delete(instId);
     }
-    okxContractsCache = { map: null, at: Date.now(), inflight: null };
-    return null;
   })();
-  return okxContractsCache.inflight;
+  okxPending.set(instId, p);
+  return p;
 }
 
 export function liquidationStream(onEvent) {
@@ -227,11 +236,10 @@ export function liquidationStream(onEvent) {
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (!Array.isArray(msg?.data)) return; // subscribe acknowledgement
       onFrame();
-      const sizes = await okxContracts();
       for (const row of msg.data) {
         const instId = row.instId || '';
         if (!instId.endsWith('-USDT-SWAP')) continue;
-        const per = sizes.get(instId);
+        const per = await okxContractValue(instId);
         for (const d of row.details || []) {
           const price = +d.bkPx;
           const contracts = +d.sz;
