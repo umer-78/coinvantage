@@ -133,28 +133,43 @@ export async function futuresOverview(symbols) {
 // by the instrument's multiplier.
 const SILENCE_MS = 20000;
 
-let okxContractsPromise = null;
+// OKX reports liquidation size in contracts, so each instrument's contract
+// value is needed to turn that into an amount of coin. The endpoint is flaky
+// from some networks, so a failure is NOT cached — an earlier version stored the
+// empty result forever and every row then showed a dash where its size should
+// be. A mirror host is tried too, and a failed lookup is retried after a minute.
+const OKX_HOSTS = ['https://www.okx.com', 'https://aws.okx.com'];
+const OKX_RETRY_MS = 60000;
+let okxContractsCache = { map: null, at: 0, inflight: null };
+
 function okxContracts() {
-  if (!okxContractsPromise) {
-    okxContractsPromise = fetch('https://www.okx.com/api/v5/public/instruments?instType=SWAP')
-      .then((r) => r.json())
-      .then((j) => {
+  if (okxContractsCache.map) return Promise.resolve(okxContractsCache.map);
+  if (okxContractsCache.inflight) return okxContractsCache.inflight;
+  if (Date.now() - okxContractsCache.at < OKX_RETRY_MS) return Promise.resolve(null);
+
+  okxContractsCache.inflight = (async () => {
+    for (const host of OKX_HOSTS) {
+      try {
+        const j = await fetch(`${host}/api/v5/public/instruments?instType=SWAP`).then((r) => r.json());
         const m = new Map();
         for (const d of j?.data || []) {
           const val = Number(d.ctVal) * (Number(d.ctMult) || 1);
           if (Number.isFinite(val) && val > 0) m.set(d.instId, val);
         }
-        return m;
-      })
-      .catch(() => new Map());
-  }
-  return okxContractsPromise;
+        if (m.size) { okxContractsCache = { map: m, at: Date.now(), inflight: null }; return m; }
+      } catch { /* try the next host */ }
+    }
+    okxContractsCache = { map: null, at: Date.now(), inflight: null };
+    return null;
+  })();
+  return okxContractsCache.inflight;
 }
 
 export function liquidationStream(onEvent) {
   if (typeof WebSocket === 'undefined') return () => {};
   let ws = null, timer = null, watchdog = null, closed = false, retry = 0;
   let source = 'binance', gotFrame = false;
+  const recent = new Set();
 
   const clearTimers = () => { clearTimeout(timer); clearTimeout(watchdog); timer = null; watchdog = null; };
   const shut = () => { try { ws?.close(); } catch { /* ignore */ } ws = null; };
@@ -221,13 +236,20 @@ export function liquidationStream(onEvent) {
           const price = +d.bkPx;
           const contracts = +d.sz;
           if (!Number.isFinite(price) || !Number.isFinite(contracts)) continue;
-          // Without the contract value the coin amount is unknown, so the row is
-          // still shown but its size is left null rather than guessed at 1:1.
+          // OKX repeats a liquidation across frames, so the same fill was being
+          // listed twice with an identical timestamp and price.
+          const id = `${instId}|${d.ts}|${d.sz}|${d.bkPx}|${d.posSide}`;
+          if (recent.has(id)) continue;
+          recent.add(id);
+          if (recent.size > 400) for (const k of recent) { recent.delete(k); if (recent.size <= 300) break; }
+          // Without the contract value the coin amount is unknown. The row still
+          // shows — it is a real liquidation — with contracts reported instead of
+          // a dollar figure that would be wrong by the instrument's multiplier.
           const qty = per ? contracts * per : null;
           onEvent({
             symbol: instId.replace(/-USDT-SWAP$/, ''), pair: instId,
             side: d.posSide === 'long' ? 'long' : 'short',
-            qty, price,
+            qty, price, contracts,
             usd: qty === null ? null : qty * price,
             time: +d.ts || Date.now(), venue: 'OKX',
           });

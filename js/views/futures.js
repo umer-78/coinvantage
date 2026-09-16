@@ -153,12 +153,12 @@ export async function render(el, [symParam]) {
       $('#liqList', el).innerHTML = st.liqs.map((l) => `
         <div class="row spread" style="padding:6px 0;border-bottom:1px solid var(--border)">
           <div><b>${esc(l.symbol)}</b> <span class="chip ${l.side === 'long' ? 'down' : 'up'}">${l.side === 'long' ? 'Long liquidated' : 'Short liquidated'}</span></div>
-          <div style="text-align:right"><b>${l.usd === null ? '—' : compact(l.usd)}</b><br><small class="fine">${money(l.price)} · ${new Date(l.time).toLocaleTimeString()}${l.venue ? ` · ${esc(l.venue)}` : ''}</small></div>
+          <div style="text-align:right"><b>${l.usd === null ? `${num(l.contracts)} contracts` : compact(l.usd)}</b><br><small class="fine">${money(l.price)} · ${new Date(l.time).toLocaleTimeString()}${l.venue ? ` · ${esc(l.venue)}` : ''}</small></div>
         </div>`).join('');
     }, 400);
   });
 
-  void icon; void num;
+  void icon;
   return () => {
     st.disposed = true;
     clearInterval(st.poll);
