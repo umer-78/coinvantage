@@ -866,3 +866,148 @@ test('every module imports the helpers it calls', async () => {
   }
   assert.deepEqual(bad, [], `\n${bad.join('\n')}`);
 });
+
+test('a timeframe with no measured edge can never be sold as a confident call', async () => {
+  const { tradeSummary, reconcileTimeframes } = await import('../js/lib/summary.js');
+  const { TESTED_ACCURACY } = await import('../js/lib/predict.js');
+
+  // The published table says the daily forecast is below a coin flip. Anything
+  // that renders a confident verdict there is contradicting the app's own test.
+  assert.ok(TESTED_ACCURACY.noEdge.includes('1d'));
+  assert.ok(TESTED_ACCURACY['1d'] < 50, 'the 1d number is the whole reason for this rule');
+
+  const strongDaily = {
+    ok: true, score: 67, coinSymbol: 'BTC', text: 'Strong Buy', tone: 'up',
+    plan: { side: 'long', entryZone: [100, 101], stopLoss: 98, takeProfits: [103, 105, 108], riskPct: 2, expectancyR: 0.058 },
+    waitFor: [],
+  };
+  const s = tradeSummary({
+    signal: strongDaily, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
+    interval: '1d', horizonText: '2 weeks', fmt: String,
+  });
+
+  assert.notEqual(s.confidence, 'high', 'the worst-measured timeframe cannot be the most confident one');
+  assert.doesNotMatch(s.verdict, /STRONG/i, 'no verdict promises strength the band test disproved');
+  assert.ok(s.confidenceWhy && /1d/.test(s.confidenceWhy), 'and the label says what it is based on');
+  assert.ok(s.caveats.some((c) => /below a coin flip/i.test(c)), 'the reader is told the daily forecast has no edge');
+
+  // the same setup on a timeframe that does have a record is allowed to rate higher
+  const measured = tradeSummary({
+    signal: { ...strongDaily, text: 'Buy' }, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
+    interval: '15m', horizonText: '1 hour', fmt: String,
+  });
+  assert.ok(!measured.caveats.some((c) => /below a coin flip/i.test(c)));
+});
+
+test('the timeframes are reconciled into one standing view instead of three verdicts', async () => {
+  const { tradeSummary, reconcileTimeframes } = await import('../js/lib/summary.js');
+
+  // the exact readings a user reported: 1h flat, 4h buy, 1d strongly buy
+  const mtf = {
+    '15m': { ok: true, score: 28, text: 'Buy', tone: 'up' },
+    '1h': { ok: true, score: 5, text: 'Neutral', tone: 'flat' },
+    '4h': { ok: true, score: 33, text: 'Buy', tone: 'up' },
+    '1d': { ok: true, score: 67, text: 'Strong Buy', tone: 'up' },
+  };
+
+  const rec = reconcileTimeframes(mtf, '1h');
+  assert.equal(rec.rows.length, 4);
+  assert.ok(rec.score > 20, 'the weighted view leans buy');
+  assert.equal(rec.relation, 'quiet', '1h has no direction of its own inside a rising market');
+  assert.equal(rec.anchor.interval, '1d', 'the longest timeframe anchors direction');
+
+  // every timeframe must produce the SAME combined number, or the page is still
+  // telling the reader three different things
+  const seen = new Set();
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const s = tradeSummary({
+      signal: { ...mtf[iv], coinSymbol: 'BTC', plan: null, waitFor: ['no trigger'] },
+      forecast: null, interval: iv, mtf, fmt: String,
+    });
+    const across = s.steps.find((x) => x.label === 'Across timeframes');
+    assert.ok(across, `${iv} must carry the cross-timeframe paragraph`);
+    assert.match(across.text, /Combined|combined view/i);
+    assert.ok(s.steps.some((x) => x.label === 'Which timeframe to follow'), `${iv} must say which chart leads`);
+    seen.add(s.reconciled.score);
+  }
+  assert.equal(seen.size, 1, 'the standing view must not change when the reader switches timeframe');
+
+  // a timeframe pointing the other way is not served as a clean trade
+  const against = tradeSummary({
+    signal: { ok: true, score: -40, coinSymbol: 'BTC', text: 'Sell', tone: 'down',
+      plan: { side: 'short', entryZone: [100, 101], stopLoss: 103, takeProfits: [97, 95, 92], riskPct: 2, expectancyR: 0.058 },
+      waitFor: [] },
+    forecast: null, interval: '1d', mtf: { ...mtf, '1d': { ok: true, score: -40, text: 'Sell', tone: 'down' } }, fmt: String,
+  });
+  assert.ok(/DISAGREE|WAIT/.test(against.verdict) || against.confidence === 'low',
+    'a chart fighting the rest of the board is flagged, not presented as a trade');
+});
+
+test('matching a coin against its own history never looks into the future', async () => {
+  const { historyMatch, backtestAnalog, analogVerdict, shapeFor } = await import('../js/lib/analog.js');
+  const c = demoCandles('bitcoin', '1d', 1200);
+
+  const m = historyMatch(c, { interval: '1d' });
+  assert.ok(m.ok, 'a long history should produce a reading');
+  const { window: W, horizon: H } = shapeFor('1d');
+  assert.equal(m.window, W);
+  assert.equal(m.horizon, H);
+
+  // every matched stretch, plus the bars it is judged on, must end before the
+  // window being matched begins — otherwise the "history" overlaps the present
+  const liveStart = c.length - W;
+  for (const mm of m.matches) {
+    assert.ok(mm.endIndex + H < liveStart + W, 'a match must not reach into the live window');
+    assert.ok(mm.endIndex + H <= c.length - 1, 'a match cannot need candles that do not exist');
+    assert.equal(mm.series.length, W + H);
+  }
+  assert.equal(m.currentSeries.length, W);
+  assert.ok(m.upCount + m.downCount === m.matches.length);
+
+  // truncating the data must not change what the matcher saw at that point
+  const earlier = c.slice(0, c.length - 5);
+  const a = historyMatch(c.slice(0, 800), { interval: '1d' });
+  const b = historyMatch(earlier.slice(0, 800), { interval: '1d' });
+  if (a.ok && b.ok) assert.deepEqual(a.matches.map((x) => x.endIndex), b.matches.map((x) => x.endIndex));
+
+  // the score has to carry a baseline, or the accuracy number means nothing
+  const s = backtestAnalog(c, { interval: '1d' });
+  assert.ok(s.ok, 'a 1200-candle history should be scoreable');
+  assert.ok(s.tests >= 20);
+  assert.ok(s.step >= s.horizon, 'test points must be at least one horizon apart');
+  assert.equal(typeof s.baselinePct, 'number');
+  assert.equal(s.beatsBaseline, s.accuracyPct > s.baselinePct);
+  assert.ok(s.baselinePct >= 50, 'the majority-class baseline is never below a coin flip');
+
+  // and a method that loses to the baseline must be described as losing
+  const v = analogVerdict(m, { ...s, ok: true, beatsBaseline: false, accuracyPct: 44, baselinePct: 53, tests: 60 }, { symbol: 'BTC', interval: '1d' });
+  assert.equal(v.tone, 'warn');
+  assert.ok(v.lines.some((l) => /did not earn its keep/i.test(l)));
+
+  // too little history is an answer, not a guess
+  assert.equal(historyMatch(c.slice(0, 40), { interval: '1d' }).ok, false);
+  assert.equal(backtestAnalog(c.slice(0, 120), { interval: '1d' }).ok, false);
+});
+
+test('the shape matcher is published as a picture, not as an edge it failed to earn', async () => {
+  const { ANALOG_TESTED, analogVerdict, historyMatch } = await import('../js/lib/analog.js');
+
+  // Measured across 12 coins on real candles, shape matching lost to the
+  // majority-class baseline on every timeframe. This guard exists so the result
+  // cannot be quietly flipped back to a claim without re-measuring.
+  assert.equal(ANALOG_TESTED.beatsBaselineOverall, false);
+  for (const iv of ['1h', '4h', '1d']) {
+    const t = ANALOG_TESTED[iv];
+    assert.ok(t.meanAccuracy < t.meanBaseline, `${iv} is recorded as beating its baseline — re-measure before claiming that`);
+    assert.ok(t.tests >= 1000, `${iv} conclusion drawn from too few tests`);
+    assert.ok(t.coinsBeatingBaseline <= t.coins / 2, `${iv} claims a majority of coins beat baseline`);
+  }
+
+  // a failing score must change how the headline reads, not just add a footnote
+  const c = demoCandles('ethereum', '1d', 1200);
+  const m = historyMatch(c, { interval: '1d' });
+  const lost = analogVerdict(m, { ok: true, beatsBaseline: false, accuracyPct: 44, baselinePct: 53, tests: 60, confidentAccuracyPct: null }, { symbol: 'ETH', interval: '1d' });
+  assert.match(lost.headline, /history rather than as a lean|not taking a side/i);
+  assert.equal(lost.tone, 'warn');
+  assert.ok(lost.lines.some((l) => /12 coins/.test(l)), 'the cross-coin result travels with every reading');
+});

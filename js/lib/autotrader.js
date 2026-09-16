@@ -16,16 +16,50 @@
 import { computeAll, atr } from './indicators.js';
 import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
 
+/**
+ * What this ruleset actually did on real candles.
+ *
+ * Measured with tools/evaluate-autotrader.mjs: 12 coins, 4,000 Binance candles
+ * each, 108 settings per timeframe. The first half of history was used to pick
+ * settings and the second half — never seen during tuning — is what these
+ * numbers report. The benchmark is equal-weight buy-and-hold of the same 12
+ * coins over the same window, because a long-only strategy in a rising market
+ * makes money without any skill at all.
+ *
+ * The result is the reason this feature is labelled a demonstration rather than
+ * a trading system: at NO setting, on ANY timeframe, did it beat simply owning
+ * the coins on data it had not been tuned on. It is published here so the page
+ * has to state it.
+ */
+export const AUTOTRADER_TESTED = {
+  '1h': { pickedReturn: 9.8, buyHold: 25.8, beatBuyHold: 0, configs: 108, trades: 100, feeDragPct: 5.2, profitFactor: 1.43 },
+  '4h': { pickedReturn: -19.3, buyHold: -24.7, beatBuyHold: 0, configs: 108, trades: 75, feeDragPct: 3.2, profitFactor: 0.44 },
+  '1d': { pickedReturn: 6.2, buyHold: 119.6, beatBuyHold: 1, configs: 108, trades: 299, feeDragPct: 16.5, profitFactor: 1.05 },
+  coins: 12, candlesPerCoin: 4000,
+  beatsBuyAndHold: false,
+};
+
 export const DEFAULT_CONFIG = {
   startingBalance: 10000,
   riskPct: 1.5,          // % of balance risked per trade (stop distance = this loss)
   maxPositions: 5,
   maxPositionPct: 25,    // never put more than this share of the balance in one coin
-  entryScore: THRESHOLDS.normal,
-  exitScore: -THRESHOLDS.normal,
-  atrStop: 1.5,
-  rMultiple: 2.5,
+  // Chosen on the training half and left alone: a much higher entry bar cuts the
+  // trade count from ~500 to ~100, which cuts fee drag from roughly 20% of the
+  // balance to 5% — the single biggest change to the result. 2 ATR / 3R beat
+  // every other stop/target pair on the same half.
+  entryScore: 65,
+  exitScore: -65,
+  atrStop: 2,
+  rMultiple: 3,
   feePct: 0.1,
+  // Two behaviours that were hardcoded and therefore never measured. Moving the
+  // stop to break-even converts would-be winners into scratches, and exiting on
+  // a signal reversal cuts trades before the target — both sound prudent and
+  // both cost money if they are wrong, so they are settings now and the grid in
+  // tools/evaluate-autotrader.mjs tests them.
+  breakEvenAtR: null,    // measured: moving the stop to entry cost money, so it is off
+  signalExitBars: 2,     // close after this many consecutive reversal bars; null = never
   interval: '1h',
   universe: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'AVAX', 'LINK'],
 };
@@ -75,12 +109,16 @@ export function replaySymbol(state, cfg, symbol, candles) {
       else {
         // break-even stop once the trade is +1R in profit
         const r = pos.entry - pos.initialStop;
-        if (!pos.movedToBreakEven && r > 0 && c.h >= pos.entry + r) {
+        const beR = cfg.breakEvenAtR;
+        if (beR !== null && beR !== undefined && !pos.movedToBreakEven && r > 0 && c.h >= pos.entry + beR * r) {
           pos.stop = pos.entry;
           pos.movedToBreakEven = true;
         }
-        consecutiveExit = score <= cfg.exitScore ? consecutiveExit + 1 : 0;
-        if (consecutiveExit >= 2) closePosition(state, cfg, symbol, c.c, c.t, 'signal reversal');
+        const exitBars = cfg.signalExitBars;
+        if (exitBars !== null && exitBars !== undefined) {
+          consecutiveExit = score <= cfg.exitScore ? consecutiveExit + 1 : 0;
+          if (consecutiveExit >= exitBars) closePosition(state, cfg, symbol, c.c, c.t, 'signal reversal');
+        }
       }
       markEquity(state, c.t);
       continue;
@@ -120,13 +158,17 @@ export function replaySymbol(state, cfg, symbol, candles) {
 function closePosition(state, cfg, symbol, exitPrice, t, reason) {
   const p = state.open[symbol];
   if (!p) return;
-  const gross = (exitPrice - p.entry) * p.qty;
+  // A recorded short makes money when price falls. This used the long formula
+  // for every side, so a profitable short was logged as a loss of the same size
+  // and the balance was debited for it.
+  const dir = p.side === 'short' ? -1 : 1;
+  const gross = (exitPrice - p.entry) * p.qty * dir;
   const fee = exitPrice * p.qty * (cfg.feePct / 100);
   const pnl = gross - fee;
   state.balance += pnl;
   state.closed.push({
     ...p, exit: round(exitPrice), exitAt: t, reason,
-    pnl: round(pnl, 2), pnlPct: round(((exitPrice / p.entry) - 1) * 100, 3),
+    pnl: round(pnl, 2), pnlPct: round((((exitPrice / p.entry) - 1) * 100) * dir, 3),
     feePaid: round((p.feePaid || 0) + fee, 4),
   });
   delete state.open[symbol];
@@ -228,7 +270,7 @@ export function equity(state, pricesBySymbol = {}) {
   let openValue = 0;
   for (const [sym, p] of Object.entries(state.open)) {
     const px = pricesBySymbol[sym] ?? p.entry;
-    openValue += (px - p.entry) * p.qty;
+    openValue += (px - p.entry) * p.qty * (p.side === 'short' ? -1 : 1);
   }
   return state.balance + openValue;
 }

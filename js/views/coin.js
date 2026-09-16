@@ -416,11 +416,11 @@ export async function render(el, [symParam]) {
     card.innerHTML = `
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
       <div class="verdict">
-        <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Score ${sig.score > 0 ? '+' : ''}${sig.score} / 100</div></div>
+        <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
         <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Sell</span><span>Neutral</span><span>Buy</span></div></div>
       </div>
-      <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
-      ${conf ? `<p class="fine" style="margin-top:8px">All timeframes combined: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score})</p>` : ''}
+      ${conf ? `<p class="combined mt">Standing view across all timeframes: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). The panel below reads the ${st.interval} chart only.</p>` : ''}
+      <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
       ${summaryHtml(sig)}
       ${plan ? `
         <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
@@ -446,6 +446,7 @@ export async function render(el, [symParam]) {
       timing: st.timing || null,
       interval: st.interval,
       horizonText: st.forecast ? horizonText(st.interval, st.forecast.horizon) : null,
+      mtf: mtfCache,
       fmt: (v) => money(v, { dp: st.dp }),
     });
     if (!sum.steps.length && sum.verdict === 'NO READING') return '';
@@ -453,8 +454,9 @@ export async function render(el, [symParam]) {
       <div class="summary mt">
         <div class="row spread">
           <span class="chip ${sum.tone === 'warn' ? 'warn' : sum.tone}"><b>${esc(sum.verdict)}</b></span>
-          <span class="fine">${esc(sum.confidence)} confidence</span>
+          <span class="fine" title="${esc(sum.confidenceWhy || '')}">${esc(sum.confidence)} confidence</span>
         </div>
+        ${sum.confidenceWhy ? `<p class="fine" style="margin:6px 0 0">${esc(sum.confidenceWhy)}</p>` : ''}
         <p class="mt" style="margin-bottom:10px">${esc(sum.headline)}</p>
         <dl class="steps">${sum.steps.map((x) => `<dt>${esc(x.label)}</dt><dd>${esc(x.text)}</dd>`).join('')}</dl>
         ${sum.caveats.map((c) => `<p class="fine" style="margin:6px 0 0">${esc(c)}</p>`).join('')}

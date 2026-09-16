@@ -103,7 +103,12 @@ async function route() {
     document.title = `${mod.title ? (typeof mod.title === 'function' ? mod.title(params) : mod.title) + ' · ' : ''}${CONFIG.APP_NAME}`;
   } catch (err) {
     console.error(err);
-    if (seq === routeSeq) view.innerHTML = `<div class="card empty"><h3>Something went wrong</h3><p>${esc(err.message)}</p><button class="btn" onclick="location.reload()">Reload</button></div>`;
+    if (seq === routeSeq) {
+      // inline onclick is blocked by the page CSP — this is the error screen, so
+      // a Reload button that silently does nothing is the worst place for it
+      view.innerHTML = `<div class="card empty"><h3>Something went wrong</h3><p>${esc(err.message)}</p><button class="btn" id="errReload">Reload</button></div>`;
+      document.getElementById('errReload')?.addEventListener('click', () => location.reload());
+    }
   }
   window.scrollTo({ top: 0 });
   trackPageView(location.hash || '#/');
@@ -390,7 +395,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260914-082311";
+export const BUILD = "20260916-130124";
 
 async function checkForUpdate() {
   try {

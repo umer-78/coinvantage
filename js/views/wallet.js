@@ -78,7 +78,9 @@ export async function render(el) {
         <td><div class="row" style="gap:4px;flex-wrap:nowrap;justify-content:flex-end">
           ${tradable(r.symbol) ? `<button class="btn sm ghost" data-trade="${esc(r.symbol)}" title="Trade ${esc(r.symbol)} on an exchange">Trade</button>` : ''}
           <button class="icon-btn" style="width:30px;height:30px" data-del="${esc(r.symbol)}" aria-label="Remove">${icon('trash', 14)}</button></div></td></tr>`; }).join('')}
-      </tbody></table></div>` : `<div class="empty"><p>No holdings yet.</p><button class="btn primary" onclick="document.getElementById('addBtn').click()">${icon('plus', 14)} Add your first coin</button></div>`;
+      </tbody></table></div>` : `<div class="empty"><p>No holdings yet.</p><button class="btn primary" id="addFirst">${icon('plus', 14)} Add your first coin</button></div>`;
+    // inline onclick is blocked by the page CSP, so the empty-state button is wired here
+    $('#addFirst', el)?.addEventListener('click', () => $('#addBtn', el)?.click());
     $$('[data-del]', el).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); save('holdings', load('holdings', []).filter((h) => h.symbol !== b.dataset.del)); drawHoldings(); }));
     $$('#holdings tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
     const items = rows.filter((r) => r.value > 0).map((r, i) => ({ label: r.symbol, value: r.value, color: cssVar(COLORS[i % COLORS.length]) }));

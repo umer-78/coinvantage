@@ -25,6 +25,7 @@ const ICONS = {
   more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
   chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3.5 2"/>',
 };
 export const icon = (name, size = 18) =>
   `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -32,7 +33,27 @@ export const icon = (name, size = 18) =>
 export function coinLogo(coin, size = 24) {
   const letter = esc((coin?.symbol || '?').slice(0, 1));
   if (!coin?.image) return `<span class="logo logo-fb" style="width:${size}px;height:${size}px;font-size:${size * 0.45}px">${letter}</span>`;
-  return `<img class="logo" src="${esc(coin.image)}" width="${size}" height="${size}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;logo logo-fb&quot; style=&quot;width:${size}px;height:${size}px;font-size:${size * 0.45}px&quot;>${letter}</span>'">`;
+  return `<img class="logo" src="${esc(coin.image)}" width="${size}" height="${size}" alt="" loading="lazy" data-letter="${letter}">`;
+}
+
+// The page's Content-Security-Policy has no 'unsafe-inline' for scripts, so an
+// onerror="" attribute never runs — every logo that 404s used to be left as a
+// browser broken-image glyph. `error` does not bubble, so this listens in the
+// capture phase instead, once, for the whole app.
+if (typeof document !== 'undefined') {
+  document.addEventListener('error', (e) => {
+    const t = e.target;
+    if (!t || t.tagName !== 'IMG') return;
+    if (t.dataset.fallback === 'remove') { t.remove(); return; }
+    if (t.classList.contains('logo') && t.dataset.letter) {
+      const size = Number(t.getAttribute('width')) || 24;
+      const span = document.createElement('span');
+      span.className = 'logo logo-fb';
+      span.style.cssText = `width:${size}px;height:${size}px;font-size:${size * 0.45}px`;
+      span.textContent = t.dataset.letter;
+      t.replaceWith(span);
+    }
+  }, true);
 }
 
 export function toast(msg, toneName = 'info', ms = 3500) {

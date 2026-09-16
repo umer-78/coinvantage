@@ -2,6 +2,7 @@ import { markets, findCoin, getCandles, isStable } from '../api/market.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, coinLogo, skeleton, bindSeg, icon, errorBox } from '../ui.js';
 import { esc, pct, dateTime } from '../format.js';
+import { historyMatch, backtestAnalog, analogVerdict } from '../lib/analog.js';
 
 export const title = 'Compare';
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -9,7 +10,7 @@ const COLORS = ['--series-1', '--series-2', '--series-3', '--series-5', '--serie
 const PERIODS = { '7d': ['1h', 168, 24 * 365], '30d': ['4h', 180, 6 * 365], '90d': ['1d', 90, 365], '1y': ['1d', 365, 365], '3y': ['1d', 1095, 365] };
 
 export async function render(el, [preset]) {
-  const st = { coins: preset ? preset.split(',').map((s) => s.toUpperCase()).slice(0, 6) : ['BTC', 'ETH', 'SOL'], period: '30d', chart: null, disposed: false };
+  const st = { coins: preset ? preset.split(',').map((s) => s.toUpperCase()).slice(0, 6) : ['BTC', 'ETH', 'SOL'], period: '30d', chart: null, selfSym: null, selfChart: null, selfSeq: 0, disposed: false };
   const all = await markets().catch(() => []);
   el.innerHTML = `
     <div class="page-head">
@@ -24,15 +25,23 @@ export async function render(el, [preset]) {
       <div class="card"><div class="card-h"><h3>Statistics</h3></div><div id="stats">${skeleton(5)}</div></div>
       <div class="card"><div class="card-h"><h3>Correlation</h3><span class="fine">1 = move together · 0 = unrelated · −1 = opposite</span></div><div id="corr">${skeleton(5)}</div></div>
     </div>
+    <div class="card mt">
+      <div class="card-h">
+        <h3>${icon('history', 16)} Compare a coin with its own past</h3>
+        <span class="fine">Finds the stretches of history that traced the same shape, and shows what price did next</span>
+      </div>
+      <div class="seg" id="selfPick" style="margin-bottom:12px"></div>
+      <div id="selfBody">${skeleton(6, 26)}</div>
+    </div>
     <datalist id="coinList">${all.filter((c) => !isStable(c.symbol)).map((c) => `<option value="${esc(c.symbol)}">${esc(c.name)}</option>`).join('')}</datalist>`;
 
   const drawPicked = () => {
     $('#picked', el).innerHTML = st.coins.map((s, i) => `<span class="chip" style="border-left:4px solid var(${COLORS[i]})">${esc(s)} <button class="star" data-rm="${esc(s)}" aria-label="Remove ${esc(s)}" style="padding:0">${icon('close', 13)}</button></span>`).join('')
       + (st.coins.length < 6 ? `<input class="inp" id="add" list="coinList" placeholder="+ Add coin" style="width:130px;height:30px">` : '');
-    $$('[data-rm]', el).forEach((b) => b.addEventListener('click', () => { st.coins = st.coins.filter((c) => c !== b.dataset.rm); drawPicked(); load(); }));
+    $$('[data-rm]', el).forEach((b) => b.addEventListener('click', () => { st.coins = st.coins.filter((c) => c !== b.dataset.rm); drawPicked(); load(); drawSelfPick(); loadSelf(); }));
     $('#add', el)?.addEventListener('change', (e) => {
       const v = e.target.value.trim().toUpperCase();
-      if (v && !st.coins.includes(v) && all.some((c) => c.symbol === v)) { st.coins.push(v); drawPicked(); load(); }
+      if (v && !st.coins.includes(v) && all.some((c) => c.symbol === v)) { st.coins.push(v); drawPicked(); load(); drawSelfPick(); }
       else e.target.value = '';
     });
   };
@@ -94,8 +103,111 @@ export async function render(el, [preset]) {
     </tbody></table></div><p class="fine mt">High correlation means holding both adds little diversification.</p>`;
   };
 
-  bindSeg($('#per', el), (v) => { st.period = v; load(); });
+
+  // ---------------------------------------------------------------------------
+  // The other comparison: a coin against its own past.
+  //
+  // Takes the shape of the most recent candles, finds the stretches of this
+  // coin's history that traced the same shape, and draws what happened after
+  // each of them on top of each other. The matcher only ever looks backwards
+  // from the bar it is asked about, so the same call can be replayed at past
+  // bars and scored — which is what the hit-rate line underneath is. If the
+  // method does not beat simply always calling the more common outcome on this
+  // coin, the card says so instead of quietly showing the percentage anyway.
+  const CANDLE_WORD = { '1h': 'hourly', '4h': '4-hour', '1d': 'daily' };
+
+  const drawSelfPick = () => {
+    const host = $('#selfPick', el);
+    if (!host) return;
+    if (!st.coins.length) { host.innerHTML = ''; return; }
+    if (!st.coins.includes(st.selfSym)) st.selfSym = st.coins[0];
+    host.innerHTML = st.coins.map((s) => `<button data-self="${esc(s)}" class="${s === st.selfSym ? 'on' : ''}">${esc(s)}</button>`).join('');
+    $$('[data-self]', host).forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.self === st.selfSym) return;
+      st.selfSym = b.dataset.self;
+      drawSelfPick();
+      loadSelf();
+    }));
+  };
+
+  const loadSelf = async () => {
+    const body = $('#selfBody', el);
+    if (!body) return;
+    if (!st.selfSym) { body.innerHTML = '<div class="empty">Add a coin to compare it with its own history.</div>'; return; }
+    const seq = ++st.selfSeq;
+    const sym = st.selfSym;
+    const iv = PERIODS[st.period][0];
+    body.innerHTML = skeleton(6, 26);
+    st.selfChart?.destroy(); st.selfChart = null;
+
+    let candles;
+    try {
+      const coin = await findCoin(sym);
+      ({ candles } = await getCandles(coin, iv, 1000));
+    } catch {
+      if (st.disposed || seq !== st.selfSeq) return;
+      body.innerHTML = errorBox(`Could not load history for ${sym}.`, loadSelf);
+      return;
+    }
+    if (st.disposed || seq !== st.selfSeq) return;
+
+    const match = historyMatch(candles, { interval: iv });
+    const score = match.ok ? backtestAnalog(candles, { interval: iv }) : null;
+    const v = analogVerdict(match, score, { symbol: sym, interval: iv, horizonText: match.ok ? `${match.horizon} ${CANDLE_WORD[iv] || ''} candles`.trim() : null });
+
+    if (!match.ok) {
+      body.innerHTML = `<div class="empty"><p>${esc(match.reason)}</p></div>`;
+      return;
+    }
+
+    const chip = score?.ok && !score.beatsBaseline ? 'NO MEASURED EDGE'
+      : match.direction === 'up' ? 'HISTORY LEANS UP'
+      : match.direction === 'down' ? 'HISTORY LEANS DOWN' : 'HISTORY IS SPLIT';
+
+    body.innerHTML = `
+      <div class="row spread" style="gap:10px;flex-wrap:wrap">
+        <span class="chip ${v.tone === 'warn' ? 'warn' : v.tone}"><b>${esc(chip)}</b></span>
+        <span class="fine">${match.matches.length} matching stretches · ${match.window} ${esc(CANDLE_WORD[iv] || '')} candles of shape · ${match.horizon} candles ahead</span>
+      </div>
+      <p class="mt">${esc(v.headline)}</p>
+      <div id="selfChart" class="mt"></div>
+      <p class="fine" style="margin-top:6px">Each faint line is one past stretch that matched, lined up so the match ends at 0 on the axis. Everything right of the divider is what actually happened next.</p>
+      ${v.lines.map((l) => `<p class="fine" style="margin:8px 0 0">${esc(l)}</p>`).join('')}
+      <div class="tbl-wrap mt"><table class="tbl"><thead><tr>
+        <th class="l">Matched stretch ended</th><th>Similarity</th><th>Move over next ${match.horizon}</th><th class="hide-m">Peak</th><th class="hide-m">Trough</th>
+      </tr></thead><tbody>
+        ${match.matches.map((m) => `<tr style="cursor:default"><td class="l">${esc(dateTime(m.endTime, iv !== '1d'))}</td>
+          <td>${(m.similarity * 100).toFixed(0)}%</td>
+          <td class="${m.futureReturnPct >= 0 ? 'up' : 'down'}"><b>${pct(m.futureReturnPct)}</b></td>
+          <td class="hide-m up">${pct(m.maxUpPct)}</td><td class="hide-m down">${pct(m.maxDownPct)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="fine mt">How this is scored: the matcher is replayed at ${score?.ok ? score.tests : 'past'} earlier bars using only the data that existed at each one, spaced at least one horizon apart so the outcomes do not overlap, and marked against what price actually did. Shape matching is one input among several — it is not a forecast on its own.</p>`;
+
+    const W = match.window;
+    const host = $('#selfChart', el);
+    st.selfChart = new LineChart(host, {
+      height: 320, zeroLine: 0,
+      yFormat: (y) => `${y >= 0 ? '+' : ''}${y.toFixed(1)}%`,
+      xFormat: (x) => `${x > 0 ? '+' : ''}${Math.round(x)}`,
+      tooltipX: (x) => (x === 0 ? 'match ends' : `${x > 0 ? '+' : ''}${Math.round(x)} candles`),
+    });
+    const lines = match.matches.map((m, i) => ({
+      name: dateTime(m.endTime, false),
+      color: cssVar(COLORS[i % COLORS.length]),
+      width: 1.2, alpha: 0.5,
+      data: m.series.map((y, j) => ({ x: j - (W - 1), y: y - 100 })),
+    }));
+    lines.push({
+      name: `${sym} now`, color: cssVar('--accent'), width: 2.8,
+      data: match.currentSeries.map((y, j) => ({ x: j - (W - 1), y: y - 100 })),
+    });
+    st.selfChart.set(lines, { divider: 0, dividerLabel: 'now' });
+  };
+
+  bindSeg($('#per', el), (v) => { st.period = v; load(); drawSelfPick(); loadSelf(); });
   drawPicked();
+  drawSelfPick();
   load();
-  return () => { st.disposed = true; st.chart?.destroy(); };
+  loadSelf();
+  return () => { st.disposed = true; st.chart?.destroy(); st.selfChart?.destroy(); };
 }

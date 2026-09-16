@@ -239,6 +239,58 @@ async function fetchKlines(pair, interval, total, ttl) {
 }
 
 // Fetch up to `total` candles (paginates backwards, 1000 per request).
+
+// Candles for a coin that does not trade on Binance.
+//
+// The old path asked CoinGecko's /ohlc endpoint for 365 days and labelled the
+// result "1d". That endpoint does not return daily candles at that range — it
+// returns FOUR-DAY candles, 92 of them. So every non-Binance coin was drawing a
+// 4-day chart under a 1d button, with far too little history for EMA200 or the
+// forecast, which is why low-cap coins showed a blank forecast and a blank
+// EMA200 rather than an explanation.
+//
+// /market_chart returns evenly spaced price points instead: hourly for a 90-day
+// request, daily for a 365-day one. Those are bucketed here onto real interval
+// boundaries, so a "1d" candle covers one day and a "4h" candle covers four
+// hours. The high and low of each bucket come from the points inside it, so on
+// the finest interval a candle's wick is its own open and close and nothing
+// more — the result is marked lowRes so the page can say that plainly.
+const GECKO_STEP = { hourly: 36e5, daily: 864e5 };
+
+async function geckoCandles(coin, interval, total) {
+  const want = INTERVAL_MS[interval];
+  if (!want) throw new HttpError(`Unknown interval ${interval}.`, 400);
+
+  // pick the finest series the endpoint will actually return for this range
+  const grain = want >= 864e5 ? 'daily' : 'hourly';
+  const step = GECKO_STEP[grain];
+  if (want < step) {
+    throw new HttpError(
+      `${coin.symbol || 'This coin'} does not trade on Binance, and the fallback price feed only goes down to ${grain === 'daily' ? 'one day' : 'one hour'}. Timeframes shorter than that are not available for it — they would have to be invented.`,
+      404,
+    );
+  }
+  const days = grain === 'daily' ? Math.min(3650, Math.max(365, Math.ceil((total * want) / 864e5) + 5)) : 90;
+  const j = await stale(getJson(
+    `${CONFIG.COINGECKO}/coins/${encodeURIComponent(coin.id)}/market_chart?vs_currency=usd&days=${days}`,
+    { ttl: 5 * 60e3, key: `cg:mc:${coin.id}:${days}` },
+  ));
+  const pts = Array.isArray(j?.prices) ? j.prices : [];
+  if (pts.length < 2) throw new HttpError('No price history available for this coin', 404);
+
+  const buckets = new Map();
+  for (const [t, price] of pts) {
+    if (!Number.isFinite(price)) continue;
+    const key = Math.floor(t / want) * want;
+    const b = buckets.get(key);
+    if (!b) buckets.set(key, { t: key, o: price, h: price, l: price, c: price, v: 0 });
+    else { b.c = price; if (price > b.h) b.h = price; if (price < b.l) b.l = price; }
+  }
+  const candles = [...buckets.values()].sort((a, b) => a.t - b.t).slice(-total);
+  if (!candles.length) throw new HttpError('No price history available for this coin', 404);
+  return { candles, source: 'coingecko', pair: null, lowRes: true, grain, closeOnly: want === step };
+}
+
 export async function getCandles(coin, interval = '1h', total = 500) {
   const pair = typeof coin === 'string' ? coin : coin?.binance;
 
@@ -286,11 +338,13 @@ export async function getCandles(coin, interval = '1h', total = 500) {
     } catch { /* fall through */ }
   }
   if (coin && typeof coin === 'object' && coin.source === 'coingecko') {
+    // a 404 here is a real answer — "this timeframe does not exist for this
+    // coin" — so it is thrown rather than quietly replaced with demo candles
     try {
-      const days = interval.endsWith('m') || interval === '1h' ? 1 : ['2h', '4h', '6h', '12h'].includes(interval) ? 30 : 365;
-      const rows = await stale(getJson(`${CONFIG.COINGECKO}/coins/${encodeURIComponent(coin.id)}/ohlc?vs_currency=usd&days=${days}`, { ttl: 5 * 60e3, key: `cg:ohlc:${coin.id}:${days}` }));
-      return { candles: rows.map(([t, o, h, l, c]) => ({ t, o, h, l, c, v: 0 })), source: 'coingecko', pair: null, lowRes: true };
-    } catch { /* fall through */ }
+      return await geckoCandles(coin, interval, total);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 404 && /does not trade on Binance/.test(err.message)) throw err;
+    }
   }
   const demoId = (typeof coin === 'object' && coin?.source === 'demo' && coin.id) || demo.demoSymbolToId(pair || `${coin?.symbol}USDT`);
   if (demoId) {
