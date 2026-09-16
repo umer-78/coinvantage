@@ -75,12 +75,66 @@ export function edgeBand(interval, score) {
 const DEFAULT_GEOMETRY = { stopAtr: 1.5, rr: 2.5, ev: null, tested: false };
 export const geometryFor = (interval) => TRADE_GEOMETRY[interval] || DEFAULT_GEOMETRY;
 
+/**
+ * What a score means, measured rather than assumed.
+ *
+ * Every bar of 12 coins was sorted by its score and matched against what price
+ * actually did over the following candles — 244,000 bars in total. The share
+ * that rose falls as the score rises, on every timeframe tested:
+ *
+ *            Extended down  Leaning down  No trend  Leaning up  Extended up
+ *   5m           57.4%          52.6%       48.6%      47.7%       46.5%
+ *   1h           52.4%          52.5%       50.3%      48.0%       46.2%
+ *   4h           52.0%          50.2%       49.1%      48.4%       47.1%
+ *   1d           49.7%          47.7%       48.1%      50.0%       46.6%
+ *
+ * So the bars this engine scored highest were the ones LEAST likely to rise.
+ * These are trend indicators, and at these horizons crypto mean-reverts: a high
+ * score means "this has already run", which is not the same as "this will keep
+ * running". Calling that a Buy — and a big one a Strong Buy — told the reader
+ * the opposite of what the data says, and it is why a paper account following
+ * these labels lost money with a 19% win rate.
+ *
+ * Inverting the labels does not fix it either. Both orientations were traded
+ * over a held-out half with a 1.5 ATR stop, R targets and 0.1% per-side fees,
+ * across five timeframes and four rule variants: nothing produced a positive
+ * expectancy that held in both halves. The tilt is real but far too small to
+ * pay for the spread.
+ *
+ * The honest label is therefore a description of trend extension, with no
+ * instruction attached. tone stays 'up'/'down' as a chart colour — it describes
+ * the direction the indicators lean, not a recommendation.
+ */
+export const SCORE_BUCKETS_TESTED = {
+  bars: 244205, coins: 12,
+  upRateByBucket: {
+    '5m': { extendedDown: 57.4, leaningDown: 52.6, noTrend: 48.6, leaningUp: 47.7, extendedUp: 46.5 },
+    '15m': { extendedDown: 55.7, leaningDown: 54.6, noTrend: 51.4, leaningUp: 48.2, extendedUp: 47.3 },
+    '1h': { extendedDown: 52.4, leaningDown: 52.5, noTrend: 50.3, leaningUp: 48.0, extendedUp: 46.2 },
+    '4h': { extendedDown: 52.0, leaningDown: 50.2, noTrend: 49.1, leaningUp: 48.4, extendedUp: 47.1 },
+    '1d': { extendedDown: 49.7, leaningDown: 47.7, noTrend: 48.1, leaningUp: 50.0, extendedUp: 46.6 },
+  },
+  higherScoreMeansHigherChance: false,
+  invertingItAlsoFails: true,
+};
+
 export function labelFor(score) {
-  if (score >= THRESHOLDS.strong) return { action: 'STRONG_BUY', text: 'Strong Buy', tone: 'up' };
-  if (score >= THRESHOLDS.normal) return { action: 'BUY', text: 'Buy', tone: 'up' };
-  if (score <= -THRESHOLDS.strong) return { action: 'STRONG_SELL', text: 'Strong Sell', tone: 'down' };
-  if (score <= -THRESHOLDS.normal) return { action: 'SELL', text: 'Sell', tone: 'down' };
-  return { action: 'NEUTRAL', text: 'Neutral', tone: 'flat' };
+  if (score >= THRESHOLDS.strong) return { action: 'EXTENDED_UP', text: 'Extended up', tone: 'up' };
+  if (score >= THRESHOLDS.normal) return { action: 'LEANING_UP', text: 'Leaning up', tone: 'up' };
+  if (score <= -THRESHOLDS.strong) return { action: 'EXTENDED_DOWN', text: 'Extended down', tone: 'down' };
+  if (score <= -THRESHOLDS.normal) return { action: 'LEANING_DOWN', text: 'Leaning down', tone: 'down' };
+  return { action: 'NO_TREND', text: 'No trend', tone: 'flat' };
+}
+
+/** What the measured up-rate was for this reading, so the UI can show it. */
+export function upRateFor(interval, score) {
+  const t = SCORE_BUCKETS_TESTED.upRateByBucket[interval];
+  if (!t) return null;
+  const key = score >= THRESHOLDS.strong ? 'extendedUp'
+    : score >= THRESHOLDS.normal ? 'leaningUp'
+    : score <= -THRESHOLDS.strong ? 'extendedDown'
+    : score <= -THRESHOLDS.normal ? 'leaningDown' : 'noTrend';
+  return { bucket: key, upRatePct: t[key], bars: SCORE_BUCKETS_TESTED.bars, coins: SCORE_BUCKETS_TESTED.coins };
 }
 
 // Score a single bar. `ind` is the output of computeAll(candles).

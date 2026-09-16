@@ -26,7 +26,7 @@
 //     timeframe leads and why they differ.
 
 import { conflictCheck } from './analyst.js';
-import { edgeBand, confluence } from './signals.js';
+import { edgeBand, confluence, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
 import { TESTED_ACCURACY } from './predict.js';
 
 const pct = (v, dp = 1) => `${v > 0 ? '+' : ''}${Number(v).toFixed(dp)}%`;
@@ -233,11 +233,20 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   const caveats = [];
   let verdict, tone, headline;
 
+  // The verdict is the reading, not an instruction. Sorting 244,000 bars by
+  // score showed the highest-scoring ones were the LEAST likely to rise, so a
+  // word like "BUY" here would tell the reader the opposite of what was
+  // measured. What the engine can honestly say is how extended the indicators
+  // are, and how often a reading like this was followed by a higher price.
+  const readingText = signal.text || 'no clear trend';
+  const reading = readingText.toUpperCase();
+  const measured = upRateFor(interval, score);
+
   if (conflict) {
-    verdict = 'NO CLEAR EDGE';
+    verdict = 'READINGS DISAGREE';
     tone = 'warn';
-    headline = `The chart says ${side === 'short' ? 'sell' : 'buy'} but the forecast leans the other way (${conflict.probUp}% chance up). When the two disagree, the honest reading is that there is no edge here right now.`;
-    caveats.push('Waiting for the chart and the forecast to point the same way is usually the better trade than picking one of them.');
+    headline = `The indicators lean ${side === 'short' ? 'down' : 'up'} while the forecast leans the other way (${conflict.probUp}% chance up). When the two disagree there is nothing here to act on.`;
+    caveats.push('Waiting for the chart and the forecast to point the same way is usually better than picking one of them.');
   } else if ((relation === 'against' || relation === 'split') && side) {
     // The old behaviour printed a clean BUY here and left the reader to notice
     // on another screen that the longer charts said the opposite.
@@ -247,17 +256,19 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
       ? `This ${interval} chart wants to ${side === 'short' ? 'sell' : 'buy'}, but the other timeframes point the other way and across ${rec.span} it all cancels out (${signed(rec.score)}). A split board is a disagreement, not a trend, and the honest call is to stay out until it resolves.`
       : `This ${interval} chart wants to ${side === 'short' ? 'sell' : 'buy'}, but across ${rec.span} the weight of evidence is ${rec.text.toLowerCase()} (${signed(rec.score)}). One chart against the rest is a pullback more often than it is a turn, so the honest call is to wait for them to line up.`;
   } else if (side === 'long') {
-    // No "STRONG BUY". The band test showed a bigger score does not mean a
-    // better trade, so a word that promises one was removed rather than kept.
-    verdict = 'BUY';
-    tone = 'up';
-    headline = `The setup favours buying ${signal.coinSymbol || 'this coin'} on the ${interval} chart, with a defined place to get out if it is wrong.`;
+    verdict = reading;
+    tone = 'warn';
+    headline = measured
+      ? `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. That is a description, not a recommendation: across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins, readings in this band were followed by a higher price ${measured.upRatePct}% of the time — ${measured.upRatePct < 50 ? 'slightly less often than a coin flip' : 'about as often as a coin flip'}. The levels below are the geometry of the setup if you choose to trade it for your own reasons.`
+      : `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. This timeframe has not been measured, so treat the levels below as geometry rather than as evidence.`;
   } else if (side === 'short') {
-    verdict = 'SELL';
-    tone = 'down';
-    headline = 'The setup has turned against holders. If you own this, the case for reducing is stronger than the case for adding.';
+    verdict = reading;
+    tone = 'warn';
+    headline = measured
+      ? `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. Measured over ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars, readings in this band were followed by a higher price ${measured.upRatePct}% of the time — so this is not the sell signal the old wording made it sound like. If you hold this coin, the levels below are where the chart structure sits.`
+      : `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. This timeframe has not been measured, so treat the levels below as geometry rather than as evidence.`;
   } else {
-    verdict = 'WAIT';
+    verdict = reading === 'NO TREND' ? 'NO TREND' : reading;
     tone = 'flat';
     headline = rec && rec.dir !== 0
       ? `Nothing on the ${interval} chart clears the bar to act on, though across ${rec.span} the weight of evidence is ${rec.text.toLowerCase()} (${signed(rec.score)}). Sitting out is a position, and it is the right one more often than people expect.`
@@ -269,20 +280,20 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   if (planUsable) {
     const buying = p.side === 'long';
     steps.push({
-      label: buying ? 'What to buy' : 'What to do',
+      label: 'What this is',
       text: buying
-        ? `Buy ${signal.coinSymbol || 'the coin'} on the ${interval} chart — this reading is for that timeframe only, not a long-term view.`
-        : `Reduce or close the position. This is an exit signal, not an invitation to short unless you already trade that way.`,
+        ? `Chart geometry for ${signal.coinSymbol || 'the coin'} on the ${interval} chart — an entry zone, a stop and targets sized from this timeframe's volatility. It is not a signal to buy: the measured record for readings like this is above. If you are trading it, these are the levels.`
+        : `Chart geometry for reducing exposure, sized from this timeframe's volatility. Not an instruction to short — only a description of where the structure sits.`,
     });
     steps.push({
-      label: buying ? 'When to buy' : 'When to act',
+      label: buying ? 'Entry zone, if you take it' : 'Level to watch',
       text: buying
         ? `Inside ${fmt(p.entryZone[0])} – ${fmt(p.entryZone[1])}. Buying above that zone pays a worse price for the same risk, so if it has run away, wait for it to come back rather than chasing.`
         : `On a close below ${fmt(p.stopLoss)}, or straight away if you are already in profit and want to protect it.`,
     });
     if (buying) {
       steps.push({
-        label: 'When to sell',
+        label: 'Where to take profit',
         text: `Take profit in pieces: ${p.takeProfits.map(fmt).join(', then ')}. A common approach is to sell a third at the first target and move your stop up to what you paid, so the rest of the trade cannot lose.`,
       });
     }
@@ -338,8 +349,8 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   if (tested && !conflict) {
     caveats.push(`What the score is: how strongly the indicators agree right now, not a prediction of profit. Trading the best-looking band on this timeframe (scores ${tested.lo}–${tested.hi}) returned ${tested.tradedR >= 0 ? '+' : ''}${tested.tradedR.toFixed(3)}R per trade over ${tested.trades} tested trades, against ${tested.randomR >= 0 ? '+' : ''}${tested.randomR.toFixed(3)}R for entering at random under the same rules. A higher score does not mean a better trade.`);
   }
-  if (strength >= 45) {
-    caveats.push('A large score on the bar above means the indicators agree with each other, not that the trade is more likely to pay. That was measured separately and it is not.');
+  if (measured) {
+    caveats.push(`Measured across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins, the share of readings followed by a higher price FALLS as this score rises — on ${interval}, from ${SCORE_BUCKETS_TESTED.upRateByBucket[interval]?.extendedDown ?? '—'}% at the bottom of the scale to ${SCORE_BUCKETS_TESTED.upRateByBucket[interval]?.extendedUp ?? '—'}% at the top. A high score means the move is extended, not that it will continue. Trading the reverse does not work either: both directions were tested over a held-out half with fees and neither came out positive.`);
   }
 
   // The geometry's own expectancy, measured over ~21,000 entries. If the levels
@@ -347,8 +358,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   if (p && expectancyR !== null && expectancyR !== undefined) {
     if (expectancyR <= 0) {
       caveats.push(`Tested across 12 coins, entries on this timeframe with these stop and target distances came out at ${expectancyR.toFixed(3)}R per trade — slightly negative before you add slippage. The levels are shown for reference; on the evidence this timeframe is one to read, not to trade.`);
-      if (verdict === 'BUY') { verdict = 'BUY (WEAK EDGE)'; tone = 'warn'; }
-      if (verdict === 'SELL') { verdict = 'SELL (WEAK EDGE)'; tone = 'warn'; }
+      tone = 'warn';
     } else if (planUsable) {
       steps.push({
         label: 'Does this pay?',

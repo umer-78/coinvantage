@@ -1,7 +1,7 @@
 // Offline shell for CoinVantage.
 // Market data is never cached — only the app's own files, so the site opens
 // instantly and still loads on a flaky connection. Bump VERSION on each release.
-const VERSION = "cv-20260916-130124";
+const VERSION = 'cv-2026-09-12b';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './icon.svg', './icon-192.png', './icon-512.png',
@@ -22,6 +22,13 @@ self.addEventListener('fetch', (e) => {
   // Same-origin app files only. Exchange APIs, Supabase and CDNs always go to the network.
   if (url.origin !== location.origin) return;
 
+  // version.txt is the freshness probe the app uses to decide whether a new
+  // build shipped. It must never be served from here: it is requested with a
+  // fresh ?t= every time, so caching it grew the cache by one dead entry per
+  // check, and answering it from the cache is what made the app believe a new
+  // build existed while offline.
+  if (url.pathname.endsWith('/version.txt')) return;
+
   // Network first so a new deploy is picked up immediately; cache is the fallback.
   // `no-cache` forces a revalidation with the server on every app file. Without
   // it the browser's own 10-minute HTTP cache keeps serving yesterday's modules
@@ -36,6 +43,14 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(request).then((hit) => hit || caches.match('./index.html'))),
+      // Offline. A page navigation falls back to the app shell so the site still
+      // opens; anything else returns its own cached copy or fails honestly.
+      // Handing index.html to a request for a script or a data file made
+      // callers read an HTML document as if it were their own content.
+      .catch(() => caches.match(request).then((hit) => {
+        if (hit) return hit;
+        if (request.mode === 'navigate') return caches.match('./index.html');
+        return new Response('', { status: 504, statusText: 'Offline' });
+      })),
   );
 });
