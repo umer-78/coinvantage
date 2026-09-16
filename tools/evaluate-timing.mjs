@@ -14,7 +14,7 @@ import { timingOutlook } from '../js/lib/timing.js';
 
 const [, , file, outFile = 'timing.json', perSeries = '12'] = process.argv;
 const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-const HMAP = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+const HMAP = { '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
 const rows = [];
 
 for (const key of Object.keys(data).sort()) {

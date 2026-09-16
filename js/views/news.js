@@ -28,7 +28,7 @@ export async function render(el, [coinParam]) {
     if (q) list = list.filter((r) => `${r.title} ${r.summary || ''}`.toLowerCase().includes(q));
     $('#list', el).innerHTML = list.length ? list.map((r) => `
       <article class="news-item">
-        ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none" onerror="this.remove()">` : ''}
+        ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none" data-fallback="remove">` : ''}
         <div style="min-width:0">
           <a class="ttl" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
           ${r.summary ? `<p class="fine" style="margin:4px 0 0">${esc(r.summary.slice(0, 200))}${r.summary.length > 200 ? '…' : ''}</p>` : ''}

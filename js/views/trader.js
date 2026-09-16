@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, findCoin } from '../api/market.js';
-import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PAPER_NOTICE, REAL_NOTICE } from '../lib/autotrader.js';
+import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, REAL_NOTICE } from '../lib/autotrader.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
 import { LineChart } from '../charts/line.js';
@@ -12,9 +12,13 @@ export const title = 'Trading';
 
 const CFG_KEY = 'traderCfg';
 const STATE_KEY = 'traderState';
+const RUN_KEY = 'traderRunning';
 
 export async function render(el) {
   const st = { disposed: false, charts: [], prices: {}, running: false };
+  // Whether the AI is allowed to open new trades. It used to run whenever the
+  // page was open with no way to stop it short of resetting the account.
+  let autoOn = load(RUN_KEY, false) === true;
   const cfg = { ...DEFAULT_CONFIG, ...load(CFG_KEY, {}) };
   let state = load(STATE_KEY, null);
 
@@ -28,16 +32,32 @@ export async function render(el) {
       <div class="row">
         <button class="btn" id="cfgBtn">${icon('chip', 16)} Settings</button>
         ${state ? '<button class="btn ghost" id="resetBtn">Reset</button>' : ''}
+        <button class="btn ghost" id="stopBtn" hidden>${icon('close', 16)} Stop the AI</button>
         <button class="btn primary" id="startBtn">${state ? icon('refresh', 16) + ' Catch up now' : icon('bolt', 16) + ' Start the trader'}</button>
       </div>
     </div>
     <div id="body">${state ? skeleton(6, 26) : startCard()}</div>`;
 
+  // The measured result, stated before anyone starts it. This ruleset was run
+  // over 12 coins and 4,000 candles each at 108 different settings, tuned on the
+  // first half of history and scored on the second — and on the half it had
+  // never seen it did not beat simply owning the coins, on any timeframe. A
+  // feature that cannot beat buying and holding should say so on its own page.
+  function verdictCard() {
+    const t = AUTOTRADER_TESTED[cfg.interval] || AUTOTRADER_TESTED['1h'];
+    return `<div class="card" style="border-color:var(--warn)">
+      <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured, not estimated</span></div>
+      <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(cfg.interval)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
+      <p class="fine">Out of ${t.configs} settings tested on that timeframe, <b>${t.beatBuyHold}</b> beat buy-and-hold. Fees alone consumed ${t.feeDragPct}% of the balance across ${t.trades} trades. Across 1h, 4h and 1d — ${AUTOTRADER_TESTED.configs || 324} settings in total — nothing beat holding the coins.</p>
+      <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a way to make money, and CoinVantage will not tell you it is. It places no real orders and holds no keys.</p>
+    </div>`;
+  }
+
   function startCard() {
     return `<div class="card empty">
-      <h3>Let the AI trade for you — with play money</h3>
-      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the signal turns bullish it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, moves the stop to break-even at +1R, and sells at the target, the stop, or when the signal turns against it. Every trade is logged with fees.</p>
-      <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. It also catches up on the candles that closed while this page was shut, so the record stays continuous.</p>
+      <h3>Run the strategy on play money</h3>
+      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with the fee it would have paid.</p>
+      <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
     </div>`;
   }
 
@@ -349,7 +369,7 @@ export async function render(el) {
   }
 
   function draw() {
-    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${startCard()}</div>`; wireMyDemo(); wireReal(); wireExports(); drawRealChart(); return; }
+    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div><div class="mt">${startCard()}</div>`; wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); return; }
     const s = stats(state, st.prices);
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
@@ -358,6 +378,7 @@ export async function render(el) {
       ${myDemoCard()}
       ${realCard()}
       <h3 class="mt" style="margin-bottom:8px">The AI's own account</h3>
+      ${verdictCard()}
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}</span></div></div>
@@ -409,6 +430,7 @@ export async function render(el) {
     wireReal();
     wireExports();
     drawRealChart();
+    syncRunButtons();
 
     st.charts.forEach((c) => c.destroy());
     st.charts = [];
@@ -458,28 +480,65 @@ export async function render(el) {
       <div class="row mt" style="gap:8px"><button class="btn" id="no">Keep it</button><button class="btn primary" id="yes">Reset</button></div>`);
     $('#no', m.el).addEventListener('click', m.close);
     $('#yes', m.el).addEventListener('click', () => {
-      state = newState(cfg); save(STATE_KEY, state); m.close(); draw(); toast('Trader reset.', 'info');
+      state = newState(cfg); save(STATE_KEY, state); autoOn = false; save(RUN_KEY, false); m.close(); draw(); syncRunButtons(); toast('Trader reset. It is stopped — press Resume when you want it running.', 'info');
     });
   });
 
-  $('#startBtn', el).addEventListener('click', catchUp);
+  // Stop must actually stop: it clears the run flag, so neither the 5-minute
+  // timer nor a page reload opens another position. The account and its history
+  // are left untouched — stopping is not resetting.
+  function syncRunButtons() {
+    const stopB = $('#stopBtn', el);
+    const startB = $('#startBtn', el);
+    if (stopB) stopB.hidden = !(state && autoOn);
+    if (startB) {
+      startB.innerHTML = !state ? `${icon('bolt', 16)} Start the trader`
+        : autoOn ? `${icon('refresh', 16)} Catch up now`
+        : `${icon('bolt', 16)} Resume the AI`;
+    }
+  }
+
+  $('#stopBtn', el)?.addEventListener('click', () => {
+    autoOn = false; save(RUN_KEY, false); syncRunButtons();
+    const openCount = Object.keys(state?.open || {}).length;
+    toast(openCount ? `AI stopped. ${openCount} open position${openCount > 1 ? 's stay' : ' stays'} open — close them from the table, or resume.` : 'AI stopped. It will not open any new trades.', 'info');
+  });
+
+  $('#startBtn', el).addEventListener('click', () => {
+    autoOn = true; save(RUN_KEY, true); syncRunButtons();
+    catchUp();
+  });
 
   // live marks + periodic catch-up
   const onTick = (e) => {
+    // Every account marks against these prices, so a symbol held only in the
+    // demo or real account has to be recorded too. It used to keep prices for
+    // the AI's positions alone, which left the other two frozen at their entry
+    // price and closed them at a fabricated 0%.
+    const wanted = new Set([
+      ...Object.keys(state?.open || {}),
+      ...Object.keys(myState()?.open || {}),
+      ...Object.keys(realState()?.open || {}),
+    ]);
     let changed = false;
     for (const t of e.detail) {
       const sym = t.s.replace(/USDT$/, '');
-      if (state?.open[sym]) { st.prices[sym] = +t.c; changed = true; }
+      if (wanted.has(sym)) { st.prices[sym] = +t.c; changed = true; }
     }
     if (changed && !st.paintQueued) {
       st.paintQueued = true;
-      setTimeout(() => { st.paintQueued = false; if (!st.disposed && state) draw(); }, 4000);
+      setTimeout(() => { st.paintQueued = false; if (!st.disposed) draw(); }, 4000);
     }
   };
   window.addEventListener('cv:tickers', onTick);
-  const timer = setInterval(() => { if (!st.disposed && state) catchUp(); }, 5 * 60e3);
+  const timer = setInterval(() => { if (!st.disposed && state && autoOn) catchUp(); }, 5 * 60e3);
 
-  if (state) { draw(); catchUp(); }
+  // draw() renders the demo and real accounts too, so it has to run whether or
+  // not the AI has ever been started — otherwise a user who placed a demo trade
+  // from a coin page arrives here and sees nothing but the start card.
+  draw();
+  syncRunButtons();
+  if (state && autoOn) catchUp();
   void compact; void amount; void bindSeg;
 
   return () => {
