@@ -44,12 +44,13 @@ export const DEFAULT_CONFIG = {
   riskPct: 1.5,          // % of balance risked per trade (stop distance = this loss)
   maxPositions: 5,
   maxPositionPct: 25,    // never put more than this share of the balance in one coin
-  // Chosen on the training half and left alone: a much higher entry bar cuts the
-  // trade count from ~500 to ~100, which cuts fee drag from roughly 20% of the
-  // balance to 5% — the single biggest change to the result. 2 ATR / 3R beat
-  // every other stop/target pair on the same half.
-  entryScore: 65,
-  exitScore: -65,
+  // The entry bar was raised to 65 to cut fee drag, before the bucket study
+  // showed that the highest-scoring bars are the ones LEAST likely to rise. So a
+  // high bar is not a better filter — it just trades less. It is set back to the
+  // ordinary threshold so the demonstration actually runs and shows what the
+  // published rule does, which is the only thing this account is for.
+  entryScore: THRESHOLDS.normal,
+  exitScore: -THRESHOLDS.normal,
   atrStop: 2,
   rMultiple: 3,
   feePct: 0.1,

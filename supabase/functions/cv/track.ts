@@ -4,8 +4,23 @@ import { admin, json, requireCron, klines, setting } from './lib.ts';
 import { generateSignal } from './engine/signals.js';
 import { forecast } from './engine/predict.js';
 
-const DEFAULT = { symbols: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'TRX', 'DOT', 'LTC'], interval: '4h', horizon: 6, per_batch: 3 };
-const H4 = 4 * 3600e3;
+// Candle lengths, so the horizon is computed from the interval being logged
+// rather than from a constant. The old code hardcoded four hours: the interval
+// was already overridable from app_settings, so changing it would have written
+// horizons that were wrong by the ratio between the two timeframes, and scored
+// every row at the wrong moment.
+const IV_MS: Record<string, number> = { '15m': 9e5, '1h': 36e5, '4h': 4 * 3600e3, '1d': 864e5 };
+
+// 4h was the only timeframe ever logged — and it is the one the offline
+// geometry test scored NEGATIVE (-0.047R per trade). Tracking the daily chart
+// as well means the public record covers a timeframe measured positive
+// (+0.058R) rather than only the worst one. Both are overridable from
+// app_settings without a redeploy.
+const DEFAULT = {
+  symbols: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'TRX', 'DOT', 'LTC'],
+  plans: [{ interval: '4h', horizon: 6 }, { interval: '1d', horizon: 7 }],
+  per_batch: 3,
+};
 
 export async function trackSignals(req: Request): Promise<Response> {
   await requireCron(req);
@@ -15,32 +30,42 @@ export async function trackSignals(req: Request): Promise<Response> {
   const batch = Number.isInteger(body.batch) ? body.batch % batches : Math.floor(new Date().getUTCMinutes() / 15) % batches;
   const group = cfg.symbols.slice(batch * cfg.per_batch, (batch + 1) * cfg.per_batch);
 
+  // Older settings rows may still carry a single { interval, horizon }.
+  const plans = Array.isArray(cfg.plans) && cfg.plans.length
+    ? cfg.plans
+    : [{ interval: (cfg as Record<string, unknown>).interval as string || '4h', horizon: (cfg as Record<string, unknown>).horizon as number || 6 }];
+
   const logged: string[] = [];
-  for (const symbol of group) {
-    try {
-      let candles = await klines(symbol, cfg.interval, 700);
-      // only closed candles
-      if (candles.length && candles[candles.length - 1].t + H4 > Date.now()) candles = candles.slice(0, -1);
-      const last = candles[candles.length - 1];
-      const sig = generateSignal(candles, { interval: cfg.interval });
-      if (!sig.ok) continue;
-      const fc = forecast(candles, { horizon: cfg.horizon, fast: true, intervalMs: H4 });
-      const row = {
-        symbol, interval: cfg.interval,
-        candle_time: new Date(last.t).toISOString(),
-        price: last.c, action: sig.action, score: sig.score,
-        plan: sig.plan ? { side: sig.plan.side, entry: sig.plan.entry, stop: sig.plan.stopLoss, tp1: sig.plan.takeProfits[0], tp2: sig.plan.takeProfits[1] } : null,
-        prob_up: fc.ok ? +fc.probUp.toFixed(4) : null,
-        horizon_bars: cfg.horizon,
-        horizon_at: new Date(last.t + H4 + cfg.horizon * H4).toISOString(),
-        forecast_target: fc.ok ? fc.targetPrice : null,
-        model_accuracy: fc.ok && fc.ensemble.accuracy !== null ? +fc.ensemble.accuracy.toFixed(4) : null,
-      };
-      const { error } = await admin.from('signal_log').upsert(row, { onConflict: 'symbol,interval,candle_time', ignoreDuplicates: true });
-      if (error) throw error;
-      logged.push(symbol);
-    } catch (e) {
-      console.error(symbol, e);
+  for (const plan of plans) {
+    const ms = IV_MS[plan.interval];
+    if (!ms) { console.error('unknown interval', plan.interval); continue; }
+    for (const symbol of group) {
+      try {
+        let candles = await klines(symbol, plan.interval, 700);
+        // only closed candles
+        if (candles.length && candles[candles.length - 1].t + ms > Date.now()) candles = candles.slice(0, -1);
+        const last = candles[candles.length - 1];
+        if (!last) continue;
+        const sig = generateSignal(candles, { interval: plan.interval });
+        if (!sig.ok) continue;
+        const fc = forecast(candles, { horizon: plan.horizon, fast: true, intervalMs: ms });
+        const row = {
+          symbol, interval: plan.interval,
+          candle_time: new Date(last.t).toISOString(),
+          price: last.c, action: sig.action, score: sig.score,
+          plan: sig.plan ? { side: sig.plan.side, entry: sig.plan.entry, stop: sig.plan.stopLoss, tp1: sig.plan.takeProfits[0], tp2: sig.plan.takeProfits[1] } : null,
+          prob_up: fc.ok ? +fc.probUp.toFixed(4) : null,
+          horizon_bars: plan.horizon,
+          horizon_at: new Date(last.t + ms + plan.horizon * ms).toISOString(),
+          forecast_target: fc.ok ? fc.targetPrice : null,
+          model_accuracy: fc.ok && fc.ensemble.accuracy !== null ? +fc.ensemble.accuracy.toFixed(4) : null,
+        };
+        const { error } = await admin.from('signal_log').upsert(row, { onConflict: 'symbol,interval,candle_time', ignoreDuplicates: true });
+        if (error) throw error;
+        logged.push(`${symbol}:${plan.interval}`);
+      } catch (e) {
+        console.error(symbol, plan.interval, e);
+      }
     }
   }
 
@@ -49,7 +74,9 @@ export async function trackSignals(req: Request): Promise<Response> {
   let resolved = 0;
   for (const r of due || []) {
     try {
-      const start = new Date(r.candle_time).getTime() + H4; // after the signal candle closed
+      // after the logged candle closed — measured in that row's own interval,
+      // not in a constant four hours
+      const start = new Date(r.candle_time).getTime() + (IV_MS[r.interval] || IV_MS['4h']);
       const end = new Date(r.horizon_at).getTime();
       const hourly = await klines(r.symbol, '1h', 1000, start, end - 1);
       if (!hourly.length) continue;
