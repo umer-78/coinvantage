@@ -594,7 +594,7 @@ export async function render(el, [symParam]) {
             : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting around <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
           ${main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
         </p>
-        <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% accurate on ${st.interval} charts.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts — use 4h or 1d.` : 'Timing edge on this timeframe is weak.'}</p>
+        <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% on ${esc(st.interval)} charts against a ${TESTED_TIMING.byInterval[st.interval].baselinePct}% random baseline.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts — the 4h chart is the one it tested best on.` : trust.level === 'unknown' ? 'Timing has not been measured on this timeframe.' : `Timing barely clears chance here${TESTED_TIMING.byInterval[st.interval] ? ` (${TESTED_TIMING.byInterval[st.interval].hitPct}% against ${TESTED_TIMING.byInterval[st.interval].baselinePct}%)` : ''}.`}</p>
       </div>`;
   }
 

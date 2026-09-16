@@ -183,25 +183,50 @@ export function summarizeTiming(t) {
 // It works on 4h and daily charts and does NOT work on 15m, where it scores
 // below chance. The UI must say so rather than quietly showing a number.
 export const TESTED_TIMING = {
-  tests: 245, coins: 12,
-  peakHitPct: 61.2, baselinePct: 53.6, medianBarsOff: 2,
-  turnedInsideHorizonPct: 82,
+  // Re-measured across all six timeframes: 931 walk-forward tests, 12 coins,
+  // each prediction made only from candles that existed at that moment. A hit
+  // means the real high or low landed within +/-25% of the horizon of the bar
+  // the forecast named. `baselinePct` is what a uniform random guess scores on
+  // the SAME tests, so the edge is the gap and nothing else.
+  //
+  // This is the one component of the engine that beats its baseline. It is also
+  // smaller than the number previously published here: the old block claimed
+  // 61.2% against 53.6% on 245 tests, and on a sample almost four times larger
+  // that edge roughly halves. The daily figure moved most — it was 66.3% and is
+  // 56.1% — so the earlier number was optimistic rather than wrong in kind.
+  //
+  // Timing answers "when", never "which way". A well-placed turning point on a
+  // direction call with no edge is still a direction call with no edge.
+  tests: 931, coins: 12,
+  peakHitPct: 58.0, baselinePct: 54.1, medianBarsOff: 2,
+  turnedInsideHorizonPct: 79.2,
   byInterval: {
-    '15m': { tests: 20, hitPct: 45.0, medianOff: 3 },
-    '1h': { tests: 64, hitPct: 51.6, medianOff: 3 },
-    '4h': { tests: 78, hitPct: 67.9, medianOff: 1 },
-    '1d': { tests: 83, hitPct: 66.3, medianOff: 2 },
+    // 1m produced no qualifying tests at all — the shaped path almost never
+    // forms there — so it is absent rather than reported as zero.
+    '5m': { tests: 38, hitPct: 52.6, baselinePct: 48.7, medianOff: 3 },
+    '15m': { tests: 72, hitPct: 48.6, baselinePct: 49.0, medianOff: 3 },
+    '1h': { tests: 244, hitPct: 52.5, baselinePct: 46.8, medianOff: 3 },
+    '4h': { tests: 265, hitPct: 68.7, baselinePct: 61.8, medianOff: 2 },
+    '1d': { tests: 312, hitPct: 56.1, baselinePct: 55.0, medianOff: 2 },
   },
 };
 
 /** Is the timing call worth showing on this timeframe, and what should we admit? */
 export function timingTrust(interval) {
   const iv = TESTED_TIMING.byInterval[interval];
-  if (!iv) return { level: 'unknown', text: 'Timing has not been measured on this timeframe — treat the turning point as a rough guide only.' };
-  const edge = iv.hitPct - TESTED_TIMING.baselinePct;
-  if (edge >= 8) return { level: 'good', text: `On ${interval} charts the real high or low landed inside the predicted window ${iv.hitPct}% of the time across ${iv.tests} tests (a random guess scores ${TESTED_TIMING.baselinePct}%); typical miss ${iv.medianOff} candle${iv.medianOff === 1 ? '' : 's'}.` };
-  if (edge >= 2) return { level: 'weak', text: `On ${interval} charts this scored ${iv.hitPct}% against a ${TESTED_TIMING.baselinePct}% random baseline over ${iv.tests} tests — barely an edge. Use the direction, not the clock.` };
-  return { level: 'bad', text: `Timing does not work on ${interval} charts: ${iv.hitPct}% versus a ${TESTED_TIMING.baselinePct}% random baseline over ${iv.tests} tests — worse than guessing. Ignore the turning point here and use the 4h or daily chart for timing.` };
+  if (!iv) return { level: 'unknown', text: `Timing has not been measured on the ${interval} chart — no prediction here produced enough shaped paths to score, so treat any turning point as a rough guide only. The 1h and 4h charts are where it was tested.` };
+  // Each timeframe is judged against its OWN random baseline. Comparing every
+  // timeframe to one global number made a 68.7% look far better than a 52.5%
+  // when, against what each had to beat, they are worth about the same.
+  const edge = iv.hitPct - iv.baselinePct;
+  const thin = iv.tests < 100;
+  if (edge >= 4) {
+    return { level: 'good', text: `On ${interval} charts the real high or low landed inside the predicted window ${iv.hitPct}% of the time across ${iv.tests} tests, against ${iv.baselinePct}% for a random guess on the same tests — an edge of ${edge.toFixed(1)} points. Typical miss ${iv.medianOff} candle${iv.medianOff === 1 ? '' : 's'}.${thin ? ' That is a small sample, so treat it as provisional.' : ''}` };
+  }
+  if (edge >= 1) {
+    return { level: 'weak', text: `On ${interval} charts this scored ${iv.hitPct}% against a ${iv.baselinePct}% random baseline over ${iv.tests} tests — ${edge.toFixed(1)} points, which is barely an edge. Use the direction of the move, not the clock.` };
+  }
+  return { level: 'bad', text: `Timing does not work on ${interval} charts: ${iv.hitPct}% against a ${iv.baselinePct}% random baseline over ${iv.tests} tests. Ignore the turning point here — the 4h chart is where it tested best.` };
 }
 
 void clamp;
