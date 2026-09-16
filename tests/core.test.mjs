@@ -1086,3 +1086,28 @@ test('the score is labelled as what it measured, never as an instruction', async
   assert.ok(s.caveats.some((c) => /FALLS as this score rises/.test(c)), 'the direction of the measured effect must be stated');
   void THRESHOLDS;
 });
+
+test('timing is judged against its own baseline, per timeframe', async () => {
+  const { TESTED_TIMING, timingTrust } = await import('../js/lib/timing.js');
+
+  // Every timeframe must carry the number it had to beat. Comparing them all to
+  // one global baseline flattered whichever timeframe sat in an easy window.
+  for (const [iv, t] of Object.entries(TESTED_TIMING.byInterval)) {
+    assert.equal(typeof t.baselinePct, 'number', `${iv} publishes a hit rate with no baseline`);
+    assert.ok(t.tests >= 20, `${iv} drawn from too few tests`);
+    const trust = timingTrust(iv);
+    const edge = t.hitPct - t.baselinePct;
+    if (edge < 1) assert.equal(trust.level, 'bad', `${iv} has no edge but is not labelled as such`);
+    if (edge >= 4) assert.equal(trust.level, 'good', `${iv} clears its baseline but is not labelled as such`);
+    assert.ok(trust.text.includes(String(t.baselinePct)), `${iv} does not show the reader its baseline`);
+  }
+
+  // an unmeasured timeframe claims nothing
+  const unknown = timingTrust('1w');
+  assert.equal(unknown.level, 'unknown');
+  assert.doesNotMatch(unknown.text, /\d+(\.\d+)?%/, 'an unmeasured timeframe must not quote a percentage');
+
+  // the headline must stay consistent with the parts
+  assert.ok(TESTED_TIMING.peakHitPct > TESTED_TIMING.baselinePct, 'the overall claim must beat its own baseline');
+  assert.ok(TESTED_TIMING.tests >= 900);
+});
