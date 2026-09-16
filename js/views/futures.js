@@ -22,7 +22,7 @@ export async function render(el, [symParam]) {
         <div class="card" id="coinCard">${skeleton(5, 22)}</div>
         <div class="card" id="tableCard">${skeleton(8, 22)}</div>
       </div>
-      <div class="card" id="liqCard"><div class="card-h"><h3>Live liquidations</h3><span class="live-pill" id="liqPill"><i></i><span>connecting…</span></span></div><div id="liqList"><p class="fine muted">Waiting for the first liquidation…</p></div><p class="fine mt">Every row is a real leveraged position force-closed on Binance futures. This is a sample, not a tally: Binance pushes at most one liquidation per symbol per second, and rows under $3,000 are hidden — so during a cascade you are seeing far fewer events than actually happened. Read the sizes, not the count.</p></div>
+      <div class="card" id="liqCard"><div class="card-h"><h3>Live liquidations</h3><span class="live-pill" id="liqPill"><i></i><span>connecting…</span></span></div><div id="liqList"><p class="fine muted">Waiting for the first liquidation…</p></div><p class="fine mt">Every row is a real leveraged position force-closed on a futures exchange — the pill above names which one is feeding this list. Binance is used when it is reachable; where its stream is blocked the list switches to OKX automatically. This is a sample, not a tally: Binance pushes at most one liquidation per symbol per second, and rows under $3,000 are hidden — so during a cascade you are seeing far fewer events than actually happened. Read the sizes, not the count.</p></div>
     </div>`;
 
   // ---------------------------------------------------------------- market table
@@ -122,18 +122,26 @@ export async function render(el, [symParam]) {
     st.liqState = state;
     const pill = $('#liqPill', el);
     if (!pill) return;
-    pill.classList.toggle('on', state === 'streaming');
+    pill.classList.toggle('on', state === 'streaming' || state === 'live');
     pill.classList.toggle('warn', state === 'failed');
     pill.querySelector('span').textContent =
-      state === 'streaming' ? 'streaming' : state === 'open' ? 'connected — waiting' : state === 'failed' ? 'unreachable' : 'connecting…';
+      state === 'streaming' ? `live · ${st.venue || 'Binance'}`
+      : state === 'live' ? `live · ${st.venue || 'Binance'}`
+      : state === 'switching' ? 'switching source…'
+      : state === 'open' ? 'connected — waiting'
+      : state === 'failed' ? 'no feed reaches this network'
+      : state === 'reconnecting' ? 'reconnecting…' : 'connecting…';
   };
 
   let pending = false;
   st.stop = liquidationStream((ev, status) => {
+    if (ev?.venue) st.venue = ev.venue;
     // the pill only ever turned green inside the first event, so a healthy
     // socket with no large liquidation yet looked identical to a dead one
-    if (!ev) { if (st.liqState !== 'streaming' || status === 'failed') setPill(status); return; }
-    if (ev.usd < 3000) return;
+    if (!ev) { if (st.liqState !== 'streaming' || status === 'failed' || status === 'switching') setPill(status); return; }
+    // a row whose size could not be priced is still a real liquidation, so it
+    // is kept rather than silently dropped by a threshold it cannot be compared to
+    if (ev.usd !== null && ev.usd < 3000) return;
     st.liqs.unshift(ev);
     st.liqs = st.liqs.slice(0, 25);
     if (pending) return;
@@ -145,7 +153,7 @@ export async function render(el, [symParam]) {
       $('#liqList', el).innerHTML = st.liqs.map((l) => `
         <div class="row spread" style="padding:6px 0;border-bottom:1px solid var(--border)">
           <div><b>${esc(l.symbol)}</b> <span class="chip ${l.side === 'long' ? 'down' : 'up'}">${l.side === 'long' ? 'Long liquidated' : 'Short liquidated'}</span></div>
-          <div style="text-align:right"><b>${compact(l.usd)}</b><br><small class="fine">${money(l.price)} · ${new Date(l.time).toLocaleTimeString()}</small></div>
+          <div style="text-align:right"><b>${l.usd === null ? '—' : compact(l.usd)}</b><br><small class="fine">${money(l.price)} · ${new Date(l.time).toLocaleTimeString()}${l.venue ? ` · ${esc(l.venue)}` : ''}</small></div>
         </div>`).join('');
     }, 400);
   });

@@ -116,15 +116,68 @@ export async function futuresOverview(symbols) {
   }
 }
 
-// Live liquidation feed (all markets). Returns an unsubscribe function.
+// Live liquidation feed. Returns an unsubscribe function.
+//
+// Binance is the first choice, but in some regions its futures WebSocket
+// completes the handshake and then relays nothing at all — measured from a
+// browser where BOTH !forceOrder@arr and !miniTicker@arr opened successfully
+// and delivered zero frames in 40 seconds, while the busy ticker stream should
+// push several per second. The old code treated "opened" as "working", so the
+// card sat on a silent socket indefinitely and the feature looked broken with
+// no explanation.
+//
+// So the socket is now watched: if nothing arrives within SILENCE_MS of opening,
+// it is treated as dead and OKX takes over. OKX publishes the same events on a
+// channel that does reach those regions, sized in contracts rather than coins —
+// hence the contract-value lookup below, without which every figure would be out
+// by the instrument's multiplier.
+const SILENCE_MS = 20000;
+
+let okxContractsPromise = null;
+function okxContracts() {
+  if (!okxContractsPromise) {
+    okxContractsPromise = fetch('https://www.okx.com/api/v5/public/instruments?instType=SWAP')
+      .then((r) => r.json())
+      .then((j) => {
+        const m = new Map();
+        for (const d of j?.data || []) {
+          const val = Number(d.ctVal) * (Number(d.ctMult) || 1);
+          if (Number.isFinite(val) && val > 0) m.set(d.instId, val);
+        }
+        return m;
+      })
+      .catch(() => new Map());
+  }
+  return okxContractsPromise;
+}
+
 export function liquidationStream(onEvent) {
   if (typeof WebSocket === 'undefined') return () => {};
-  let ws, timer = null, closed = false, retry = 0;
-  const connect = () => {
-    if (closed) return;
+  let ws = null, timer = null, watchdog = null, closed = false, retry = 0;
+  let source = 'binance', gotFrame = false;
+
+  const clearTimers = () => { clearTimeout(timer); clearTimeout(watchdog); timer = null; watchdog = null; };
+  const shut = () => { try { ws?.close(); } catch { /* ignore */ } ws = null; };
+
+  const armWatchdog = () => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => {
+      if (closed || gotFrame) return;
+      // Opened, stayed silent: the connection exists but nothing is coming
+      // through it. Binance has a documented fallback; OKX does not, so a
+      // silent OKX is reported as unavailable rather than cycled forever.
+      if (source === 'binance') { onEvent(null, 'switching'); shut(); source = 'okx'; retry = 0; connect(); }
+      else onEvent(null, 'failed');
+    }, SILENCE_MS);
+  };
+
+  const onFrame = () => { if (!gotFrame) { gotFrame = true; clearTimeout(watchdog); onEvent(null, 'live'); } };
+
+  function connectBinance() {
     ws = new WebSocket(`${CONFIG.FUTURES_WS}/ws/!forceOrder@arr`);
-    ws.onopen = () => { retry = 0; onEvent(null, 'open'); };
+    ws.onopen = () => { retry = 0; onEvent(null, 'open'); armWatchdog(); };
     ws.onmessage = (ev) => {
+      onFrame();
       try {
         const o = JSON.parse(ev.data).o;
         if (!o) return;
@@ -140,19 +193,66 @@ export function liquidationStream(onEvent) {
         onEvent({
           symbol: o.s.replace(/(USDT|USDC|BUSD)(_\d+)?$/, ''), pair: o.s,
           side: o.S === 'SELL' ? 'long' : 'short', // a SELL liquidation closes a long
-          qty, price, usd: qty * price, time: o.T,
+          qty, price, usd: qty * price, time: o.T, venue: 'Binance',
         });
       } catch { /* ignore malformed frame */ }
     };
+  }
+
+  function connectOkx() {
+    ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+    ws.onopen = () => {
+      retry = 0;
+      onEvent(null, 'open');
+      try { ws.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'liquidation-orders', instType: 'SWAP' }] })); } catch { /* ignore */ }
+      armWatchdog();
+    };
+    ws.onmessage = async (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (!Array.isArray(msg?.data)) return; // subscribe acknowledgement
+      onFrame();
+      const sizes = await okxContracts();
+      for (const row of msg.data) {
+        const instId = row.instId || '';
+        if (!instId.endsWith('-USDT-SWAP')) continue;
+        const per = sizes.get(instId);
+        for (const d of row.details || []) {
+          const price = +d.bkPx;
+          const contracts = +d.sz;
+          if (!Number.isFinite(price) || !Number.isFinite(contracts)) continue;
+          // Without the contract value the coin amount is unknown, so the row is
+          // still shown but its size is left null rather than guessed at 1:1.
+          const qty = per ? contracts * per : null;
+          onEvent({
+            symbol: instId.replace(/-USDT-SWAP$/, ''), pair: instId,
+            side: d.posSide === 'long' ? 'long' : 'short',
+            qty, price,
+            usd: qty === null ? null : qty * price,
+            time: +d.ts || Date.now(), venue: 'OKX',
+          });
+        }
+      }
+    };
+  }
+
+  function connect() {
+    if (closed) return;
+    gotFrame = false;
+    try {
+      if (source === 'binance') connectBinance(); else connectOkx();
+    } catch { onEvent(null, 'failed'); return; }
     ws.onclose = () => {
       if (closed) return;
+      clearTimeout(watchdog);
       onEvent(null, retry >= 4 ? 'failed' : 'reconnecting');
       timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** retry++));
     };
     ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
-  };
+  }
+
   connect();
-  return () => { closed = true; clearTimeout(timer); try { ws?.close(); } catch { /* ignore */ } };
+  return () => { closed = true; clearTimers(); shut(); };
 }
 
 // Plain-language reading of funding + open interest for the AI context and the UI.
