@@ -72,7 +72,12 @@ export async function render(el) {
     return;
   }
 
-  const rows = await getTrackRecord({ limit: 1000 }).catch(() => []);
+  // The admin panel counts every signal_log row; this page reads a page of them.
+  // Presenting the page size as "N logged" made the two disagree as soon as the
+  // table outgrew the limit, so the cap is stated when it is reached.
+  const ROW_CAP = 1000;
+  const rows = await getTrackRecord({ limit: ROW_CAP }).catch(() => []);
+  const rowsCapped = rows.length >= ROW_CAP;
   let interval = 'all';
 
   const draw = () => {
@@ -169,7 +174,7 @@ export async function render(el) {
         </tbody></table></div></div>` : ''}
 
       <div class="card mt">
-        <div class="card-h"><h3>Recent signals</h3><span class="fine">${all.length} logged${interval === 'all' ? '' : ` on ${interval}`}</span></div>
+        <div class="card-h"><h3>Recent signals</h3><span class="fine">${rowsCapped ? 'most recent ' : ''}${all.length} logged${interval === 'all' ? '' : ` on ${interval}`}${rowsCapped ? ` · older rows beyond ${ROW_CAP} are not read here` : ''}</span></div>
         ${all.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Logged</th><th class="l">Coin</th><th>TF</th><th class="l">Call</th><th>Price then</th><th>AI up</th><th>Price after</th><th>Direction</th><th class="hide-m">Plan</th></tr></thead><tbody>
           ${all.slice(0, 200).map((r) => `<tr data-sym="${esc(r.symbol)}">
             <td class="l fine">${dateTime(new Date(r.candle_time).getTime())}</td>

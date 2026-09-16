@@ -28,7 +28,12 @@ export async function adminApi(req: Request): Promise<Response> {
         count('news'),
         count('signal_log'),
       ]);
-      const { data: views } = await admin.from('page_views').select('path,created_at,device,session_id').gte('created_at', since).limit(50000);
+      // Newest first, so if the cap is reached it is the oldest rows that fall
+      // out of the window rather than an arbitrary subset. The panel reports the
+      // cap alongside the number instead of presenting a partial read as a total.
+      const VIEW_CAP = 50000;
+      const { data: views } = await admin.from('page_views').select('path,created_at,device,session_id')
+        .gte('created_at', since).order('created_at', { ascending: false }).limit(VIEW_CAP);
       const byDay: Record<string, number> = {}, byPath: Record<string, number> = {}, byDevice: Record<string, number> = {};
       const sessions = new Set<string>();
       for (const v of views || []) {
@@ -40,7 +45,7 @@ export async function adminApi(req: Request): Promise<Response> {
         if (v.session_id) sessions.add(v.session_id);
       }
       const { data: recentUsers } = await admin.from('profiles').select('email,display_name,created_at,premium_until,is_admin,telegram_chat_id').order('created_at', { ascending: false }).limit(8);
-      return json({ users, premium, telegram, activeAlerts, triggered, posts, news, signals, views: views?.length || 0, visitors: sessions.size, byDay, byPath, byDevice, recentUsers });
+      return json({ users, premium, telegram, activeAlerts, triggered, posts, news, signals, views: views?.length || 0, viewsCapped: (views?.length || 0) >= VIEW_CAP, visitors: sessions.size, byDay, byPath, byDevice, recentUsers });
     }
 
     case 'users': {
