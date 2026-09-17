@@ -3,7 +3,7 @@ import { markets, isStable } from '../api/market.js';
 import { live } from '../api/live.js';
 import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti, compareCoins } from '../ai/context.js';
 import { ruleBasedAnswer, isMarketWide, detectCompare } from '../lib/analyst.js';
-import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, recommendedModelId } from '../ai/engine.js';
+import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, customState, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
 import { settings } from '../store.js';
@@ -33,7 +33,7 @@ export async function render(el, [symParam]) {
         <div class="card">
           <div class="card-h"><h3>Coin in focus</h3></div>
           <div class="row" style="margin-bottom:10px">
-            <select class="inp" id="coinSel" style="flex:1">${all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 150).map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.symbol ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
+            <select class="inp" id="coinSel" aria-label="Coin in focus" style="flex:1">${all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 150).map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.symbol ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
           </div>
           <div class="row"><span class="fine">Chart</span><div class="seg" id="ivSeg">${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}">${iv}</button>`).join('')}</div></div>
           <div id="focus" class="mt fine"></div>
@@ -42,7 +42,7 @@ export async function render(el, [symParam]) {
           <b>How the assistant works</b>
           <ol style="padding-left:18px;margin:6px 0 0">
             <li>Pulls live candles from Binance for the coin you ask about.</li>
-            <li>Computes signals on 4 timeframes, a backtest, and the AI forecast (7 models incl. pattern matching, neural network and boosted trees — accuracy-checked).</li>
+            <li>Computes readings on 4 timeframes, a backtest, and the forecast (7 models including pattern matching, a neural network and gradient-boosted trees, each weighted by its measured accuracy).</li>
             <li>The built-in language model turns those verified numbers into a plain-English answer.</li>
           </ol>
           <p class="mt">Not financial advice. The assistant cannot place trades.</p>
@@ -77,7 +77,7 @@ export async function render(el, [symParam]) {
     if (c?.binance) watchFocus(c.binance);
     const sym = st.symbol;
     $('#suggest', el).innerHTML = [
-      'Which coin should I buy right now?', 'Best buys for each timeframe, and when do I sell?',
+      'Which coins are most extended right now?', 'Scan every timeframe and show me where the evidence is strongest',
       'What should I hold for weeks, and what is only a quick trade?',
       'Compare BTC, ETH and SOL',
       `Will ${sym} go up or down next?`, `When should I take profit on ${sym}?`,
@@ -93,7 +93,9 @@ export async function render(el, [symParam]) {
     const opts = CONFIG.LLM_MODELS.map((m) => `<option value="${m.id}" ${(s.llmModel || '').startsWith(m.id.split('-q4')[0]) ? 'selected' : ''}>${m.label} · ${m.size}</option>`).join('');
     let body;
     if (customReady()) {
-      body = `<p><span class="chip up">● Connected</span> Using your AI endpoint <b>${esc(settings.get().customModel || '')}</b>.</p>`;
+      body = customState.reached
+        ? `<p><span class="chip up">● Connected</span> Using your AI endpoint <b>${esc(settings.get().customModel || '')}</b>.</p>`
+        : `<p><span class="chip warn">● Configured, not yet reached</span> Set to <b>${esc(settings.get().customModel || '')}</b>. It is contacted when you ask a question — if it cannot be reached, answers come from the rule-based analyst instead.${customState.lastError ? `<br><small class="fine down">Last attempt: ${esc(customState.lastError)}</small>` : ''}</p>`;
     } else if (status === 'ready') {
       body = `<p><span class="chip up">● Running on this device</span></p><p class="fine">${esc(aiState.model)} · private, free, works offline once downloaded.</p>`;
     } else if (status === 'loading') {

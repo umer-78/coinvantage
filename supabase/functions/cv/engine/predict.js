@@ -1,6 +1,7 @@
 // CoinVantage AI forecast engine — runs entirely in the browser, no API.
 //
-// It combines five independent forecasters and weights them by how accurate
+// It combines seven independent forecasters (see MODEL_INFO) and weights them
+// by how accurate
 // each one was on recent data it was NOT trained on (walk-forward validation):
 //   1. Pattern matching  – finds past chart shapes most similar to today's and
 //                          looks at what price did next (historical analogs)

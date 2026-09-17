@@ -42,7 +42,7 @@ const dirOf = (score) => (score >= NEUTRAL_BAND ? 1 : score <= -NEUTRAL_BAND ? -
 const noEdgeOn = (iv) => (TESTED_ACCURACY.noEdge || []).includes(iv);
 const accuracyOn = (iv) => (typeof TESTED_ACCURACY[iv] === 'number' ? TESTED_ACCURACY[iv] : null);
 
-/** "15m 57.1% · 1h 53.0% · 4h 58.9% · 1d 47.0%" */
+/** e.g. "1m 44.6% · 5m 55% · 15m 52.5% · 1h 48.8% · 4h 43.8% · 1d 52.9%" */
 function accuracyList() {
   return TF_ORDER.filter((iv) => accuracyOn(iv) !== null)
     .map((iv) => `${iv} ${accuracyOn(iv).toFixed(1)}%`)
@@ -108,7 +108,7 @@ export function reconcileTimeframes(mtf, interval) {
   return { rows, score: c.score, text: c.text, tone: c.tone, dir, here, anchor, relation, split, span };
 }
 
-/** "15m buy (+30) · 1h neutral (+5) · 4h buy (+33) · 1d strong buy (+67)" */
+/** "15m leaning up (+30) · 1h no trend (+5) · 4h leaning up (+33) · 1d extended up (+67)" */
 function rowList(rec) {
   return rec.rows.map((r) => `${r.interval} ${String(r.text).toLowerCase()} (${signed(r.score)})`).join(' · ');
 }

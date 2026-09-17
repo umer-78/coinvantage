@@ -7,11 +7,16 @@ import { openAuth } from './auth.js';
 
 export const title = 'Premium';
 
+// Two of these described things the app no longer claims to do. "Buy / sell
+// signals" was sold as a feature after the score behind it was measured to
+// point the wrong way, and "VIP trade ideas" promised a curated tier that does
+// not exist — the levels are the same ones every visitor sees. Selling either
+// would be charging for a claim the testing does not support.
 const FREE = [
   'Live prices from Binance + 10 exchanges',
   'Candlestick charts with 12 indicators',
-  'Buy / sell signals with entry, stop and targets',
-  'AI forecast with published accuracy',
+  'Chart readings with entry zone, stop-loss and targets',
+  'AI forecast published next to the baseline it has to beat',
   'History & cycles: past-pattern comparison',
   'Portfolio, watch-only wallets and watchlist sync',
   '3 server-side price alerts',
@@ -19,9 +24,9 @@ const FREE = [
 const PAID = [
   'Everything in Free',
   'Up to 50 server-side alerts (e-mail + Telegram)',
-  'VIP trade ideas with entry, stop-loss and targets',
-  'Full signal track record with per-coin breakdown',
-  'Priority access to new AI features',
+  'Signal alerts delivered by e-mail and Telegram with the browser closed',
+  'Full track record with per-coin breakdown and CSV export',
+  'Priority access to new features',
 ];
 
 export async function render(el) {
@@ -33,7 +38,7 @@ export async function render(el) {
   const ideas = posts.filter((x) => x.kind === 'idea');
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Premium</h1><p>The analysis stays free. Premium pays for the parts that run on a server while your browser is closed — alerts, tracking and VIP ideas.</p></div></div>
+    <div class="page-head"><div><h1>Premium</h1><p>The analysis stays free. Premium pays for the parts that run on a server while your browser is closed — alerts and tracking.</p></div></div>
 
     ${isAdmin()
       ? '<div class="card" style="border-color:var(--accent)"><div class="row spread"><div><h3>You own this site — Premium is free for you</h3><p class="fine">Your admin account has every Premium feature permanently, at no cost. This page is what your visitors see.</p></div><span class="chip warn">Owner</span></div></div>'

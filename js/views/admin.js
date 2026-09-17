@@ -4,6 +4,7 @@ import { $, $$, bindTabs, toast, skeleton, modal, icon } from '../ui.js';
 import { esc, dateTime, compact } from '../format.js';
 import { auth, sb, isAdmin, callFn, getPosts, savePost, deletePost } from '../api/backend.js';
 import { assuranceLevel, hasTwoFactor } from '../api/security.js';
+import { CONFIG } from '../config.js';
 
 export const title = 'Admin';
 
@@ -47,8 +48,10 @@ export async function render(el) {
     // ------------------------------------------------------------ overview
     async stats() {
       panel.innerHTML = skeleton(6, 24);
-      const s = await call('stats');
-      const days = Object.keys(s.byDay).sort();
+      let s;
+      try { s = await call('stats'); }
+      catch (err) { panel.innerHTML = `<div class="card empty"><h3>Could not load the overview</h3><p>${esc(err.message)}</p></div>`; return; }
+      const days = Object.keys(s.byDay || {}).sort();
       const max = Math.max(1, ...Object.values(s.byDay));
       const card = (k, v, sub = '') => `<div class="card"><div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="s fine">${sub}</span></div></div>`;
       panel.innerHTML = `
@@ -167,8 +170,20 @@ export async function render(el) {
           <div class="card-h"><h3>Users</h3><div class="row" style="gap:8px"><input class="inp" id="q" placeholder="Search e-mail…" style="max-width:220px"><button class="btn sm" id="grant">${icon('star', 14)} Grant premium</button></div></div>
           <div id="ulist">${skeleton(6, 22)}</div>
         </div>`;
+      // Every keystroke fired a server call, and a slow earlier response could
+      // land after a later one and repaint the table with stale results. A
+      // failure left the list on its skeleton for good.
+      let seq = 0;
       const load = async (q = '') => {
-        const { users } = await call('users', { q });
+        const mine = ++seq;
+        let users;
+        try {
+          ({ users } = await call('users', { q }));
+        } catch (err) {
+          if (mine === seq) $('#ulist', el).innerHTML = `<div class="empty"><p>Could not load users: ${esc(err.message)}</p></div>`;
+          return;
+        }
+        if (mine !== seq) return;
         $('#ulist', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">E-mail</th><th class="l">Name</th><th>Joined</th><th>Premium until</th><th>Telegram</th><th>Admin</th><th></th></tr></thead><tbody>
           ${users.map((u) => `<tr>
             <td class="l">${esc(u.email)}${u.email_verified ? ' <span class="chip up" style="font-size:11px">✓</span>' : ''}</td>
@@ -184,7 +199,7 @@ export async function render(el) {
       const manage = (email, u) => {
         const m = modal(`<h3>${esc(email)}</h3>
           <div class="stack mt" style="gap:10px">
-            <div class="row" style="gap:8px"><input class="inp" id="days" type="number" value="30" min="1" style="max-width:90px"><button class="btn sm" id="gp">Add premium days</button><button class="btn sm ghost" id="rp">Revoke premium</button></div>
+            <div class="row" style="gap:8px"><input class="inp" id="days" type="number" value="30" min="1" aria-label="Number of premium days to add" style="max-width:90px"><button class="btn sm" id="gp">Add premium days</button><button class="btn sm ghost" id="rp">Revoke premium</button></div>
             <div class="row" style="gap:8px"><input class="inp" id="pw" type="password" placeholder="New password (8+)" style="max-width:200px"><button class="btn sm" id="sp">Set password</button></div>
             <label class="row" style="gap:8px"><input type="checkbox" id="ad" ${u?.is_admin ? 'checked' : ''}> Site administrator</label>
             <p class="fine" id="msg"></p>
@@ -194,9 +209,31 @@ export async function render(el) {
         $('#gp', m.el).addEventListener('click', wrap(() => call('grant-premium', { email, days: +$('#days', m.el).value })));
         $('#rp', m.el).addEventListener('click', wrap(() => call('revoke-premium', { email })));
         $('#sp', m.el).addEventListener('click', wrap(() => call('set-password', { email, password: $('#pw', m.el).value })));
-        $('#ad', m.el).addEventListener('change', wrap(() => call('set-admin', { email, value: $('#ad', m.el).checked })));
+        $('#ad', m.el).addEventListener('change', async (ev) => {
+          const box = ev.currentTarget;
+          const want = box.checked;
+          if (want && !window.confirm(`Make ${email} a site administrator?\n\nThey will be able to read every user, grant premium, set passwords and rotate API keys.`)) {
+            box.checked = false;
+            return;
+          }
+          try {
+            await call('set-admin', { email, value: want });
+            say(want ? 'Now an administrator.' : 'Administrator rights removed.');
+            await load($('#q', el).value.trim());
+          } catch (e) {
+            // the box stayed ticked on failure, so the panel showed rights that
+            // had not actually been granted
+            box.checked = !want;
+            say(e.message, false);
+          }
+        });
       };
-      $('#q', el).addEventListener('input', (e) => load(e.target.value.trim()));
+      let qTimer = null;
+      $('#q', el).addEventListener('input', (e) => {
+        const v = e.target.value.trim();
+        clearTimeout(qTimer);
+        qTimer = setTimeout(() => load(v), 250);
+      });
       $('#grant', el).addEventListener('click', () => {
         const m = modal(`<h3>Grant premium</h3><div class="stack mt" style="gap:10px">
           <label class="fld">User e-mail<input class="inp" id="ge"></label>
@@ -266,13 +303,25 @@ export async function render(el) {
       };
       $('#new', el).addEventListener('click', () => edit());
       $$('[data-ed]', el).forEach((b) => b.addEventListener('click', () => edit(posts.find((p) => String(p.id) === b.dataset.ed))));
-      $$('[data-rm]', el).forEach((b) => b.addEventListener('click', async () => { await deletePost(+b.dataset.rm); toast('Deleted.', 'info'); TABS.content(); }));
+      $$('[data-rm]', el).forEach((b) => b.addEventListener('click', async () => {
+        // this removed a published post immediately, with no way back
+        if (!window.confirm('Delete this post permanently? This cannot be undone.')) return;
+        try { await deletePost(+b.dataset.rm); toast('Deleted.', 'info'); TABS.content(); }
+        catch (e) { toast(e.message, 'down'); }
+      }));
     },
 
     // ------------------------------------------------------------ settings
     async settings() {
-      const client = await sb();
-      const { data } = await client.from('app_settings').select('key,value');
+      panel.innerHTML = skeleton(6, 24);
+      let data = null;
+      try {
+        const client = await sb();
+        ({ data } = await client.from('app_settings').select('key,value'));
+      } catch (err) {
+        panel.innerHTML = `<div class="card empty"><p>Could not load the settings: ${esc(err.message)}</p></div>`;
+        return;
+      }
       const cur = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
       const pr = cur.premium || {}, site = cur.site || {};
       panel.innerHTML = `
@@ -281,7 +330,7 @@ export async function render(el) {
             <form class="stack mt" style="gap:10px" id="pf">
               <div class="row" style="gap:8px">
                 <label class="fld">Price<input class="inp" name="price" type="number" step="any" value="${pr.price ?? 19}" style="max-width:110px"></label>
-                <label class="fld">Currency<input class="inp" name="currency" value="${esc(pr.currency || 'USD')}" style="max-width:90px"></label>
+                <label class="fld">Currency<select class="inp" name="currency" style="max-width:110px">${CONFIG.CURRENCIES.map(([c]) => `<option value="${esc(c)}" ${(pr.currency || 'USD') === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
                 <label class="fld">Days<input class="inp" name="period_days" type="number" value="${pr.period_days ?? 30}" style="max-width:90px"></label>
               </div>
               <label class="row" style="gap:8px"><input type="checkbox" name="stripe_enabled" ${pr.stripe_enabled ? 'checked' : ''}> Card checkout via Stripe (needs the Stripe keys below)</label>
@@ -304,7 +353,7 @@ export async function render(el) {
         const f = e.target;
         try {
           await call('save-setting', { key: 'premium', value: {
-            price: Number(f.price.value), currency: f.currency.value.trim().toUpperCase(), period_days: Number(f.period_days.value),
+            price: Number(f.price.value), currency: f.currency.value, period_days: Number(f.period_days.value),
             stripe_enabled: f.stripe_enabled.checked, manual_payment_text: f.manual_payment_text.value,
             perks: f.perks.value.split('\n').map((x) => x.trim()).filter(Boolean),
           } });
@@ -323,7 +372,10 @@ export async function render(el) {
 
     // ------------------------------------------------------------ keys
     async keys() {
-      const s = await call('secrets-status');
+      panel.innerHTML = skeleton(6, 24);
+      let s;
+      try { s = await call('secrets-status'); }
+      catch (err) { panel.innerHTML = `<div class="card empty"><p>Could not read which keys are set: ${esc(err.message)}</p></div>`; return; }
       const NAMES = {
         telegram_bot_token: ['Telegram bot token', 'Create a bot with @BotFather, paste the token here. Saving it also registers the webhook automatically.'],
         resend_api_key: ['Resend API key', 'Enables e-mail: verification codes, password resets and e-mail alerts. resend.com, free tier is enough to start.'],

@@ -1,7 +1,7 @@
 import { findCoin, getCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
-import { generateSignal, confluence } from '../lib/signals.js';
+import { generateSignal, confluence, geometryFor } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { TESTED_ACCURACY, summarizeForecast } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
@@ -46,7 +46,7 @@ export async function render(el, [symParam]) {
       ${coinLogo(coin, 44)}
       <div>
         <div class="row"><h1>${esc(coin.name)}</h1><span class="chip">${esc(coin.symbol)}</span>${coin.rank ? `<span class="chip">#${coin.rank}</span>` : ''}
-          <button class="star ${watchlist.has(coin.symbol) ? 'on' : ''}" id="star" aria-label="Add to watchlist">${icon('star', 20)}</button></div>
+          <button class="star ${watchlist.has(coin.symbol) ? 'on' : ''}" id="star" aria-pressed="${watchlist.has(coin.symbol)}" aria-label="${watchlist.has(coin.symbol) ? 'Remove from watchlist' : 'Add to watchlist'}">${icon('star', 20)}</button></div>
         <div class="row"><span class="price num" id="px">${money(coin.price)}</span><span id="pxChg" style="font-size:16px">${changeHtml(coin.change24h)}</span><span class="chip" id="srcChip">…</span></div>
       </div>
       <div class="row" style="margin-left:auto">
@@ -132,7 +132,14 @@ export async function render(el, [symParam]) {
 
   logActivity('view_coin', coin.symbol, { name: coin.name });
 
-  $('#star', el).addEventListener('click', (e) => e.currentTarget.classList.toggle('on', watchlist.toggle(coin.symbol)));
+  $('#star', el).addEventListener('click', (e) => {
+    const on = watchlist.toggle(coin.symbol);
+    const b = e.currentTarget;
+    b.classList.toggle('on', on);
+    // the label was fixed at "Add to watchlist" whichever state it was in
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Remove from watchlist' : 'Add to watchlist');
+  });
 
   // Hand-off to an exchange. CoinVantage never places the order itself.
   $('#tradeBtn', el)?.addEventListener('click', () => {
@@ -376,6 +383,15 @@ export async function render(el, [symParam]) {
   // it quotes rather than a rounded version of it.
   getTickSize(pair).then((dp) => { if (dp !== null && !st.disposed) { st.dp = dp; setPrice(st.lastPrice ?? coin.price); } }).catch(() => {});
 
+  // The 24h change is quoted against the price 24 hours ago, so that anchor is
+  // derived once from the figures the coin arrived with and the change is
+  // recomputed from it on every tick.
+  const anchor24h = Number.isFinite(coin.price) && Number.isFinite(coin.change24h) && coin.change24h !== -100
+    ? coin.price / (1 + coin.change24h / 100)
+    : null;
+  let lo24 = Number.isFinite(coin.low24h) ? coin.low24h : null;
+  let hi24 = Number.isFinite(coin.high24h) ? coin.high24h : null;
+
   function setPrice(p) {
     if (p === null || p === undefined) return;
     st.lastPrice = p;
@@ -384,6 +400,17 @@ export async function render(el, [symParam]) {
     const text = money(p, { dp: st.dp });
     node.textContent = text;
     document.title = `${coin.symbol} ${text} · CoinVantage`;
+
+    // These two sat next to a live price showing page-load values, so a coin
+    // could tick up for an hour while the badge beside it still read -2%.
+    const chg = $('#pxChg', el);
+    if (chg && anchor24h) chg.innerHTML = changeHtml((p / anchor24h - 1) * 100);
+    const rng = $('#range24', el);
+    if (rng && lo24 !== null && hi24 !== null) {
+      if (p < lo24) lo24 = p;
+      if (p > hi24) hi24 = p;
+      rng.textContent = `${usd(lo24)} – ${usd(hi24)}`;
+    }
   }
 
   // Signals: current timeframe + confluence across others
@@ -417,7 +444,7 @@ export async function render(el, [symParam]) {
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
       <div class="verdict">
         <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
-        <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Sell</span><span>Neutral</span><span>Buy</span></div></div>
+        <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Extended down</span><span>No trend</span><span>Extended up</span></div></div>
       </div>
       ${conf ? `<p class="combined mt">Standing view across all timeframes: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). The panel below reads the ${st.interval} chart only.</p>` : ''}
       <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
@@ -628,7 +655,9 @@ export async function render(el, [symParam]) {
   // ------------------------------------------------------------ backtest
   async function runBt() {
     const iv = st.interval;
-    st.backtest = await runBacktest(st.candles.slice(-1000));
+    // Pass the timeframe so the replay uses the same measured stop and target
+    // this page prints in the trade plan, instead of a fixed pair of numbers.
+    st.backtest = await runBacktest(st.candles.slice(-1000), { interval: iv });
     if (st.disposed || iv !== st.interval) return;
     remember(coin.symbol, iv, { backtest: st.backtest });
     if (st.backtest.ok) chart.setMarkers(st.backtest.trades.flatMap((t) => [{ t: t.entryTime, side: 'buy' }, { t: t.exitTime, side: 'sell' }]).concat(st.backtest.openTrade ? [{ t: st.backtest.openTrade.entryTime, side: 'buy' }] : []));
@@ -803,7 +832,7 @@ export async function render(el, [symParam]) {
             : '';
       body.innerHTML = `
         ${verdict}
-        <p class="fine" style="margin-bottom:10px">What would have happened if you had followed this page's Buy/Sell signals on the last ${bt.bars} ${st.interval} candles (long only, 0.1% fee per trade, stop-loss 1.5× ATR, target 2.5R, stop moved to break-even at +1R).</p>
+        <p class="fine" style="margin-bottom:10px">What would have happened if you had taken every entry this engine flagged on the last ${bt.bars} ${esc(st.interval)} candles — long only, 0.1% fee per side, using the same stop and target shown in the plan above (${geometryFor(st.interval).stopAtr}× ATR stop, ${geometryFor(st.interval).rr}R target) and no break-even move, because moving the stop to break-even was measured to cost money.</p>
         <div class="grid g4">
           <div class="stat"><span class="k">Strategy return</span><span class="v ${bt.totalReturnPct >= 0 ? 'up' : 'down'}">${pct(bt.totalReturnPct)}</span></div>
           <div class="stat"><span class="k">Buy &amp; hold</span><span class="v ${bt.buyHoldPct >= 0 ? 'up' : 'down'}">${pct(bt.buyHoldPct)}</span></div>

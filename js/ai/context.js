@@ -105,7 +105,7 @@ export async function scanMarket({ interval = '4h', count = 20, onStep } = {}) {
     } catch { /* advice still works from the signal alone */ }
   }
   for (const row of rows) {
-    row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing });
+    row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing, interval: row.interval || interval });
     row.candles = null;
   }
   scanCache.set(key, { at: Date.now(), rows });
@@ -209,7 +209,7 @@ export async function compareCoins(symbols, { interval = '4h', onStep } = {}) {
         forecast = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, fast: true, intervalMs: INTERVAL_MS[interval] });
         timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
       } catch { /* the chart signal alone still ranks */ }
-      const advice = adviseCoin({ signal, forecast, timing });
+      const advice = adviseCoin({ signal, forecast, timing, interval });
       const live = list.find((c) => c.symbol === coin.symbol);
       const f = forecast?.ok ? summarizeForecast(forecast) : null;
       rows.push({

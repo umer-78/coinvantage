@@ -1,6 +1,6 @@
 import { markets, cachedMarkets, getGlobal, getFearGreed, getTrending, isStable } from '../api/market.js';
 import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg } from '../ui.js';
-import { esc, price, compact, pct, changeHtml, money} from '../format.js';
+import { esc, price, compact, pct, changeHtml, money, dateTime } from '../format.js';
 import { sparkline, gauge, treemap, changeColor } from '../charts/small.js';
 import { watchlist } from '../store.js';
 
@@ -115,6 +115,10 @@ export async function render(el) {
     const f = await getFearGreed();
     if (disposed || !f?.length) return;
     const now = f[0], week = f[7], month = f[29];
+    // The header had an empty slot reserved for this and nothing ever filled it,
+    // so the card gave no clue how fresh the reading was.
+    const stamp = $('#fngDate', el);
+    if (stamp && now.timestamp) stamp.textContent = `as of ${dateTime(now.timestamp * 1000, false)}`;
     $('#fng', el).innerHTML = `${gauge(now.value, now.classification)}
       <div class="row spread fine" style="margin-top:6px"><span>Yesterday <b>${f[1]?.value ?? '—'}</b></span><span>Last week <b>${week?.value ?? '—'}</b></span><span>Last month <b>${month?.value ?? '—'}</b></span></div>`;
   };

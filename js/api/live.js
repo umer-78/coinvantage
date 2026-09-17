@@ -76,7 +76,17 @@ if (typeof document !== 'undefined') {
   let hideTimer = null;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      hideTimer = setTimeout(() => { if (live.ws) { live.ws.onclose = null; live.ws.close(); live.ws = null; live.connected = false; } }, 60000);
+      hideTimer = setTimeout(() => {
+        if (!live.ws) return;
+        live.ws.onclose = null;
+        live.ws.close();
+        live.ws = null;
+        live.connected = false;
+        // The socket is deliberately dropped here, but no status event was
+        // dispatched — so the header pill stayed green while nothing was
+        // connected, and kept claiming "Live" until the tab was focused again.
+        live.dispatchEvent(new CustomEvent('status', { detail: { connected: false, paused: true } }));
+      }, 60000);
     } else {
       clearTimeout(hideTimer);
       live.ensure();

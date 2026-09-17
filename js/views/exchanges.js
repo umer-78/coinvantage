@@ -1,6 +1,6 @@
 import { markets, isStable } from '../api/market.js';
 import { compareExchanges, EXCHANGE_NAMES } from '../api/exchanges.js';
-import { $, skeleton, icon } from '../ui.js';
+import { $, skeleton, icon, errorBox } from '../ui.js';
 import { esc, usd, pct, compact, changeHtml } from '../format.js';
 
 export const title = 'Exchanges';
@@ -13,7 +13,7 @@ export async function render(el, [preset]) {
     <div class="page-head">
       <div><h1>Exchanges</h1><p>The same coin on ${EXCHANGE_NAMES.length} exchanges: live price, spread, volume and where it's cheapest right now.</p></div>
       <div class="row">
-        <select class="inp" id="base">${options.map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.base ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
+        <select class="inp" id="base" aria-label="Coin to compare across exchanges">${options.map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.base ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
         <button class="btn" id="refresh">${icon('refresh', 16)} Refresh</button>
       </div>
     </div>
@@ -22,12 +22,20 @@ export async function render(el, [preset]) {
 
   const load = async () => {
     const base = st.base;
-    const r = await compareExchanges(base);
-    if (st.disposed || base !== st.base) return;
+    // This had no catch, so one failed round left the table on its skeleton for
+    // good — and the 10-second timer kept firing rejections behind it.
+    let r;
+    try {
+      r = await compareExchanges(base);
+    } catch {
+      if (!st.disposed && base === st.base) $('#table', el).innerHTML = errorBox('Could not reach the exchanges just now. This retries automatically every 10 seconds.', load);
+      return;
+    }
+    if (st.disposed || base !== st.base || !r) return;
     const rows = r.rows.filter((x) => x.ok).sort((a, b) => (b.vol || 0) - (a.vol || 0));
     const maxVol = Math.max(...rows.map((x) => x.vol || 0), 1);
     $('#summary', el).innerHTML = rows.length ? `
-      <div class="card stat"><span class="k">Average price (median)</span><span class="v">${usd(r.median)}</span><span class="s muted">${r.okCount} exchanges reporting</span></div>
+      <div class="card stat"><span class="k">Median price</span><span class="v">${usd(r.median)}</span><span class="s muted">middle of ${r.okCount} exchanges reporting</span></div>
       <div class="card stat"><span class="k">Cheapest to buy</span><span class="v up">${esc(r.bestBuy?.exchange || '—')}</span><span class="s">ask ${usd(r.bestBuy?.ask)}</span></div>
       <div class="card stat"><span class="k">Best place to sell</span><span class="v">${esc(r.bestSell?.exchange || '—')}</span><span class="s">bid ${usd(r.bestSell?.bid)} · gap <b class="${r.gapPct > 0 ? 'up' : 'flat'}">${pct(r.gapPct, 3)}</b></span></div>` : '';
     $('#table', el).innerHTML = rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">#</th><th class="l">Exchange</th><th class="l">Pair</th><th>Price</th><th>vs median</th><th>Bid</th><th>Ask</th><th>Spread</th><th>24h</th><th class="l">Volume 24h</th></tr></thead><tbody>

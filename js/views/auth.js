@@ -37,7 +37,18 @@ function askForCode(m) {
 export function openAuth(mode = 'in') {
   const m = modal('<div id="authBody"></div>');
   let emailEnabled = null;
-  callFn('account', { action: 'email-status' }).then((r) => { emailEnabled = r.emailEnabled; paint(cur); }).catch(() => { emailEnabled = false; });
+  // This repaint rebuilds the form's markup. It used to fire whenever the
+  // e-mail-status call came back, which on a slow connection is after the
+  // reader has started typing — wiping the e-mail and password they had
+  // entered. It now only repaints while the fields are still untouched.
+  callFn('account', { action: 'email-status' })
+    .then((r) => {
+      emailEnabled = r.emailEnabled;
+      const body = $('#authBody', m.el);
+      const typed = body && [...body.querySelectorAll('input')].some((i) => i.value !== '');
+      if (!typed) paint(cur);
+    })
+    .catch(() => { emailEnabled = false; });
 
   let cur = mode;
   function paint(next) {

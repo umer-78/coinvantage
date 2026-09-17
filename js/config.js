@@ -39,6 +39,8 @@ export const CONFIG = {
     ['NGN', '₦', 'Nigerian Naira'], ['IDR', 'Rp', 'Indonesian Rupiah'], ['BRL', 'R$', 'Brazilian Real'], ['JPY', '¥', 'Japanese Yen'],
     ['CNY', '¥', 'Chinese Yuan'], ['RUB', '₽', 'Russian Ruble'], ['ZAR', 'R', 'South African Rand'], ['BDT', '৳', 'Bangladeshi Taka'],
   ],
+  // Kept for when the page content is translated — nothing reads this while the
+  // language switcher is out of the header (see js/i18n.js).
   LANGS: [['en', 'English'], ['ur', 'اردو']],
 
   // Derivatives / futures data

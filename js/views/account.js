@@ -46,7 +46,7 @@ export async function render(el, [flag]) {
         <h3>${premium ? 'Premium' : 'Plan'}</h3>
         ${premium
           ? `<p class="mt"><span class="chip ${isAdmin() ? 'warn' : 'up'}">${isAdmin() ? 'Owner — Premium free, forever' : 'Premium active'}</span></p><p>${isAdmin() ? 'You own this site, so every Premium feature is yours at no cost and never expires.' : p.premium_until ? `Runs until <b>${new Date(p.premium_until).toLocaleDateString()}</b> — ${Math.max(0, Math.ceil((new Date(p.premium_until) - Date.now()) / 864e5))} days left.` : 'Lifetime access.'}</p>
-             <ul class="feat"><li>Unlimited server-side alerts</li><li>Telegram + e-mail delivery</li><li>Premium trade ideas</li><li>Full signal track record</li></ul>`
+             <ul class="feat"><li>Up to 50 active server-side alerts</li><li>Telegram + e-mail delivery</li><li>Signal alerts that fire with the browser closed</li><li>Full track record with per-coin breakdown and CSV export</li></ul>`
           : `<p class="mt">You're on the <b>free</b> plan: live prices, charts, signals, forecasts, history comparison and 3 server-side alerts.</p>
              <a class="btn primary mt" href="#/premium">${icon('star', 16)} See Premium</a>`}
       </div>
@@ -278,9 +278,12 @@ export async function render(el, [flag]) {
   // Forecasts you were shown are logged before the outcome is known, then scored
   // against the real close — so this hit rate is yours, not a marketing number.
   const closeAt = async (symbol, interval, atMs) => {
-    const coin = await findCoin(symbol);
-    if (!coin) return NaN;
-    const r = await getCandles(coin, interval, 500);
+    let coin, r;
+    try {
+      coin = await findCoin(symbol);
+      if (!coin) return NaN;
+      r = await getCandles(coin, interval, 500);
+    } catch { return NaN; }
     let best = NaN, bestGap = Infinity;
     for (const c of r.candles) {
       const gap = Math.abs(c.t - atMs);
