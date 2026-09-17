@@ -92,12 +92,29 @@ export async function askLLM({ history, question, facts, data, onText, signal })
   const messages = buildMessages(history, question, facts, data);
 
   if (s.customEndpoint) {
-    const res = await fetch(`${s.customEndpoint.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST', signal,
-      headers: { 'content-type': 'application/json', ...(s.customKey ? { authorization: `Bearer ${s.customKey}` } : {}) },
-      body: JSON.stringify({ model: s.customModel || 'default', messages, stream: true, temperature: 0.3, max_tokens: 700 }),
-    });
-    if (!res.ok || !res.body) throw new Error(`AI endpoint error ${res.status}`);
+    // Record whether this endpoint was actually reached, so the panel can stop
+    // reporting "Connected" for an address that has never answered.
+    let res;
+    try {
+      res = await fetch(`${s.customEndpoint.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST', signal,
+        headers: { 'content-type': 'application/json', ...(s.customKey ? { authorization: `Bearer ${s.customKey}` } : {}) },
+        body: JSON.stringify({ model: s.customModel || 'default', messages, stream: true, temperature: 0.3, max_tokens: 700 }),
+      });
+    } catch (err) {
+      customState.reached = false;
+      customState.lastError = /Failed to fetch/i.test(String(err && err.message))
+        ? 'could not reach it from the browser — a plain http:// address on another machine will be blocked; try https, or run the model on this computer'
+        : String(err && err.message || err);
+      throw err;
+    }
+    if (!res.ok || !res.body) {
+      customState.reached = false;
+      customState.lastError = `endpoint answered ${res.status}`;
+      throw new Error(`AI endpoint error ${res.status}`);
+    }
+    customState.reached = true;
+    customState.lastError = null;
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '', text = '';
@@ -130,4 +147,8 @@ export async function askLLM({ history, question, facts, data, onText, signal })
 }
 
 export const localReady = () => !!engine && aiState.status === 'ready';
+// Having typed an address is not the same as having reached it. The UI used to
+// show "Connected" for any non-empty box, so a wrong URL looked healthy while
+// every answer quietly fell back to the rule-based analyst.
 export const customReady = () => !!settings.get().customEndpoint;
+export const customState = { reached: false, lastError: null };

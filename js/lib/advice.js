@@ -1,4 +1,4 @@
-// One opinion per coin: buy, wait or get out — and why.
+// One reading per coin — and, where the evidence supports one, a verdict.
 //
 // The app already produces four independent readings of a coin: the technical
 // signal, the model ensemble's direction probability, the shaped timing path,
@@ -10,6 +10,8 @@
 // It is advice in the sense of "here is what the evidence says", not a promise.
 // Nothing here executes anything.
 
+import { upRateFor } from './signals.js';
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // An input only counts as much as its track record justifies. 50% accuracy is a
@@ -17,17 +19,43 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const edgeWeight = (accuracy, floor = 0.5) =>
   accuracy === null || accuracy === undefined ? 0.15 : clamp((accuracy - floor) / 0.1, 0, 1);
 
-export function adviseCoin({ signal, forecast, timing, history, holding = null } = {}) {
+export function adviseCoin({ signal, forecast, timing, history, holding = null, interval = '4h' } = {}) {
   if (!signal?.ok) return { ok: false, reason: signal?.reason || 'No signal for this coin.' };
 
   const parts = [];
   const reasons = [];
 
-  // 1. Technical signal — scaled to -1..1.
-  parts.push({ key: 'signal', value: clamp(signal.score / 60, -1, 1), weight: 0.9 });
+  // 1. Technical signal.
+  //
+  // This module's whole premise is that each reading counts only as much as its
+  // track record justifies — and this one was the sole exception: a hardcoded
+  // weight of 0.9, the heaviest of the four, never passed through edgeWeight().
+  // It is also the reading that was since measured to point the WRONG way:
+  // across 244,000 bars the share of bars that rose falls as the score rises.
+  //
+  // So it now goes through the same gate as everything else, using its measured
+  // directional accuracy — for a positive score, how often bars in that band
+  // actually rose; for a negative score, how often they actually fell. Both come
+  // out under 50%, so the gate gives it zero weight, which is the correct answer
+  // and not a special case. It stays in the reasons because the reading is worth
+  // seeing; it just no longer votes.
+  const bucket = upRateFor(interval, signal.score);
+  const dirAcc = bucket === null ? null
+    : (signal.score >= 0 ? bucket.upRatePct : 100 - bucket.upRatePct) / 100;
+  // The bar is 55%, not 50%. Crediting anything above a coin flip let a reading
+  // in the NEUTRAL band vote bearish on the strength of 51.9% in one sample —
+  // noise dressed as evidence. No measured band comes close to 55%, so this is
+  // zero today; it is written as a threshold rather than a constant so that a
+  // future re-measurement showing a real edge would switch it back on by itself.
+  const SIGNAL_EDGE_FLOOR = 0.55;
+  const signalWeight = bucket === null ? 0 : edgeWeight(dirAcc, SIGNAL_EDGE_FLOOR) * 0.9;
+  parts.push({ key: 'signal', value: clamp(signal.score / 60, -1, 1), weight: signalWeight });
   reasons.push({
-    tone: signal.score >= 18 ? 'good' : signal.score <= -18 ? 'bad' : 'flat',
-    text: `Chart signal: ${signal.text} (${signal.score > 0 ? '+' : ''}${signal.score}/100).`,
+    tone: 'flat',
+    text: `Chart reading: ${signal.text} (${signal.score > 0 ? '+' : ''}${signal.score}/100)`
+      + (bucket === null
+        ? ' — this timeframe has never been measured, so it earns no weight in the verdict.'
+        : `. Measured over ${bucket.bars.toLocaleString()} bars, readings in this band were followed by a higher price ${bucket.upRatePct}% of the time${signalWeight > 0 ? '.' : ', so it earns no weight in the verdict.'}`),
   });
 
   // 2. Model ensemble, weighted by its own out-of-sample accuracy on this coin.

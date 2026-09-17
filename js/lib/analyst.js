@@ -1,7 +1,15 @@
 // Rule-based analyst. Produces a markdown answer from the same context that
 // is sent to the language model, so the assistant works even without an API key.
 
-import { fmtNum } from './signals.js';
+import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
+import { fx } from '../api/fx.js';
+
+// Every price the assistant quotes — levels, stops, targets, EMAs, Bollinger
+// bands, ATR, forecast ranges — came out unconverted and labelled USD, while
+// every other screen showed the chosen display currency. Someone on rupees was
+// told "resistance 76,343 USD" next to a header reading Rs21,009,403. Wrapping
+// the formatter converts all twenty-one call sites at once.
+const fmtNum = (v) => (v === null || v === undefined || !Number.isFinite(v) ? fmtUsd(v) : fmtUsd(v * (fx.rate || 1)));
 
 const DISCLAIMER = '_Signals are technical indicators, not financial advice. Always use a stop-loss and only risk what you can afford to lose._';
 
@@ -64,11 +72,18 @@ function detectIntent(q) {
 function header(ctx) {
   const c = ctx.coin;
   if (!c) return '';
-  return `**${c.name} (${c.symbol})** · ${fmtNum(c.price)} USD · 24h ${pct(c.change24h)}${ctx.interval ? ` · ${ctx.interval} chart` : ''}`;
+  return `**${c.name} (${c.symbol})** · ${fmtNum(c.price)} ${fx.code} · 24h ${pct(c.change24h)}${ctx.interval ? ` · ${ctx.interval} chart` : ''}`;
 }
 
-function signalLine(sig) {
-  return `**Signal: ${sig.text}** (score ${sig.score > 0 ? '+' : ''}${sig.score}/100)`;
+function signalLine(sig, interval = null) {
+  const base = `**Chart reading: ${sig.text}** (indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score}/100)`;
+  const m = interval ? upRateFor(interval, sig.score) : null;
+  // This used to read "Signal: Strong Buy (score +67/100)" with nothing after
+  // it, which is the reading dressed as a recommendation. The measured record
+  // for that band travels with it now.
+  return m
+    ? `${base}\n\n_Across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} tested bars, readings in this band were followed by a higher price ${m.upRatePct}% of the time — the score describes how extended a move is, not whether it will continue._`
+    : base;
 }
 
 function mtfBlock(ctx) {
@@ -177,7 +192,7 @@ function marketMultiBlock(m) {
     for (const a of m.avoid) out.push(`- **${a.coin}** — ${a.verdict} on the ${a.interval} chart (conviction ${a.conviction}/100)${a.topReason ? `: ${a.topReason}` : ''}`);
   }
 
-  out.push('\nEvery verdict blends the chart signal, the AI forecast and the move timing, each weighted by how accurate it has actually been on past data — so a reading with no measured edge barely counts. Open **What to buy** for the same list with charts, or ask me about any single coin for the full breakdown.');
+  out.push('\nEvery verdict weights each reading by how accurate it has actually been on past data, so one with no measured edge counts for nothing — which currently includes the chart score itself, measured across 244,000 bars as pointing the wrong way. Open **Market scan** for the same list with charts, or ask me about any single coin for the full breakdown.');
   return `${out.join('\n')}\n`;
 }
 
@@ -203,7 +218,7 @@ function marketBlock(m) {
     out.push(`\n**Avoid or sell**\n${m.avoid.map((a) => `- **${a.coin}** — ${a.verdict} (conviction ${a.conviction}/100)${a.topReason ? `: ${a.topReason}` : ''}`).join('\n')}`);
   }
   out.push(`\nHorizon for these calls is roughly **${m.horizonText}**. Each verdict blends the chart signal, the AI forecast and the move timing, weighted by how accurate each has been — so a reading with no measured edge barely counts.`);
-  out.push('Ask me about any single coin for the full breakdown, or open **What to buy** for the same list with charts.');
+  out.push('Ask me about any single coin for the full breakdown, or open **Market scan** for the same list with charts.');
   return `${out.join('\n')}\n`;
 }
 
@@ -336,7 +351,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
       return out.filter((l) => l !== '').join('\n');
     }
     if (!ctx.market) {
-      return `I need to scan the market to answer that — ask again in a moment, or open the **What to buy** page for the ranked list.\n\n${DISCLAIMER}`;
+      return `I need to scan the market to answer that — ask again in a moment, or open the **Market scan** page for the ranked list.\n\n${DISCLAIMER}`;
     }
     out.push(marketBlock(ctx.market));
     if (ctx.portfolio?.length) {
@@ -351,7 +366,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
     const p = ctx.portfolio || [];
     if (!p.length) return `You haven't added any holdings yet. Open **Wallet** and add coins with the amount and your average buy price — I'll then flag which ones to hold, trim or exit.\n\n${DISCLAIMER}`;
     const total = p.reduce((s, h) => s + (h.value || 0), 0);
-    out.push(`**Portfolio review** · total value ${fmtNum(total)} USD\n`);
+    out.push(`**Portfolio review** · total value ${fmtNum(total)} ${fx.code}\n`);
     for (const h of p) {
       const share = total ? ((h.value / total) * 100).toFixed(1) : '0';
       out.push(`- **${h.symbol}** — ${share}% of portfolio, P&L ${pct(h.pnlPct)}${h.advice ? ` → ${h.advice}` : ''}`);
@@ -383,27 +398,27 @@ export function ruleBasedAnswer(question, ctx = {}) {
         out.push(timingBlock(ctx));
         out.push(historyBlock(ctx.history));
         out.push(newsBlock(ctx));
-        out.push(signalLine(sig));
+        out.push(signalLine(sig, ctx.interval));
         out.push(`\nThe forecast blends 7 models — chart pattern matching against history, similar past moves, gradient-boosted trees, a neural network, logistic regression, nearest neighbours and a trend model — each weighted by how accurate it was on recent data it never saw. Treat it as a probability, not a promise, and combine it with the stop-loss levels below.`);
         out.push(`\n**Key levels:** resistance ${sig.levels.resistances.slice(0, 2).map(fmtNum).join(' / ') || '—'} · support ${sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ') || '—'}`);
       } else {
         out.push('The AI forecast is still computing for this chart — ask again in a moment. Meanwhile, the technical signal:');
-        out.push(signalLine(sig));
+        out.push(signalLine(sig, ctx.interval));
         out.push(reasonsBlock(sig, 3));
       }
       break;
     }
     case 'entry': {
-      out.push(signalLine(sig));
+      out.push(signalLine(sig, ctx.interval));
       const conflict = conflictBlock(ctx);
       out.push(conflict);
       if (sig.plan?.side === 'long') {
         out.push(conflict
-          ? `\nThe chart alone would call this a **long entry**, but read the warning above before acting on it.`
-          : `\nConditions currently favour a **long entry**. Prefer entering inside the zone rather than chasing green candles.`);
+          ? `\nThe chart structure marks out an entry zone here, but the forecast disagrees — read the warning above.`
+          : `\nThe chart structure marks out an entry zone, a stop and targets, set out below. That is geometry, not a recommendation: on the measured record a reading like this was not more likely than chance to be followed by a rise. If you trade it, the levels are where the structure sits.`);
         out.push(planBlock(sig.plan));
       } else if (sig.plan?.side === 'short') {
-        out.push(`\n**Not a good time to buy.** The setup is bearish — waiting usually beats catching a falling knife.`);
+        out.push(`\nThe indicators are leaning down here, so the structure offers no upside entry — only levels to watch. Note that a low reading has not been a reliable sell signal either; both directions were tested and neither paid after costs.`);
         if (sig.waitFor?.length || sig.levels.supports.length) {
           out.push(`\nWatch for a reversal near support ${sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ') || '—'} with RSI turning up and a MACD bullish crossover.`);
         }
@@ -417,7 +432,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
       break;
     }
     case 'exit': {
-      out.push(signalLine(sig));
+      out.push(signalLine(sig, ctx.interval));
       out.push(conflictBlock(ctx));
       if (sig.score <= -18) {
         out.push(`\nMomentum has turned against longs. If you hold ${ctx.coin?.symbol || 'this coin'}, **consider closing or reducing** the position, or at least tighten your stop.`);
@@ -477,10 +492,10 @@ export function ruleBasedAnswer(question, ctx = {}) {
       break;
     }
     default: {
-      out.push(signalLine(sig));
+      out.push(signalLine(sig, ctx.interval));
       out.push(conflictBlock(ctx));
-      const bias = sig.score >= 18 ? 'bullish' : sig.score <= -18 ? 'bearish' : 'range-bound / undecided';
-      out.push(`\nOverall the chart is **${bias}**.`);
+      const bias = sig.score >= 18 ? 'leaning up' : sig.score <= -18 ? 'leaning down' : 'range-bound / undecided';
+      out.push(`\nOverall the indicators are **${bias}** — a description of where price sits, not a forecast of where it goes next.`);
       out.push(reasonsBlock(sig, 4));
       out.push(mtfBlock(ctx));
       if (ctx.forecast) out.push(forecastBlock(ctx.forecast, ctx));

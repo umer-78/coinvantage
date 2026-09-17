@@ -389,7 +389,24 @@ export function fmtNum(v) {
 }
 
 // Long-only backtest of the same scoring rules (spot trading style).
-export function backtest(candles, { entryScore = THRESHOLDS.normal, exitScore = -THRESHOLDS.normal, atrStop = 1.5, rMultiple = 2.5, feePct = 0.1 } = {}) {
+/**
+ * Replay this engine's own entries over past candles.
+ *
+ * The stop and target default to the MEASURED geometry for the timeframe, not
+ * to a fixed 1.5 ATR / 2.5R. They were fixed before, which meant the coin page
+ * backtested a different trade from the one it was printing directly above —
+ * "here is your plan" said 1 ATR and 3R, while "here is how it performed" tested
+ * 1.5 ATR and 2.5R.
+ *
+ * The break-even move is off by default for the same reason: measured over the
+ * grid in tools/evaluate-autotrader.mjs it cost money on every timeframe, and
+ * showing a result that depends on it would overstate what the published plan
+ * does. Pass breakEvenAtR to put it back for comparison.
+ */
+export function backtest(candles, { interval = null, entryScore = THRESHOLDS.normal, exitScore = -THRESHOLDS.normal, atrStop = null, rMultiple = null, feePct = 0.1, breakEvenAtR = null } = {}) {
+  const geo = interval ? geometryFor(interval) : null;
+  atrStop = atrStop ?? geo?.stopAtr ?? 1.5;
+  rMultiple = rMultiple ?? geo?.rr ?? 2.5;
   const n = candles.length;
   if (n < 80) return { ok: false, reason: 'Not enough history to backtest' };
   const ind = computeAll(candles);
@@ -409,7 +426,7 @@ export function backtest(candles, { entryScore = THRESHOLDS.normal, exitScore = 
         const { score } = scoreAt(candles, ind, i);
         pos.weak = score <= exitScore ? pos.weak + 1 : 0;
         if (pos.weak >= 2) { exit = c.c; why = 'signal'; } // bearish signal confirmed on 2 closes
-        else if (c.c >= pos.entry + pos.risk) pos.stop = Math.max(pos.stop, pos.entry); // +1R → stop to breakeven
+        else if (breakEvenAtR !== null && breakEvenAtR !== undefined && c.c >= pos.entry + breakEvenAtR * pos.risk) pos.stop = Math.max(pos.stop, pos.entry);
       }
       if (exit !== null) {
         const ret = (exit / pos.entry) * (1 - fee) * (1 - fee) - 1;

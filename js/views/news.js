@@ -16,7 +16,21 @@ export async function render(el, [coinParam]) {
     return;
   }
 
-  const rows = await getNews({ coin: coinParam ? coinParam.toUpperCase() : null, limit: 120 }).catch(() => []);
+  // A failed fetch used to fall through to an empty list captioned "0
+  // headlines", which reads as "there is no news" rather than "this did not
+  // load".
+  let rows = null;
+  try {
+    rows = await getNews({ coin: coinParam ? coinParam.toUpperCase() : null, limit: 120 });
+  } catch { rows = null; }
+  if (!rows) {
+    $('#body', el).innerHTML = '<div class="card empty"><h3>Could not load the headlines</h3><p>The news service did not answer. Reload the page to try again.</p></div>';
+    return;
+  }
+  if (!rows.length) {
+    $('#body', el).innerHTML = `<div class="card empty"><h3>No headlines stored yet</h3><p>The collector runs every 20 minutes${coinParam ? `, and nothing recent mentions ${esc(coinParam.toUpperCase())}` : ''}. Check back shortly.</p></div>`;
+    return;
+  }
   const sources = [...new Set(rows.map((r) => r.source))].sort();
   const coins = [...new Set(rows.flatMap((r) => r.coins || []))].sort();
   let source = 'all', coin = coinParam ? coinParam.toUpperCase() : 'all', q = '';
@@ -41,7 +55,7 @@ export async function render(el, [coinParam]) {
     <div class="card">
       <div class="card-h">
         <div class="seg" id="src"><button data-v="all" class="on">All sources</button>${sources.map((s) => `<button data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-        <span class="fine">${rows.length} headlines</span>
+        <span class="fine">${rows.length} most recent headlines</span>
       </div>
       ${coins.length ? `<div class="seg" id="cn" style="margin-bottom:10px"><button data-v="all" class="${coin === 'all' ? 'on' : ''}">Any coin</button>${coins.slice(0, 14).map((c) => `<button data-v="${esc(c)}" class="${coin === c ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>` : ''}
       <div class="news-list" id="list"></div>

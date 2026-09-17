@@ -2,6 +2,22 @@
 import { CONFIG } from '../config.js';
 import { getAppSettings } from '../api/backend.js';
 import { esc } from '../format.js';
+import { TESTED_ACCURACY } from '../lib/predict.js';
+import { TESTED_TIMING } from '../lib/timing.js';
+import { SCORE_BUCKETS_TESTED } from '../lib/signals.js';
+
+// The risk page used to restate the measured numbers as a hand-written
+// paragraph, and it kept the figures from an earlier run long after they were
+// superseded — the worst page on the site to be out of date. It is generated
+// from the same constants the rest of the app reads, so it cannot drift again.
+const IVS = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const accuracyLine = () => IVS
+  .filter((iv) => typeof TESTED_ACCURACY[iv] === 'number')
+  .map((iv) => `${iv} ${TESTED_ACCURACY[iv]}% against a ${TESTED_ACCURACY.baseline[iv]}% baseline`)
+  .join(', ');
+const timingLine = () => Object.entries(TESTED_TIMING.byInterval)
+  .map(([iv, t]) => `${iv} ${t.hitPct}% against ${t.baselinePct}%`)
+  .join(', ');
 
 export const title = (p) => ({ terms: 'Terms of Service', privacy: 'Privacy Policy', risk: 'Risk Disclosure' }[p?.[0]] || 'Legal');
 
@@ -23,7 +39,7 @@ const PAGES = (contact) => ({
       <h2>5. Acceptable use</h2>
       <p>Don't scrape the service at volumes that degrade it for others, don't try to break authentication or access other users' data, don't resell or redistribute the data feeds, and don't use the service where it would be unlawful for you to do so.</p>
       <h2>6. Premium</h2>
-      <p>Premium is a one-off payment for a fixed period, with no automatic renewal. It buys server-side features (alerts while your browser is closed, tracking, VIP ideas). It does not buy better predictions or any guarantee of profit. If a paid feature is unavailable for a sustained period, contact us and we will extend or refund the affected period.</p>
+      <p>Premium is a one-off payment for a fixed period, with no automatic renewal. It buys server-side features (alerts while your browser is closed, and tracking). It does not buy better predictions or any guarantee of profit. If a paid feature is unavailable for a sustained period, contact us and we will extend or refund the affected period.</p>
       <h2>7. Third-party data</h2>
       <p>Prices, candles, order books, derivatives data, news and exchange rates come from third parties (including Binance, CoinGecko, CoinPaprika and public news feeds). They may be delayed, incomplete or wrong, and they can stop working without notice. We don't control them and don't warrant them.</p>
       <h2>8. Availability and liability</h2>
@@ -58,8 +74,14 @@ const PAGES = (contact) => ({
     body: `
       <h2>Read this before you trade anything</h2>
       <p>Crypto assets are volatile, largely unregulated, and can lose most or all of their value quickly. Nothing on ${N} changes that.</p>
-      <h2>The forecasts are estimates, not predictions</h2>
-      <p>The engine is validated by walk-forward testing on out-of-sample data: every forecast is made using only the data that existed at that moment. Across 672 forecasts on 12 coins it called direction right <b>54.0%</b> of the time overall — 57.1% on 15-minute, 53.0% on hourly, 58.9% on 4-hour, and <b>47.0% on daily, which is worse than a coin flip</b>. When the models agreed strongly enough to take a side (about 38% of forecasts) accuracy was 56.9%. Simply assuming "up" every time scored 51.3% on the same sample. A small statistical edge is not a licence to bet large, and past accuracy does not carry over to the future.</p>
+      <h2>The forecasts have no measured edge on direction</h2>
+      <p>The engine is validated by walk-forward testing: every forecast is made using only the data that existed at that moment. Across ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} coins it called direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring the engine entirely and always naming whichever direction was more common in that window. It did not beat that baseline. By timeframe: ${accuracyLine()}. It is below its baseline on ${TESTED_ACCURACY.noEdge.join(', ')}.</p>
+      <p>${esc(TESTED_ACCURACY.caveat)}</p>
+      <h2>The chart score does not mean what its name suggested</h2>
+      <p>Sorting ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins by the score this engine assigns them shows the share that rose <b>falls</b> as the score rises — the highest-scoring bars were the ones least likely to go up. Trading the reverse does not work either; both directions were tested over held-out data with fees and neither produced a positive expectancy. The score is therefore labelled as a description of how extended a trend is, not as a recommendation to buy or sell.</p>
+      <h2>What does show a measured edge</h2>
+      <p>Timing — how long a move tends to run before turning — beat its random baseline across ${TESTED_TIMING.tests} tests: <b>${TESTED_TIMING.peakHitPct}%</b> against <b>${TESTED_TIMING.baselinePct}%</b>. By timeframe: ${timingLine()}. That edge is small, it is measured on ${TESTED_TIMING.coins} coins over one period, and it says nothing about direction. A well-placed turning point on a direction call with no edge is still a direction call with no edge.</p>
+      <p>None of this is a licence to bet large, and past measurements do not carry over to the future.</p>
       <h2>Leverage</h2>
       <p>The futures page shows what leveraged traders are doing because it is useful market context. It is not encouragement. Leverage magnifies losses, liquidations are permanent, and most retail leveraged accounts lose money.</p>
       <h2>Position sizing beats prediction</h2>

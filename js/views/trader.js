@@ -5,7 +5,8 @@ import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js';
-import { esc, pct, money, compact, dateTime, ago, amount } from '../format.js';
+import { esc, pct, money, compact, dateTime, ago, amount, price } from '../format.js';
+import { fx } from '../api/fx.js';
 import { load, save } from '../store.js';
 
 export const title = 'Trading';
@@ -127,9 +128,9 @@ export async function render(el) {
         <label class="fld">Coin<select class="inp" name="sym">${tradable.slice(0, 60).map((c) => `<option value="${esc(c.symbol)}">${esc(c.symbol)}</option>`).join('')}</select></label>
         <label class="fld">Side<select class="inp" name="side"><option value="long">Bought</option><option value="short">Sold short</option></select></label>
         <label class="fld">Amount<input class="inp" name="qty" type="number" step="any" min="0" placeholder="0.05" style="width:100px" required></label>
-        <label class="fld">Price in<input class="inp" name="entry" type="number" step="any" min="0" placeholder="60000" style="width:110px" required></label>
-        <label class="fld">Price out<input class="inp" name="exit" type="number" step="any" min="0" placeholder="still open" style="width:110px"></label>
-        <label class="fld">Fee<input class="inp" name="fee" type="number" step="any" min="0" placeholder="0" style="width:80px"></label>
+        <label class="fld">Price in (${esc(fx.code)})<input class="inp" name="entry" type="number" step="any" min="0" placeholder="${esc(price(60000 * fx.rate))}" style="width:130px" required></label>
+        <label class="fld">Price out (${esc(fx.code)})<input class="inp" name="exit" type="number" step="any" min="0" placeholder="still open" style="width:130px"></label>
+        <label class="fld">Fee (${esc(fx.code)})<input class="inp" name="fee" type="number" step="any" min="0" placeholder="0" style="width:100px"></label>
         <button class="btn primary">Record trade</button>
       </form>
       <p class="fine down" id="rfErr" hidden></p>
@@ -283,11 +284,14 @@ export async function render(el) {
       const err = $('#rfErr', el);
       err.hidden = true;
       const rs = realState() || newState(cfg);
+      // The account is kept in USD so it can be marked against the exchange's
+      // own price; the form is in whatever currency the site is displaying.
+      const toUsd = (v) => (v === null || v === '' || v === undefined ? v : (fx.rate ? +v / fx.rate : +v));
       const r = recordRealTrade(rs, cfg, {
         symbol: f3.sym.value, side: f3.side.value,
-        qty: f3.qty.value, entry: f3.entry.value,
-        exit: f3.exit.value === '' ? null : f3.exit.value,
-        fee: f3.fee.value || 0,
+        qty: f3.qty.value, entry: toUsd(f3.entry.value),
+        exit: f3.exit.value === '' ? null : toUsd(f3.exit.value),
+        fee: toUsd(f3.fee.value || 0),
       });
       if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
       save(REAL_KEY, rs);
