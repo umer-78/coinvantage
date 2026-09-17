@@ -10,7 +10,7 @@
        redirected off-site. Inline markup styles still work; inline SCRIPTS do not,
        which is the attack this closes. The one inline script below is allowed by
        its exact hash — change it and you must update the hash. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-m7v0T+41AdKl0dUdyHrXrQhNl2dT2S6AEr9UN/Q71nI=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src 'self' https: wss: blob: data:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-m7v0T+41AdKl0dUdyHrXrQhNl2dT2S6AEr9UN/Q71nI=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src 'self' https: wss: blob: data: http://localhost:* http://127.0.0.1:*; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#0b0e14">
   <meta property="og:title" content="CoinVantage — Crypto markets, signals & AI forecasts">
@@ -53,7 +53,6 @@
           <div class="search-results" id="searchResults" hidden></div>
         </div>
         <select class="mini-sel" id="curSel" aria-label="Display currency"></select>
-        <select class="mini-sel hide-s" id="langSel" aria-label="Language"></select>
         <button class="icon-btn" id="themeBtn" aria-label="Toggle theme"></button>
         <button class="btn sm" id="accountBtn" aria-label="Account"></button>
       </header>

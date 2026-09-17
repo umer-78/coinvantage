@@ -12,10 +12,31 @@ export function load(key, fallback) {
   }
 }
 
+// Whether this device is actually persisting anything. A failed write used to
+// be swallowed entirely: the value stayed in `mem`, so a recorded trade, a new
+// alert or a holding looked saved and worked for the rest of the session, then
+// disappeared on reload with no explanation. Private browsing and a full quota
+// both do this.
+export const storageState = { persists: true, lastError: null };
+let warned = false;
+
 export function save(key, value) {
   mem[key] = value;
-  try { localStorage.setItem(PREFIX + key, JSON.stringify(value)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    storageState.persists = true;
+  } catch (err) {
+    storageState.persists = false;
+    storageState.lastError = String(err && err.name === 'QuotaExceededError'
+      ? 'this browser is out of storage space'
+      : 'this browser is not allowing the site to store data (private browsing blocks it)');
+    if (!warned) {
+      warned = true;
+      window.dispatchEvent(new CustomEvent('cv:store-failed', { detail: { key, reason: storageState.lastError } }));
+    }
+  }
   window.dispatchEvent(new CustomEvent('cv:store', { detail: { key } }));
+  return storageState.persists;
 }
 
 export const watchlist = {

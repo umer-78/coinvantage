@@ -1111,3 +1111,97 @@ test('timing is judged against its own baseline, per timeframe', async () => {
   assert.ok(TESTED_TIMING.peakHitPct > TESTED_TIMING.baselinePct, 'the overall claim must beat its own baseline');
   assert.ok(TESTED_TIMING.tests >= 900);
 });
+
+test('the chart score earns no vote in any verdict, because it was measured to point the wrong way', async () => {
+  const { adviseCoin } = await import('../js/lib/advice.js');
+  const { generateSignal, upRateFor } = await import('../js/lib/signals.js');
+
+  // This module weights each reading by its measured accuracy. The chart signal
+  // was the one exception — a hardcoded 0.9, heavier than anything else, never
+  // gated — and it is the reading that tests showed is anti-predictive. This
+  // fails if that exemption is reinstated.
+  for (const iv of ['5m', '15m', '1h', '4h', '1d']) {
+    const c = demoCandles('bitcoin', iv === '1d' ? '1d' : '4h', 600);
+    const sig = generateSignal(c, { interval: iv });
+    if (!sig.ok) continue;
+    const a = adviseCoin({ signal: sig, interval: iv });
+    const part = a.parts.find((p) => p.key === 'signal');
+    assert.ok(part, `${iv}: the signal should still be reported`);
+    assert.equal(part.weight, 0, `${iv}: the chart score is voting with weight ${part.weight}`);
+    // and with nothing else supplied, there is nothing to be convicted about
+    assert.equal(a.conviction, 0, `${iv}: conviction ${a.conviction} from a reading with no edge`);
+    assert.equal(a.verdict, 'WAIT');
+  }
+
+  // the measured up-rate must still be quoted to the reader
+  const c = demoCandles('ethereum', '4h', 600);
+  const sig = generateSignal(c, { interval: '4h' });
+  const a = adviseCoin({ signal: sig, interval: '4h' });
+  const reason = a.reasons.find((r) => /Chart reading/.test(r.text));
+  assert.ok(reason, 'the chart reading must still be shown');
+  const bucket = upRateFor('4h', sig.score);
+  assert.ok(reason.text.includes(String(bucket.upRatePct)), 'the reader must see the measured up-rate for this band');
+  assert.match(reason.text, /no weight in the verdict/i);
+});
+
+test('the backtest replays the same trade the page prints, not a different one', async () => {
+  const { backtest, geometryFor } = await import('../js/lib/signals.js');
+  const c = demoCandles('bitcoin', '1h', 900);
+
+  // The coin page shows a plan built from the measured geometry, then used to
+  // backtest a fixed 1.5 ATR / 2.5R with a break-even stop — a different trade
+  // from the one it had just recommended. Passing the interval must now pick up
+  // that timeframe's real stop and target.
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const geo = geometryFor(iv);
+    const withIv = backtest(c, { interval: iv });
+    const explicit = backtest(c, { atrStop: geo.stopAtr, rMultiple: geo.rr });
+    assert.equal(withIv.ok, explicit.ok, `${iv}: differing outcomes`);
+    if (withIv.ok) {
+      assert.equal(withIv.tradeCount, explicit.tradeCount, `${iv}: interval did not select the measured geometry`);
+      assert.equal(withIv.totalReturnPct, explicit.totalReturnPct, `${iv}: interval did not select the measured geometry`);
+    }
+  }
+
+  // and the break-even move, measured as costly, must be off unless asked for
+  const plain = backtest(c, { interval: '1h' });
+  const withBe = backtest(c, { interval: '1h', breakEvenAtR: 1 });
+  if (plain.ok && withBe.ok) {
+    assert.ok(plain.trades.every((t) => t.reason !== 'breakeven'),
+      'break-even exits appear with no breakEvenAtR set — the default is meant to be off');
+  }
+});
+
+test('the assistant never presents the chart score as a buy or sell instruction', async () => {
+  const { ruleBasedAnswer } = await import('../js/lib/analyst.js');
+  const { generateSignal } = await import('../js/lib/signals.js');
+
+  const candles = demoCandles('bitcoin', '4h', 600);
+  const sig = generateSignal(candles, { interval: '4h' });
+  const ctx = {
+    coin: { name: 'Bitcoin', symbol: 'BTC', price: sig.price, change24h: 1.2 },
+    interval: '4h', signal: sig, forecast: null, mtf: null,
+  };
+
+  // These are the words the assistant says to a person. A reading that was
+  // measured to point the wrong way must not be phrased as a recommendation.
+  const banned = [
+    /favour[s]? a \*\*long entry\*\*/i,
+    /not a good time to buy/i,
+    /the chart is \*\*bullish\*\*/i,
+    /the chart is \*\*bearish\*\*/i,
+    /\*\*Signal: /,
+  ];
+  for (const q of ['should i buy btc', 'when do i exit btc', 'what is btc doing', 'entry for btc']) {
+    const answer = ruleBasedAnswer(q, ctx);
+    assert.ok(typeof answer === 'string' && answer.length > 40, `no answer for "${q}"`);
+    for (const re of banned) {
+      assert.doesNotMatch(answer, re, `"${q}" answered with instruction-shaped wording: ${re}`);
+    }
+  }
+
+  // and the measured record must travel with the reading it describes
+  const plain = ruleBasedAnswer('what is btc doing', ctx);
+  assert.match(plain, /Chart reading:/);
+  assert.match(plain, /followed by a higher price/i);
+});

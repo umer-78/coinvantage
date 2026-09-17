@@ -12,7 +12,7 @@ export async function render(el) {
   const st = { interval: '4h', filter: 'all', sort: 'score', rows: [], run: 0, disposed: false, count: 30 };
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Scanner</h1><p>Scans the top coins on Binance and ranks them by technical signal strength and AI forecast.</p></div>
+      <div><h1>Scanner</h1><p>Scans the top coins on Binance and ranks them by how far the indicators lean and what the forecast says. Sorting by score is a way to find extended charts, not a ranking of what to buy.</p></div>
       <div class="row">
         <div class="seg" id="iv">${['1m', '5m', '15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
         <div class="seg" id="cnt"><button data-v="20">Top 20</button><button data-v="30" class="on">Top 30</button><button data-v="50">Top 50</button></div>
@@ -21,12 +21,12 @@ export async function render(el) {
     </div>
     <div class="card">
       <div class="card-h">
-        <div class="seg" id="flt"><button data-v="all" class="on">All</button><button data-v="buy">Buy signals</button><button data-v="sell">Sell signals</button><button data-v="aiup">AI: likely up</button><button data-v="aidown">AI: likely down</button><button data-v="oversold">Oversold</button><button data-v="overbought">Overbought</button></div>
+        <div class="seg" id="flt"><button data-v="all" class="on">All</button><button data-v="buy">Leaning up</button><button data-v="sell">Leaning down</button><button data-v="aiup">AI: likely up</button><button data-v="aidown">AI: likely down</button><button data-v="oversold">Oversold</button><button data-v="overbought">Overbought</button></div>
         <span class="fine" id="prog"></span>
       </div>
       <div class="meter" id="meter" style="margin-bottom:10px"><i style="width:0%"></i></div>
       <div id="tbl">${skeleton(10, 26)}</div>
-      <p class="fine mt">Score: −100 (strong sell) to +100 (strong buy), from trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX. "AI up" is a fast version of the coin-page forecast for the next <span id="hz"></span>. "Move timing" is when that forecast expects the move to top out or bottom, from the shape of past look-alike charts. Open a coin for the full forecast with accuracy stats.</p>
+      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across 244,000 bars, the share of bars that rose <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI up" is a fast version of the coin-page forecast for the next <span id="hz"></span>. "Move timing" is when that forecast expects the move to top out or bottom, from the shape of past look-alike charts. Open a coin for the full forecast with accuracy stats.</p>
     </div>`;
 
   // "peaks in 4 hours" — the answer to "for how long does it go up?"
@@ -45,8 +45,11 @@ export async function render(el) {
     if (f === 'sell') rows = rows.filter((r) => r.signal.score <= -18);
     if (f === 'aiup') rows = rows.filter((r) => r.fc?.ok && r.fc.probUp >= 0.54);
     if (f === 'aidown') rows = rows.filter((r) => r.fc?.ok && r.fc.probUp <= 0.46);
-    if (f === 'oversold') rows = rows.filter((r) => r.signal.indicators.rsi < 32);
-    if (f === 'overbought') rows = rows.filter((r) => r.signal.indicators.rsi > 68);
+    // `null < 32` is true in JavaScript, so coins with no RSI yet were being
+    // listed as oversold.
+    const rsiOf = (r) => (Number.isFinite(r.signal.indicators.rsi) ? r.signal.indicators.rsi : null);
+    if (f === 'oversold') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) < 32);
+    if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 68);
     const key = { score: (r) => r.signal.score, ai: (r) => r.fc?.probUp ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
     $('#hz', el).textContent = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);

@@ -26,6 +26,7 @@ const UR = {
   'Language': 'زبان',
   'Currency': 'کرنسی',
   'Live · Binance stream': 'لائیو · بائنانس اسٹریم',
+  'Paused while the tab is in the background': 'ٹیب پس منظر میں ہونے پر روکا گیا',
   'Reconnecting…': 'دوبارہ جڑ رہا ہے…',
   // common words
   'Price': 'قیمت',
@@ -113,7 +114,13 @@ const UR = {
 };
 
 const DICTS = { ur: UR };
-export const I18N = { lang: settings.get().lang || 'en' };
+
+// Pinned to English while the switcher is out of the header. The translations
+// below only ever covered the navigation, so a stored 'ur' would otherwise
+// leave a returning visitor in a half-translated, right-to-left UI with no
+// control left on screen to change it back. Restore `settings.get().lang` here
+// when the page content is genuinely translated.
+export const I18N = { lang: 'en' };
 
 export function t(text, vars) {
   let out = DICTS[I18N.lang]?.[text] || text;

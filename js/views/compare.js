@@ -66,19 +66,29 @@ export async function render(el, [preset]) {
 
     // stats
     const rets = series.map((s) => s.candles.slice(1).map((c, k) => Math.log(c.c / s.candles[k].c)));
+    // A coin with almost no history on this timeframe — a recent listing, or one
+    // the fallback feed can only give a handful of candles for — produced an
+    // empty returns array here. Dividing by its length gave NaN and spreading it
+    // into Math.max gave -Infinity, so the whole row rendered as nonsense
+    // instead of saying there was not enough data.
     const stats = series.map((s, i) => {
       const r = rets[i];
+      if (!r.length || s.candles.length < 2) {
+        return { ...s, total: null, vol: null, dd: null, best: null, worst: null, ratio: null, thin: true };
+      }
       const mean = r.reduce((a, b) => a + b, 0) / r.length;
       const vol = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / r.length) * Math.sqrt(perYear);
       let peak = s.candles[0].c, dd = 0; for (const c of s.candles) { peak = Math.max(peak, c.c); dd = Math.max(dd, 1 - c.c / peak); }
       const total = (s.candles[s.candles.length - 1].c / s.candles[0].c - 1) * 100;
-      return { ...s, total, vol: vol * 100, dd: dd * 100, best: Math.max(...r) * 100, worst: Math.min(...r) * 100, ratio: vol ? (mean * perYear) / vol : 0 };
+      return { ...s, total, vol: vol * 100, dd: dd * 100, best: Math.max(...r) * 100, worst: Math.min(...r) * 100, ratio: vol ? (mean * perYear) / vol : 0, thin: false };
     });
     $('#stats', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Return</th><th>Volatility (yr)</th><th>Max drawdown</th><th class="hide-m">Best / worst candle</th><th>Return ÷ risk</th></tr></thead><tbody>
-      ${stats.sort((a, b) => b.total - a.total).map((s) => `<tr data-sym="${esc(s.sym)}"><td class="l"><div class="coin-cell">${coinLogo(s.coin, 22)}<b>${esc(s.sym)}</b></div></td>
-        <td class="${s.total >= 0 ? 'up' : 'down'}"><b>${pct(s.total)}</b></td><td>${s.vol.toFixed(0)}%</td><td class="down">${pct(-s.dd, 1)}</td>
-        <td class="hide-m"><span class="up">${pct(s.best, 1)}</span> / <span class="down">${pct(s.worst, 1)}</span></td><td>${s.ratio.toFixed(2)}</td></tr>`).join('')}
-    </tbody></table></div><p class="fine mt">Winner over ${st.period.toUpperCase()}: <b>${esc(stats[0].sym)}</b>. Return ÷ risk above 1 means the gain was large relative to the swings.</p>`;
+      ${stats.sort((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity)).map((s) => `<tr data-sym="${esc(s.sym)}"><td class="l"><div class="coin-cell">${coinLogo(s.coin, 22)}<b>${esc(s.sym)}</b></div></td>
+        ${s.thin
+          ? `<td colspan="5" class="muted fine">Not enough price history on this timeframe to measure</td>`
+          : `<td class="${s.total >= 0 ? 'up' : 'down'}"><b>${pct(s.total)}</b></td><td>${s.vol.toFixed(0)}%</td><td class="down">${pct(-s.dd, 1)}</td>
+        <td class="hide-m"><span class="up">${pct(s.best, 1)}</span> / <span class="down">${pct(s.worst, 1)}</span></td><td>${s.ratio.toFixed(2)}</td>`}</tr>`).join('')}
+    </tbody></table></div><p class="fine mt">${stats.filter((x) => !x.thin).length ? `Winner over ${st.period.toUpperCase()}: <b>${esc(stats.find((x) => !x.thin).sym)}</b>.` : ''} Return ÷ risk above 1 means the gain was large relative to the swings.</p>`;
     $$('#stats tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
 
     // correlation matrix on aligned timestamps

@@ -26,6 +26,9 @@ const ICONS = {
   chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3.5 2"/>',
+  // icon('chart') was used on the coin page but never defined, so the button
+  // shipped with a blank 14x14 gap where its icon should be.
+  chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
 };
 export const icon = (name, size = 18) =>
   `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -77,8 +80,16 @@ export function errorBox(msg, retry) {
 
 // Tabs: <div class="tabs" data-tabs> <button data-tab="x">
 export function bindTabs(root, onChange) {
-  $$('[data-tab]', root).forEach((b) => b.addEventListener('click', () => {
-    $$('[data-tab]', root).forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
+  // The container is marked role="tablist" but its children were plain buttons,
+  // so assistive tech announced a tab list containing zero tabs. The role is
+  // applied here rather than at every call site so it cannot be forgotten.
+  const tabs = $$('[data-tab]', root);
+  tabs.forEach((b) => {
+    b.setAttribute('role', 'tab');
+    if (!b.hasAttribute('aria-selected')) b.setAttribute('aria-selected', b.classList.contains('on'));
+  });
+  tabs.forEach((b) => b.addEventListener('click', () => {
+    tabs.forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
     onChange(b.dataset.tab);
   }));
 }
@@ -127,11 +138,30 @@ export function modal(html, { onClose } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'modal-bg';
   wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><button class="icon-btn modal-x" aria-label="Close">${icon('close')}</button>${html}</div>`;
-  const close = () => { wrap.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  // Focus was left on whatever opened the dialog, so keyboard users tabbed
+  // straight past it into the page behind — which is still fully interactive.
+  const opener = document.activeElement;
+  const focusables = () => [...wrap.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  const close = () => {
+    wrap.remove();
+    document.removeEventListener('keydown', onKey);
+    if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+    onClose?.();
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { close(); return; }
+    if (e.key !== 'Tab') return;
+    const items = focusables();
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
   wrap.querySelector('.modal-x').addEventListener('click', close);
   document.addEventListener('keydown', onKey);
+  // move focus into the dialog: the first real control, or the close button
+  setTimeout(() => { (focusables().find((x) => !x.classList.contains('modal-x')) || wrap.querySelector('.modal-x'))?.focus(); }, 0);
   document.body.append(wrap);
   return { el: wrap.querySelector('.modal'), close };
 }

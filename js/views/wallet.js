@@ -3,6 +3,7 @@ import { generateSignal, adviseHolding } from '../lib/signals.js';
 import { donut } from '../charts/small.js';
 import { $, $$, coinLogo, icon, toast, skeleton, modal } from '../ui.js';
 import { esc, usd, price, pct, amount, changeHtml, compact, money} from '../format.js';
+import { fx } from '../api/fx.js';
 import { load, save } from '../store.js';
 import { connectWallet, injectedWallet, walletLabel, onWalletChange } from '../api/connect.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
@@ -23,7 +24,7 @@ export async function render(el) {
         <form id="addForm" class="row" hidden style="margin-bottom:12px;align-items:flex-end">
           <label class="fld">Coin<input class="inp" name="sym" list="wCoins" required placeholder="BTC" style="width:110px"></label>
           <label class="fld">Amount<input class="inp" name="amt" type="number" step="any" min="0" required placeholder="0.5" style="width:120px"></label>
-          <label class="fld">Avg buy price (USD)<input class="inp" name="buy" type="number" step="any" min="0" placeholder="optional" style="width:150px"></label>
+          <label class="fld">Avg buy price (<span id="buyCur">${esc(fx.code)}</span>)<input class="inp" name="buy" type="number" step="any" min="0" placeholder="optional" style="width:150px"></label>
           <button class="btn primary">Save</button>
         </form>
         <div id="holdings"></div>
@@ -102,14 +103,27 @@ export async function render(el) {
   };
 
   $('#addBtn', el).addEventListener('click', () => { const f = $('#addForm', el); f.hidden = !f.hidden; if (!f.hidden) f.sym.focus(); });
-  $('#addForm', el).sym.addEventListener('change', (e) => { const c = all.find((m) => m.symbol === e.target.value.toUpperCase()); if (c && !e.target.form.buy.value) e.target.form.buy.placeholder = price(c.price); });
+  // Every figure in this table is shown in the chosen display currency, so a
+  // field demanding US dollars next to them invites a cost basis typed in the
+  // wrong unit — which then reports a P&L that is wrong by the exchange rate.
+  // The field takes the display currency and is converted to USD on save.
+  const toUsd = (v) => (fx.rate ? v / fx.rate : v);
+  $('#addForm', el).sym.addEventListener('change', (e) => { const c = all.find((m) => m.symbol === e.target.value.toUpperCase()); if (c && !e.target.form.buy.value) e.target.form.buy.placeholder = price(c.price * fx.rate); });
+  const onCur = () => {
+    const code = $('#buyCur', el);
+    if (code) code.textContent = fx.code;
+    const form = $('#addForm', el);
+    if (form) { form.buy.value = ''; form.buy.placeholder = 'optional'; }
+  };
+  window.addEventListener('cv:currency', onCur);
   $('#addForm', el).addEventListener('submit', (e) => {
     e.preventDefault();
     const f = e.target;
     const sym = f.sym.value.trim().toUpperCase();
     const coin = all.find((m) => m.symbol === sym);
     if (!coin) { toast(`${sym} not found in the top 250 coins`, 'down'); return; }
-    const amt = parseFloat(f.amt.value), buy = parseFloat(f.buy.value) || coin.price;
+    const typedBuy = parseFloat(f.buy.value);
+    const amt = parseFloat(f.amt.value), buy = Number.isFinite(typedBuy) ? toUsd(typedBuy) : coin.price;
     const holdings = load('holdings', []);
     const ex = holdings.find((h) => h.symbol === sym);
     if (ex) { const tot = ex.amount + amt; ex.avgBuy = (ex.avgBuy * ex.amount + buy * amt) / tot; ex.amount = tot; }
@@ -202,5 +216,5 @@ export async function render(el) {
   });
 
   drawHoldings(); drawWallets(); computeAdvice(); refreshWallets();
-  return () => { disposed = true; stopWatch(); };
+  return () => { disposed = true; stopWatch(); window.removeEventListener('cv:currency', onCur); };
 }

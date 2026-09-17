@@ -7,12 +7,12 @@ import { settings, load, save } from './store.js';
 import { markets, searchCoins, dataStatus, syncExchangeClock } from './api/market.js';
 import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
-import { t, I18N, setLang, applyDir } from './i18n.js';
+import { t, applyDir } from './i18n.js';
 import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
-  { path: 'advice', label: 'What to buy', icon: 'bolt', badge: 'NEW', short: 'Buy' },
+  { path: 'advice', label: 'Market scan', icon: 'bolt', short: 'Scan' },
   { path: 'ai', label: 'Assistant', icon: 'ai', short: 'Ask' },
   { path: 'trader', label: 'Trading', icon: 'forecast', short: 'Trading' },
   { path: 'scanner', label: 'Scanner', icon: 'scanner', short: 'Scanner' },
@@ -147,21 +147,22 @@ function initSearch() {
   document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { e.preventDefault(); input.focus(); } });
 }
 
-// ---------------------------------------------------------------- currency & language
+// ---------------------------------------------------------------- currency
+// The language switcher lived here. It translated the navigation and nothing
+// else — no view imports t() — so choosing Urdu left every page body in English
+// and the site half-translated. Removed rather than shipped in that state; the
+// dictionary in i18n.js is kept for when the content is actually translated.
 async function initSelectors() {
-  const cur = $('#curSel'), lang = $('#langSel');
+  const cur = $('#curSel');
   cur.innerHTML = CONFIG.CURRENCIES.map(([c, s]) => `<option value="${c}">${c} ${s}</option>`).join('');
-  lang.innerHTML = CONFIG.LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
   await initCurrency();
   cur.value = fx.code;
-  lang.value = I18N.lang;
   cur.addEventListener('change', async () => {
     const ok = await setCurrency(cur.value);
     if (!ok) { toast('Exchange rate unavailable for that currency right now.', 'info'); cur.value = fx.code; return; }
     refreshTickerPrices();
     route();
   });
-  lang.addEventListener('change', () => { setLang(lang.value); route(); });
 }
 
 // ---------------------------------------------------------------- account
@@ -263,7 +264,9 @@ async function initTicker() {
   live.addEventListener('status', (e) => {
     const pill = $('#livePill');
     pill.classList.toggle('on', e.detail.connected);
-    pill.querySelector('span').textContent = e.detail.connected ? t('Live · Binance stream') : t('Reconnecting…');
+    pill.querySelector('span').textContent = e.detail.connected
+      ? t('Live · Binance stream')
+      : e.detail.paused ? t('Paused while the tab is in the background') : t('Reconnecting…');
   });
 }
 
@@ -395,7 +398,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260916-141950";
+export const BUILD = 'DEV';
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
@@ -419,6 +422,12 @@ async function checkForUpdate() {
     location.reload();
   } catch { /* offline, or no version file — carry on with what is loaded */ }
 }
+
+// Saving silently failing is worse than saying so: everything keeps working for
+// the session and is then gone. Told once, not on every write.
+window.addEventListener('cv:store-failed', (e) => {
+  toast(`Nothing can be saved on this device — ${e.detail.reason}. Your watchlist, alerts and trades will be lost when you close the tab.`, 'down', 9000);
+});
 
 if (location.protocol === 'https:') {
   window.addEventListener('load', () => {
