@@ -1,9 +1,12 @@
 // Derivatives data: funding rate, open interest, long/short ratios and live liquidations.
-// Binance USD-M futures first, Bybit as a fallback where Binance futures is blocked.
+// Binance USD-M futures first, then Bybit, then OKX. Binance and Bybit both
+// geo-block their APIs in several regions (the browser only sees a CORS error),
+// and before the OKX step the whole futures page came up empty there.
 import { CONFIG } from '../config.js';
 import { getJson } from './http.js';
 
 const F = CONFIG.FUTURES_REST;
+const OKX_REST = 'https://www.okx.com';
 const n = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
 // null * 100 is 0, so a missing ratio used to render as a confident "0% are
 // long" rather than "unknown". Every percentage conversion goes through this.
@@ -84,9 +87,101 @@ export async function futuresSnapshot(symbol) {
         longShort: [], topTraders: [], takerFlow: [], fundingHistory: [],
       };
     } catch {
-      return null;
+      return okxSnapshot(symbol).catch(() => null);
     }
   }
+}
+
+// ---------------------------------------------------------------- OKX fallback
+// OKX wraps every answer as { code: '0', data: [...] } and reports an unknown
+// instrument as HTTP 200 with a non-zero code, so the code has to be checked.
+const okxRows = (j) => {
+  if (!j || j.code !== '0' || !Array.isArray(j.data)) throw new Error(`OKX: ${j?.msg || 'no data'}`);
+  return j.data;
+};
+const okxGet = (path, ttl) => getJson(`${OKX_REST}${path}`, { ttl }).then(okxRows);
+/** OKX funding interval in hours, from the two settlement times it publishes. */
+export function okxFundingHours(fundingTime, nextFundingTime) {
+  const h = (n(nextFundingTime) - n(fundingTime)) / 3600e3;
+  return Number.isFinite(h) && h >= 1 && h <= 24 ? Math.round(h) : 8;
+}
+
+/** Pure mapping from raw OKX rows to the snapshot shape (unit-tested). */
+export function okxSnapshotFrom(symbol, { mark, fund, idx, oi, fHist }) {
+  const markPx = n(mark?.markPx);
+  const indexPx = n(idx?.idxPx);
+  return {
+    source: 'OKX',
+    pair: `${symbol}-USDT-SWAP`,
+    fundingIntervalHours: okxFundingHours(fund?.fundingTime, fund?.nextFundingTime),
+    fetchedAt: Date.now(),
+    markPrice: markPx,
+    indexPrice: indexPx,
+    basisPct: indexPx && markPx !== null ? ((markPx - indexPx) / indexPx) * 100 : null,
+    fundingRate: n(fund?.fundingRate),
+    nextFundingTime: n(fund?.fundingTime),
+    openInterest: n(oi?.oiCcy),
+    openInterestUsd: n(oi?.oiUsd),
+    // OKX's positioning and open-interest history live under /rubik, which
+    // sends no CORS header, so a browser cannot read them. Worse, each blocked
+    // call trips the per-host breaker in http.js and takes every other OKX
+    // request down with it for 15 seconds. They are left empty on purpose.
+    oiHistory: [], longShort: [], topTraders: [], takerFlow: [],
+    fundingHistory: [...(fHist || [])]
+      .map((r) => ({ t: n(r.fundingTime), rate: n(r.realizedRate) ?? n(r.fundingRate) }))
+      .sort((a, b) => a.t - b.t),
+  };
+}
+
+async function okxSnapshot(symbol) {
+  const inst = `${symbol}-USDT-SWAP`;
+  // these two decide whether OKX lists the contract at all; if either fails
+  // the coin has no OKX perpetual and the caller shows "no futures data"
+  const [[mark], [fund]] = await Promise.all([
+    okxGet(`/api/v5/public/mark-price?instType=SWAP&instId=${inst}`, 15e3),
+    okxGet(`/api/v5/public/funding-rate?instId=${inst}`, 60e3),
+  ]);
+  if (!mark || !fund) throw new Error('OKX: no contract');
+  const opt = (path, ttl) => okxGet(path, ttl).catch(() => []);
+  const [idx, oi, fHist] = await Promise.all([
+    opt(`/api/v5/market/index-tickers?instId=${symbol}-USDT`, 15e3),
+    opt(`/api/v5/public/open-interest?instType=SWAP&instId=${inst}`, 30e3),
+    opt(`/api/v5/public/funding-rate-history?instId=${inst}&limit=30`, 10 * 60e3),
+  ]);
+  return okxSnapshotFrom(symbol, { mark, fund, idx: idx[0], oi: oi[0], fHist });
+}
+
+/** Pure mapping for the market table from OKX's bulk lists (unit-tested). */
+export function okxOverviewFrom(symbols, { marks = [], ois = [], funds = [] }) {
+  const byInst = (rows) => new Map(rows.map((r) => [r.instId, r]));
+  const m = byInst(marks), o = byInst(ois), f = byInst(funds);
+  return symbols.map((s) => {
+    const inst = `${s}-USDT-SWAP`;
+    const mk = m.get(inst);
+    if (!mk) return null;
+    const oi = o.get(inst), fr = f.get(inst);
+    return {
+      symbol: s, markPrice: n(mk.markPx),
+      fundingRate: fr ? n(fr.fundingRate) : null,
+      nextFundingTime: fr ? n(fr.fundingTime) : null,
+      fundingIntervalHours: fr ? okxFundingHours(fr.fundingTime, fr.nextFundingTime) : 8,
+      // OKX's bulk lists carry no index price, so there is no basis to show
+      basisPct: null,
+      openInterest: oi ? n(oi.oiCcy) : null,
+      openInterestUsd: oi ? n(oi.oiUsd) : null,
+    };
+  }).filter(Boolean);
+}
+
+async function okxOverview(symbols) {
+  const [marks, ois, funds] = await Promise.all([
+    okxGet('/api/v5/public/mark-price?instType=SWAP', 30e3),
+    okxGet('/api/v5/public/open-interest?instType=SWAP', 60e3).catch(() => []),
+    // every contract's funding in one ~300 KB answer; without it the table
+    // still shows prices and open interest, just no funding column
+    okxGet('/api/v5/public/funding-rate?instId=ANY', 60e3).catch(() => []),
+  ]);
+  return okxOverviewFrom(symbols, { marks, ois, funds });
 }
 
 // Market-wide funding / open interest table for the futures page.
@@ -110,9 +205,17 @@ export async function futuresOverview(symbols) {
         openInterestUsd: oi && mark ? n(oi.openInterest) * mark : null,
       };
     }));
-    return rows.filter(Boolean);
+    const out = rows.filter(Boolean);
+    out.source = 'Binance';
+    return out;
   } catch {
-    return [];
+    try {
+      const out = await okxOverview(symbols);
+      out.source = 'OKX';
+      return out;
+    } catch {
+      return [];
+    }
   }
 }
 
@@ -145,7 +248,6 @@ const SILENCE_MS = 20000;
 // So values are looked up lazily, per symbol, the first time one is liquidated,
 // and cached. A symbol that cannot be resolved is remembered as unknown for ten
 // minutes rather than re-requested on every frame.
-const OKX_REST = 'https://www.okx.com';
 const UNKNOWN_TTL = 600000;
 const okxCtVal = new Map();   // instId -> { value: number|null, at: number }
 const okxPending = new Map(); // instId -> Promise
@@ -312,6 +414,6 @@ export function interpretFutures(f) {
     if (oiChange > 5) notes.push(`Open interest is up ${oiChange.toFixed(1)}% in 12h — new leveraged positions are being opened.`);
     else if (oiChange < -5) notes.push(`Open interest is down ${Math.abs(oiChange).toFixed(1)}% in 12h — positions are being closed or liquidated.`);
   }
-  if (longPct !== null) notes.push(`${longPct.toFixed(0)}% of Binance futures accounts are long.`);
+  if (longPct !== null) notes.push(`${longPct.toFixed(0)}% of ${String(f.source || 'Binance').replace(/ Futures$/, '')} futures accounts are long.`);
   return { fundingPct, annualisedFundingPct: annual, fundingIntervalHours: intervalHours, oiChange12hPct: oiChange, longAccountsPct: longPct, notes };
 }

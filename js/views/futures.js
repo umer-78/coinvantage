@@ -24,7 +24,7 @@ export async function render(el, [symParam]) {
   const tsLine = (at) => `<span class="fine" title="${esc(dateTime(at, true))}">read ${esc(ago(at))}</span>`;
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Futures</h1><p>Leverage data from Binance USD-M perpetuals: what traders are paying to hold positions, how crowded those positions are, and who is being liquidated right now.</p></div></div>
+    <div class="page-head"><div><h1>Futures</h1><p>Leverage data from USDT perpetual futures — Binance where it is reachable, otherwise Bybit or OKX: what traders are paying to hold positions, how crowded those positions are, and who is being liquidated right now.</p></div></div>
     <div class="coin-layout" id="layout">
       <div class="stack" style="gap:14px">
         <div class="card" id="coinCard">${skeleton(5, 22)}</div>
@@ -47,10 +47,11 @@ export async function render(el, [symParam]) {
     const rows = await futuresOverview(list.map((c) => c.symbol));
     if (st.disposed) return;
     const byS = new Map(list.map((c) => [c.symbol, c]));
-    if (!rows.length) { $('#tableCard', el).innerHTML = errorBox('Binance futures data is not reachable from this network. Binance blocks its futures API in some regions, and the browser cannot see the difference between that and an outage.', drawTable); return; }
+    if (!rows.length) { $('#tableCard', el).innerHTML = errorBox('Futures data is not reachable from this network — neither Binance nor OKX answered. Exchanges block their APIs in some regions, and the browser cannot see the difference between that and an outage.', drawTable); return; }
+    const venue = rows.source || 'Binance';
     const intervals = [...new Set(rows.map((r) => r.fundingIntervalHours || 8))].sort((a, b) => a - b);
     $('#tableCard', el).innerHTML = `
-      <div class="card-h"><h3>Perpetual futures market</h3>${tsLine(Date.now())}</div>
+      <div class="card-h"><h3>Perpetual futures market · ${esc(venue)}</h3>${tsLine(Date.now())}</div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Mark price</th><th>Funding</th><th>Every</th><th>Annualised</th><th>Basis (mark vs index)</th><th>Open interest</th></tr></thead><tbody>
       ${rows.sort((a, b) => (b.openInterestUsd || 0) - (a.openInterestUsd || 0)).map((r) => {
         const f = r.fundingRate === null ? null : r.fundingRate * 100;
@@ -65,7 +66,7 @@ export async function render(el, [symParam]) {
           <td>${compact(r.openInterestUsd)}</td></tr>`;
       }).join('')}
       </tbody></table></div>
-      <p class="fine mt">Positive funding means longs pay shorts — the crowd is long and the market is paying for it. Deeply negative funding means the opposite. Extremes in either direction tend to unwind. Funding settles every ${intervals.join(' or ')} hours depending on the contract, which is why the annualised column is not the same multiple for every row. "Basis" here is mark price against index price; Binance's mark already smooths the basis in, so it reads smaller than the gap between the last traded price and the index.</p>`;
+      <p class="fine mt">Positive funding means longs pay shorts — the crowd is long and the market is paying for it. Deeply negative funding means the opposite. Extremes in either direction tend to unwind. Funding settles every ${intervals.join(' or ')} hours depending on the contract, which is why the annualised column is not the same multiple for every row. ${venue === 'Binance' ? '"Basis" here is mark price against index price; Binance\'s mark already smooths the basis in, so it reads smaller than the gap between the last traded price and the index.' : `${esc(venue)}'s bulk data has no index price, so basis is shown on the single-coin panel only.`}</p>`;
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => {
       st.sym = tr.dataset.sym;
       location.hash = `#/futures/${tr.dataset.sym}`;
@@ -85,7 +86,7 @@ export async function render(el, [symParam]) {
     if (!f) {
       st.charts.forEach((c) => c.destroy());
       st.charts = [];
-      card.innerHTML = errorBox(`No futures market data for ${st.sym} — it may be spot-only, or Binance futures may be unreachable from here.`, () => drawCoin());
+      card.innerHTML = errorBox(`No futures market data for ${st.sym} — it may be spot-only, or the futures exchanges may be unreachable from here.`, () => drawCoin());
       return;
     }
     const iv = interpretFutures(f);
@@ -103,7 +104,7 @@ export async function render(el, [symParam]) {
       </div>
       ${iv.notes.length ? `<ul class="reasons mt">${iv.notes.map((n) => `<li class="${/squeeze|liquidat|closed/i.test(n) ? 's' : 'b'}">${esc(n)}</li>`).join('')}</ul>` : ''}
       <div class="grid g2 mt">
-        <div><h4 class="fine">Open interest (72h)</h4><div id="oiC"></div></div>
+        <div><h4 class="fine">Open interest (72h)</h4>${f.oiHistory?.length ? '<div id="oiC"></div>' : `<p class="fine muted">${esc(f.source)} does not publish open-interest history to browsers.</p>`}</div>
         <div><h4 class="fine">Funding history</h4><div id="fdC"></div></div>
       </div>
       <p class="fine mt">Rising price with rising open interest = new money entering the move. Rising price with falling open interest = a short squeeze that can fade fast.</p>`;
