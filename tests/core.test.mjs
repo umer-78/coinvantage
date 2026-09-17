@@ -1111,3 +1111,38 @@ test('timing is judged against its own baseline, per timeframe', async () => {
   assert.ok(TESTED_TIMING.peakHitPct > TESTED_TIMING.baselinePct, 'the overall claim must beat its own baseline');
   assert.ok(TESTED_TIMING.tests >= 900);
 });
+
+test('OKX futures fallback maps funding interval, basis and history correctly', async () => {
+  const { okxSnapshotFrom, okxOverviewFrom, okxFundingHours, interpretFutures } = await import('../js/api/futures.js');
+  assert.equal(okxFundingHours('1789603200000', '1789632000000'), 8);
+  assert.equal(okxFundingHours('1789603200000', '1789617600000'), 4);
+  assert.equal(okxFundingHours(undefined, undefined), 8);
+  const f = okxSnapshotFrom('BTC', {
+    mark: { markPx: '101' }, idx: { idxPx: '100' },
+    fund: { fundingRate: '0.0001', fundingTime: '1789603200000', nextFundingTime: '1789617600000' },
+    oi: { oiCcy: '10', oiUsd: '1010' },
+    // newest first, as OKX sends them
+    fHist: [{ fundingTime: '2000', realizedRate: '0.0002' }, { fundingTime: '1000', fundingRate: '0.0001' }],
+  });
+  assert.equal(f.source, 'OKX');
+  assert.equal(f.fundingIntervalHours, 4);
+  assert.ok(Math.abs(f.basisPct - 1) < 1e-9);
+  assert.equal(f.openInterestUsd, 1010);
+  assert.deepEqual(f.fundingHistory.map((r) => r.rate), [0.0001, 0.0002]);
+  for (const k of ['oiHistory', 'longShort', 'topTraders', 'takerFlow']) assert.deepEqual(f[k], []);
+  const iv = interpretFutures(f);
+  assert.equal(iv.longAccountsPct, null);
+  assert.equal(iv.fundingIntervalHours, 4);
+  // the positioning note used to say "Binance" whatever the source was
+  const named = interpretFutures({ ...f, longShort: [{ t: 1, longPct: 60 }] });
+  assert.ok(named.notes.some((x) => x.includes('60% of OKX futures accounts')));
+
+  const rows = okxOverviewFrom(['BTC', 'NOPE'], {
+    marks: [{ instId: 'BTC-USDT-SWAP', markPx: '100' }],
+    ois: [{ instId: 'BTC-USDT-SWAP', oiCcy: '2', oiUsd: '200' }],
+    funds: [],
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].openInterestUsd, 200);
+  assert.equal(rows[0].fundingRate, null);                // missing funding stays unknown, not 0
+});
