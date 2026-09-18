@@ -897,19 +897,29 @@ export async function render(el, [symParam]) {
       body.innerHTML = skeleton(4);
       getCoinProfile(coin).then((p) => {
         if (st.tab !== 'about' || st.disposed) return;
+        // A lookup that failed and a coin that genuinely has no supply cap used
+        // to render identically, so a throttled request told the reader that
+        // Bitcoin — capped at 21 million — has an infinite supply.
+        const loaded = !!p && !p.unavailable;
+        const unknown = loaded ? '—' : '<span class="muted">not loaded</span>';
+        const note = p?.unavailable
+          ? '<p class="fine warn">Reference data did not load — the provider limits free requests. The figures below are unknown, not absent. Try again in a minute.</p>'
+          : p === null
+            ? '<p class="fine muted">No reference profile is published for this coin, so the figures below are unknown rather than absent.</p>'
+            : '';
         body.innerHTML = `<div class="grid g2">
-          <div><h3 style="margin-bottom:8px">About ${esc(coin.name)}</h3><p class="muted" style="line-height:1.6">${esc(p?.description || 'No description available.')}</p>
+          <div><h3 style="margin-bottom:8px">About ${esc(coin.name)}</h3>${note}<p class="muted" style="line-height:1.6">${esc(p?.description || (loaded ? 'No description available.' : ''))}</p>
             <div class="row mt">${(p?.categories || []).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}</div>
             <div class="row mt">${p?.homepage ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(p.homepage)}">Website ↗</a>` : ''}${p?.explorer ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(p.explorer)}">Explorer ↗</a>` : ''}</div></div>
           <dl class="kv">
             <dt>Circulating supply</dt><dd>${compact(coin.circulatingSupply, '')} ${esc(coin.symbol)}</dd>
-            <dt>Total supply</dt><dd>${p?.totalSupply ? compact(p.totalSupply, '') : '—'}</dd>
-            <dt>Max supply</dt><dd>${p?.maxSupply ? compact(p.maxSupply, '') : '∞ / —'}</dd>
-            <dt>Fully diluted value</dt><dd>${compact(p?.fdv)}</dd>
+            <dt>Total supply</dt><dd>${p?.totalSupply ? compact(p.totalSupply, '') : unknown}</dd>
+            <dt>Max supply</dt><dd>${p?.maxSupply ? compact(p.maxSupply, '') : loaded ? 'No cap' : unknown}</dd>
+            <dt>Fully diluted value</dt><dd>${p?.fdv ? compact(p.fdv) : unknown}</dd>
             <dt>All-time high</dt><dd>${usd(coin.ath)}${p?.athDate ? ` <span class="muted">${dateTime(p.athDate, false)}</span>` : ''}</dd>
-            <dt>30-day change</dt><dd>${changeHtml(p?.change30d)}</dd>
-            <dt>1-year change</dt><dd>${changeHtml(p?.change1y)}</dd>
-            <dt>Launched</dt><dd>${p?.genesisDate || '—'}</dd>
+            <dt>30-day change</dt><dd>${Number.isFinite(+p?.change30d) ? changeHtml(p.change30d) : unknown}</dd>
+            <dt>1-year change</dt><dd>${Number.isFinite(+p?.change1y) ? changeHtml(p.change1y) : unknown}</dd>
+            <dt>Launched</dt><dd>${p?.genesisDate || unknown}</dd>
           </dl></div>`;
       });
     }

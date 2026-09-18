@@ -171,7 +171,13 @@ export async function getCoinProfile(coin) {
       change30d: md.price_change_percentage_30d, change1y: md.price_change_percentage_1y,
       totalSupply: md.total_supply, maxSupply: md.max_supply, fdv: md.fully_diluted_valuation?.usd,
     };
-  } catch { return null; }
+  } catch {
+    // null means "this coin has no reference profile to fetch". A failed or
+    // rate-limited request is a different thing, and the page has to be able to
+    // tell them apart: it used to print "Max supply ∞" for Bitcoin whenever
+    // CoinGecko throttled the request.
+    return { unavailable: true };
+  }
 }
 
 export async function searchCoins(q) {
