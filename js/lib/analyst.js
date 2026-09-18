@@ -2,6 +2,7 @@
 // is sent to the language model, so the assistant works even without an API key.
 
 import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
+import { accuracyFor, TESTED_ACCURACY } from './predict.js';
 import { fx } from '../api/fx.js';
 
 // Every price the assistant quotes — levels, stops, targets, EMAs, Bollinger
@@ -59,8 +60,12 @@ function detectIntent(q) {
   if (/(portfolio|wallet|holding|my coins|my bag)/.test(s)) return 'portfolio';
   if (detectCompare(q)) return 'compare';
   if (isMarketWide(s)) return 'market';
+  // "How accurate are your predictions?" contains "predict", so it used to be
+  // answered with a price forecast for the focused coin — the question about
+  // the model answered with output from the model. Asking how well it works is
+  // checked first now.
+  if (/(backtest|win ?rate|accura|reliab|track record|history of signal|how good|does it work|trust)/.test(s)) return 'backtest';
   if (/(predict|forecast|future|will (it|the price|price|this)|go(ing)? (up|down)|next (hour|day|week|month)|tomorrow|pump|dump|target price|where .* (head|go)|up or down)/.test(s)) return 'forecast';
-  if (/(backtest|win ?rate|accura|reliab|track record|history of signal)/.test(s)) return 'backtest';
   if (/(position size|how much|\bsize\b|invest|risk|lot size|allocation|\$\s?\d|\d+\s?k?\s?(usd|usdt|dollars?|bucks))/.test(s)) return 'risk';
   if (/(exit|close|sell|take profit|tp\b|stop|get out)/.test(s)) return 'exit';
   if (/(entry|enter|buy|long|get in|good time|should i)/.test(s)) return 'entry';
@@ -298,10 +303,14 @@ function conflictBlock(ctx) {
   const c = conflictCheck(ctx.signal, ctx.forecast);
   if (!c) return '';
   const horizon = ctx.horizonText || 'the forecast horizon';
-  const signalWord = c.side === 'long' ? 'buy' : 'sell';
+  // This block still called the chart score a "buy" or a "sell" after the rest
+  // of the answer had stopped doing so — two sentences below a line saying the
+  // score describes how extended a move is rather than where it goes next. Both
+  // sides of the disagreement are now described the same way: as a lean.
+  const signalWord = c.side === 'long' ? 'up' : 'down';
   const modelWord = c.forecastSide === 'long' ? 'up' : 'down';
   const lines = [
-    `⚠️ **The two readings disagree — treat this as no clear edge.** The chart signal says **${signalWord}**, but the AI forecast puts the next ${horizon} at **${c.probUp}% up**, which leans **${modelWord}**.`,
+    `⚠️ **The two readings disagree — treat this as no clear edge.** The chart reading leans **${signalWord}**, but the AI forecast puts the next ${horizon} at **${c.probUp}% up**, which leans **${modelWord}**.`,
   ];
   lines.push(c.forecastIsWeak
     ? `On this coin and timeframe the forecast has ${c.acc === null || c.acc === undefined ? 'no measured accuracy yet' : `only scored ${c.acc}% on recent unseen data`}, so it is the weaker of the two — but it is still pointing the other way, and that is a reason to take a smaller position, not a bigger one.`
@@ -486,7 +495,15 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     case 'backtest': {
       const b = ctx.backtest;
-      if (!b?.ok) { out.push('No backtest available for this chart yet.'); break; }
+      // The honest headline answer to "is this any good" is the walk-forward
+      // measurement and the baseline it has to beat, not this one chart's
+      // backtest. Lead with it, and say plainly when there is no edge.
+      const a = ctx.interval ? accuracyFor(ctx.interval) : null;
+      if (a) {
+        out.push(`**Measured forecast accuracy on ${ctx.interval} charts: ${a.accuracyPct}%**, against ${a.baselinePct}% for always calling the more common direction over the same tests — ${a.beatsBaseline ? `an edge of ${a.edgePts} points` : `${Math.abs(a.edgePts)} points **worse** than that baseline, so it has no measured edge here`}.`);
+      }
+      out.push(`Across every timeframe tested the engine scored ${TESTED_ACCURACY.all}% against a ${TESTED_ACCURACY.allBaseline}% baseline, so overall it does **not** beat simply calling the more common direction. It is listed as having no edge on ${(TESTED_ACCURACY.noEdge || []).join(', ')}. ${TESTED_ACCURACY.caveat}`);
+      if (!b?.ok) { out.push('\nNo backtest of the chart rules is available for this chart yet.'); break; }
       out.push(`**Backtest of these signal rules on this chart** (long-only, 0.1% fees)\n- Trades: ${b.tradeCount}\n- Win rate: ${b.winRate ?? '—'}%\n- Strategy return: ${pct(b.totalReturnPct)} vs buy & hold ${pct(b.buyHoldPct)}\n- Max drawdown: ${b.maxDrawdownPct}%\n- Profit factor: ${b.profitFactor ?? '—'}`);
       out.push(`\n${b.totalReturnPct > b.buyHoldPct ? 'The rules beat buy & hold on this sample.' : 'Buy & hold did better on this sample — treat signals as timing help, not a guarantee.'} Past results on one coin and timeframe don't predict future performance; test several before trusting them.`);
       break;

@@ -1359,3 +1359,73 @@ test('a coin reference lookup that failed is never shown as a coin with no suppl
   // and a failed load must say so rather than printing bare dashes
   assert.match(view, /Reference data did not load/, 'a failed reference lookup is silent again');
 });
+
+test('a question about how well the engine works is answered with its measured record, not a price forecast', async () => {
+  const { ruleBasedAnswer } = await import('../js/lib/analyst.js');
+  const { generateSignal } = await import('../js/lib/signals.js');
+  const { forecast, summarizeForecast, TESTED_ACCURACY } = await import('../js/lib/predict.js');
+
+  const candles = demoCandles('bitcoin', '4h', 600);
+  const sig = generateSignal(candles, { interval: '4h' });
+  const fc = forecast(candles, { horizon: 6, fast: true });
+  const ctx = {
+    coin: { name: 'Bitcoin', symbol: 'BTC', price: sig.price, change24h: 1.2 },
+    interval: '4h', signal: sig, forecast: fc.ok ? summarizeForecast(fc) : null, mtf: null,
+  };
+
+  // "predictions" contains "predict", so this used to match the forecast intent
+  // first and answer a question about the model with output from the model.
+  for (const q of ['how accurate are your predictions', 'how reliable is this forecast', 'can I trust this']) {
+    const a = ruleBasedAnswer(q, ctx);
+    assert.match(a, /easured forecast accuracy/, `"${q}" was not answered with the measured record`);
+    assert.ok(a.includes(String(TESTED_ACCURACY.all)), `"${q}" did not quote the overall tested accuracy`);
+    assert.match(a, /does \*\*not\*\* beat|no measured edge/, `"${q}" omitted that it does not beat its baseline`);
+  }
+
+  // a real forecast question must still get a forecast
+  const f = ruleBasedAnswer('will btc go up tomorrow', ctx);
+  assert.match(f, /chance of going up|AI forecast/i, 'a forecast question stopped getting a forecast');
+});
+
+test('the assistant never calls the chart score a buy or a sell, including when the readings disagree', async () => {
+  const { ruleBasedAnswer, conflictCheck } = await import('../js/lib/analyst.js');
+  const { generateSignal } = await import('../js/lib/signals.js');
+  const { forecast, summarizeForecast } = await import('../js/lib/predict.js');
+
+  // The disagreement warning survived the audit that removed buy/sell verdicts
+  // everywhere else: it said "The chart signal says **buy**" two sentences
+  // below a line explaining the score does not say where price goes next.
+  // The block only renders when the two readings actually disagree, so the
+  // forecast is forced to lean against the chart rather than left to chance —
+  // otherwise this test passes without ever reaching the line it guards.
+  const banned = [/signal says \*\*(buy|sell)\*\*/i, /chart signal says/i];
+  let exercised = 0;
+
+  for (const coin of ['bitcoin', 'ethereum', 'solana']) {
+    for (const iv of ['15m', '1h', '4h', '1d']) {
+      const c = demoCandles(coin, iv === '1d' ? '1d' : '4h', 600);
+      const sig = generateSignal(c, { interval: iv });
+      if (!sig.ok) continue;
+      const fc = forecast(c, { horizon: 6, fast: true });
+      if (!fc.ok) continue;
+      const side = sig.plan?.side ?? (sig.score > 0 ? 'long' : sig.score < 0 ? 'short' : null);
+      if (!side) continue;
+
+      // point the forecast the other way, keeping the real summary shape
+      const f = { ...summarizeForecast(fc), probUpPct: side === 'long' ? 30 : 70 };
+      const ctx = { coin: { name: coin, symbol: coin.slice(0, 3).toUpperCase(), price: sig.price, change24h: 0.4 },
+                    interval: iv, signal: sig, forecast: f };
+      assert.ok(conflictCheck(sig, f), `${coin}/${iv}: the disagreement was not set up`);
+
+      for (const q of ['should i buy', 'what is it doing', 'when do i exit']) {
+        const a = ruleBasedAnswer(q, ctx);
+        if (/readings disagree/i.test(a)) exercised++;
+        for (const re of banned) {
+          assert.doesNotMatch(a, re, `${coin}/${iv} "${q}" calls the chart score a buy or sell`);
+        }
+      }
+    }
+  }
+
+  assert.ok(exercised > 0, 'the disagreement warning never rendered, so this test proved nothing');
+});
