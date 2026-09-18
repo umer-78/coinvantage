@@ -1420,6 +1420,8 @@ test('the assistant never calls the chart score a buy or a sell, including when 
       for (const q of ['should i buy', 'what is it doing', 'when do i exit']) {
         const a = ruleBasedAnswer(q, ctx);
         if (/readings disagree/i.test(a)) exercised++;
+        // a fallback beginning with "the" once produced "the next the forecast horizon"
+        assert.doesNotMatch(a, /\bthe next the\b/i, `${coin}/${iv} "${q}" has a doubled article`);
         for (const re of banned) {
           assert.doesNotMatch(a, re, `${coin}/${iv} "${q}" calls the chart score a buy or sell`);
         }

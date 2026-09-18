@@ -302,7 +302,9 @@ export function conflictCheck(sig, forecast) {
 function conflictBlock(ctx) {
   const c = conflictCheck(ctx.signal, ctx.forecast);
   if (!c) return '';
-  const horizon = ctx.horizonText || 'the forecast horizon';
+  // The template reads "the next ${horizon}", so a fallback beginning with
+  // "the" produced "the next the forecast horizon".
+  const horizon = ctx.horizonText || `${ctx.forecast?.horizonBars ?? 'few'} candles`;
   // This block still called the chart score a "buy" or a "sell" after the rest
   // of the answer had stopped doing so — two sentences below a line saying the
   // score describes how extended a move is rather than where it goes next. Both
