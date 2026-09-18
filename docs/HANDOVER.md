@@ -80,6 +80,15 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it. `md5sum` both and compare.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Futures data fallback (2026-09-17)
+Binance futures and Bybit both geo-block some regions (the browser only sees a
+CORS error), which left the Futures page empty there. `js/api/futures.js` now
+falls back to OKX for the market table and the single-coin panel. OKX's
+`/api/v5/rubik/*` statistics send no CORS header, so positioning and
+open-interest history are not available from OKX in a browser; the panel says
+so instead of drawing an empty chart. `tools/smoke.mjs` ignores CORS errors only
+from the geo-blocking hosts, so a new browser-unreadable endpoint still fails it.
+
 ### Measured: the score is descriptive, not tradeable (2026-09-14)
 
 Two tests, and the second overturned the first. Both are kept here because the
