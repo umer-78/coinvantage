@@ -282,8 +282,22 @@ export function liquidationStream(onEvent) {
   let source = 'binance', gotFrame = false;
   const recent = new Set();
 
+  // The pill used to read "live · Binance" while the rows were coming from OKX,
+  // because the view only learned the venue from a row and none had arrived yet.
+  const VENUE = { binance: 'Binance', okx: 'OKX' };
+  const say = (status) => onEvent(null, status, VENUE[source]);
+
   const clearTimers = () => { clearTimeout(timer); clearTimeout(watchdog); timer = null; watchdog = null; };
-  const shut = () => { try { ws?.close(); } catch { /* ignore */ } ws = null; };
+  // Detach the handlers before closing: otherwise the close we ask for here
+  // fires onclose, which schedules its own reconnect, and the source switch
+  // below ends up with two sockets racing each other.
+  const shut = () => {
+    if (ws) {
+      ws.onopen = null; ws.onmessage = null; ws.onclose = null; ws.onerror = null;
+      try { ws.close(); } catch { /* ignore */ }
+    }
+    ws = null;
+  };
 
   const armWatchdog = () => {
     clearTimeout(watchdog);
@@ -292,16 +306,20 @@ export function liquidationStream(onEvent) {
       // Opened, stayed silent: the connection exists but nothing is coming
       // through it. Binance has a documented fallback; OKX does not, so a
       // silent OKX is reported as unavailable rather than cycled forever.
-      if (source === 'binance') { onEvent(null, 'switching'); shut(); source = 'okx'; retry = 0; connect(); }
-      else onEvent(null, 'failed');
+      if (source === 'binance') { say('switching'); shut(); source = 'okx'; retry = 0; connect(); }
+      else say('failed');
     }, SILENCE_MS);
   };
 
-  const onFrame = () => { if (!gotFrame) { gotFrame = true; clearTimeout(watchdog); onEvent(null, 'live'); } };
+  // Proof the feed is reaching us. For OKX the subscribe acknowledgement is that
+  // proof, which matters because a quiet stretch with no liquidation is normal
+  // and used to be reported as "no feed reaches this network".
+  const alive = () => { gotFrame = true; clearTimeout(watchdog); say('live'); };
+  const onFrame = () => { if (!gotFrame) alive(); };
 
   function connectBinance() {
     ws = new WebSocket(`${CONFIG.FUTURES_WS}/ws/!forceOrder@arr`);
-    ws.onopen = () => { retry = 0; onEvent(null, 'open'); armWatchdog(); };
+    ws.onopen = () => { retry = 0; say('open'); armWatchdog(); };
     ws.onmessage = (ev) => {
       onFrame();
       try {
@@ -329,14 +347,17 @@ export function liquidationStream(onEvent) {
     ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
     ws.onopen = () => {
       retry = 0;
-      onEvent(null, 'open');
+      say('open');
       try { ws.send(JSON.stringify({ op: 'subscribe', args: [{ channel: 'liquidation-orders', instType: 'SWAP' }] })); } catch { /* ignore */ }
       armWatchdog();
     };
     ws.onmessage = async (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (!Array.isArray(msg?.data)) return; // subscribe acknowledgement
+      // The acknowledgement is not data, but it does prove the channel is open.
+      if (msg?.event === 'subscribe') { alive(); return; }
+      if (msg?.event === 'error') { say('failed'); return; }
+      if (!Array.isArray(msg?.data)) return;
       onFrame();
       for (const row of msg.data) {
         const instId = row.instId || '';
@@ -373,11 +394,17 @@ export function liquidationStream(onEvent) {
     gotFrame = false;
     try {
       if (source === 'binance') connectBinance(); else connectOkx();
-    } catch { onEvent(null, 'failed'); return; }
+    } catch { say('failed'); return; }
+    // A blocked network does not always refuse the handshake — it can hold it
+    // open, in which case onopen, onclose and onerror all stay silent. Arming
+    // the watchdog here rather than only in onopen means a socket that never
+    // connects falls back exactly like one that connects and says nothing,
+    // instead of leaving the pill on "connecting…" for ever.
+    armWatchdog();
     ws.onclose = () => {
       if (closed) return;
       clearTimeout(watchdog);
-      onEvent(null, retry >= 4 ? 'failed' : 'reconnecting');
+      say(retry >= 4 ? 'failed' : 'reconnecting');
       timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** retry++));
     };
     ws.onerror = () => { try { ws.close(); } catch { /* ignore */ } };
