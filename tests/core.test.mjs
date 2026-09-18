@@ -1310,3 +1310,27 @@ test('a value the app cannot show is never left as a bare dash with no explanati
   // and the explanation must be the real reason, not a generic string
   assert.match(src, /t\?\.reason/, 'the scanner no longer carries the timing reason from the engine');
 });
+
+test('a suggested question is allowed to wrap, so one long prompt cannot widen a phone screen', async () => {
+  const fs = await import('node:fs');
+  const css = fs.readFileSync('css/app.css', 'utf8');
+  const view = fs.readFileSync('js/views/assistant.js', 'utf8');
+
+  // The assistant's suggestions are whole sentences rendered with .btn, which
+  // pins white-space to nowrap and the height to 38px. One prompt came out
+  // 416px wide on a 390px phone; because it could not wrap it pushed the visual
+  // viewport to 463px and the entire page rendered zoomed out.
+  const rule = css.match(/\.suggest button \{[^}]*\}/);
+  assert.ok(rule, '.suggest button rule is gone');
+  assert.match(rule[0], /white-space:\s*normal/, 'suggestion chips are back to nowrap');
+  assert.match(rule[0], /max-width:\s*100%/, 'a suggestion chip can exceed its container again');
+  assert.match(rule[0], /height:\s*auto/, 'a wrapped suggestion is still pinned to one line height');
+
+  // and .btn itself must keep nowrap — real buttons should not wrap
+  const btn = css.match(/\n\.btn \{[^}]*\}/);
+  assert.ok(btn && /white-space:\s*nowrap/.test(btn[0]), '.btn lost its nowrap');
+
+  // the suggestions really are sentences, which is why this matters
+  const longest = [...view.matchAll(/'([^']{25,})'/g)].map((m) => m[1]).sort((a, b) => b.length - a.length)[0] || '';
+  assert.ok(longest.length > 40, 'expected the assistant to offer sentence-length prompts');
+});
