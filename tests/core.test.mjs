@@ -1290,3 +1290,23 @@ test('the liquidation feed falls back when the socket never opens, and never cal
 
   stop();
 });
+
+test('a value the app cannot show is never left as a bare dash with no explanation', async () => {
+  const fs = await import('node:fs');
+
+  // This app's rule is that a missing number says why it is missing — the
+  // futures page names the OKX limitation, the coin page explains a forecast
+  // with no turning point. The scanner's "Move timing" column broke that rule:
+  // two unrelated causes both rendered as a silent "—", so a reader could not
+  // tell an unmeasurable chart from a broken one.
+  const src = fs.readFileSync('js/views/scanner.js', 'utf8');
+
+  const dashes = [...src.matchAll(/<span class="muted"[^>]*>—<\/span>/g)].map((m) => m[0]);
+  assert.ok(dashes.length > 0, 'expected the scanner to render placeholder dashes');
+  for (const d of dashes) {
+    assert.match(d, /title="/, `an unexplained placeholder dash is back in the scanner: ${d}`);
+  }
+
+  // and the explanation must be the real reason, not a generic string
+  assert.match(src, /t\?\.reason/, 'the scanner no longer carries the timing reason from the engine');
+});
