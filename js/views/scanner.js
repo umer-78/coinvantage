@@ -33,7 +33,12 @@ export async function render(el) {
   const timingCell = (r) => {
     const t = r.tm;
     if (r.fc === undefined) return '';
-    if (!t?.ok || !t.shaped) return '<span class="muted">—</span>';
+    // One bare dash used to cover two different things — no timing could be
+    // built at all, and a forecast with no turning point inside the horizon —
+    // and explained neither. The reason already exists; the coin page prints
+    // it. Carry it here too so the two pages cannot disagree.
+    if (!t?.ok) return `<span class="muted" title="${esc(t?.reason || 'No forecast on this chart, so there is nothing to time.')}">—</span>`;
+    if (!t.shaped) return `<span class="muted" title="${esc(`The matched past charts drifted ${t.endPct >= 0 ? 'up' : 'down'} steadily rather than spiking, so there is no clear turning point to call inside this horizon.`)}">—</span>`;
     const m = t.rising ? t.peak : t.trough;
     return `<span class="${t.rising ? 'up' : 'down'}">${t.rising ? '▲ peaks' : '▼ bottoms'} in ${esc(horizonText(st.interval, m.bar))}</span>`;
   };
