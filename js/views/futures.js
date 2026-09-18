@@ -135,7 +135,7 @@ export async function render(el, [symParam]) {
     pill.classList.toggle('warn', state === 'failed');
     pill.querySelector('span').textContent =
       state === 'streaming' ? `live · ${st.venue || 'Binance'}`
-      : state === 'live' ? `live · ${st.venue || 'Binance'}`
+      : state === 'live' ? `connected · ${st.venue || 'Binance'} — waiting for a liquidation`
       : state === 'switching' ? 'switching source…'
       : state === 'open' ? 'connected — waiting'
       : state === 'failed' ? 'no feed reaches this network'
@@ -143,8 +143,11 @@ export async function render(el, [symParam]) {
   };
 
   let pending = false;
-  st.stop = liquidationStream((ev, status) => {
+  st.stop = liquidationStream((ev, status, venue) => {
+    // the stream names its own venue on every status change, so the pill stops
+    // claiming Binance while the rows are actually coming from OKX
     if (ev?.venue) st.venue = ev.venue;
+    else if (venue) st.venue = venue;
     // the pill only ever turned green inside the first event, so a healthy
     // socket with no large liquidation yet looked identical to a dead one
     if (!ev) { if (st.liqState !== 'streaming' || status === 'failed' || status === 'switching') setPill(status); return; }

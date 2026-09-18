@@ -1240,3 +1240,53 @@ test('OKX futures fallback maps funding interval, basis and history correctly', 
   assert.equal(rows[0].openInterestUsd, 200);
   assert.equal(rows[0].fundingRate, null);                // missing funding stays unknown, not 0
 });
+
+test('the liquidation feed falls back when the socket never opens, and never calls a quiet OKX feed dead', async (t) => {
+  const { liquidationStream } = await import('../js/api/futures.js');
+
+  // A blocked network often holds the handshake rather than refusing it: no
+  // onopen, no onclose, no onerror. The watchdog used to be armed inside
+  // onopen, so in that case nothing was ever armed and the pill read
+  // "connecting…" for ever with no fallback and no failure.
+  const sockets = [];
+  class FakeSocket {
+    constructor(url) { this.url = url; this.sent = []; this.closed = false; sockets.push(this); }
+    send(x) { this.sent.push(x); }
+    close() { this.closed = true; this.onclose?.(); }
+  }
+  const realWS = globalThis.WebSocket;
+  globalThis.WebSocket = FakeSocket;
+  t.after(() => { globalThis.WebSocket = realWS; });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+
+  const seen = [];
+  const stop = liquidationStream((ev, status, venue) => { if (!ev) seen.push(`${status}:${venue}`); });
+
+  assert.equal(sockets.length, 1, 'no socket was opened');
+  assert.match(sockets[0].url, /binance/i);
+
+  // the handshake hangs — nothing at all comes back
+  t.mock.timers.tick(21000);
+  assert.ok(seen.includes('switching:Binance'), `no fallback fired: ${seen.join(', ') || '(silence)'}`);
+  assert.equal(sockets.length, 2, 'no replacement socket was opened');
+  assert.match(sockets[1].url, /okx/i);
+
+  // the abandoned socket must not schedule a reconnect of its own
+  sockets[0].onclose?.();
+  assert.equal(sockets.length, 2, 'the discarded socket started a second connection');
+
+  // OKX confirms the subscription and then stays quiet, which is normal
+  sockets[1].onopen?.();
+  sockets[1].onmessage?.({ data: JSON.stringify({ event: 'subscribe', arg: { channel: 'liquidation-orders' } }) });
+  assert.ok(seen.includes('live:OKX'), `the acknowledgement was not taken as proof of life: ${seen.join(', ')}`);
+
+  seen.length = 0;
+  t.mock.timers.tick(90000);
+  assert.ok(!seen.some((s) => s.startsWith('failed')),
+    `a healthy but quiet OKX feed was reported dead: ${seen.join(', ')}`);
+
+  // every status names the venue, so the pill cannot claim Binance while on OKX
+  assert.ok(seen.concat(['live:OKX']).every((s) => /:(Binance|OKX)$/.test(s)), 'a status arrived with no venue');
+
+  stop();
+});
