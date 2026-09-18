@@ -275,7 +275,11 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .chat-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
 .chat-input textarea { flex: 1; min-height: 44px; max-height: 140px; }
 .suggest { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 18px 12px; }
-.suggest button { font-size: 12px; }
+/* These carry whole questions, not button labels. .btn pins white-space to
+   nowrap and the height to 38px, so one long prompt became an unbreakable
+   416px box that pushed the phone viewport wider than the screen and left the
+   whole assistant page rendering zoomed out. */
+.suggest button { font-size: 12px; white-space: normal; height: auto; min-height: 30px; padding: 6px 12px; text-align: left; max-width: 100%; }
 .typing { display: inline-flex; gap: 4px; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: blink 1.2s infinite; }
 .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
