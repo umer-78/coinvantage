@@ -87,10 +87,18 @@ export class LineChart {
     }
     // x labels
     ctx.textAlign = 'center';
-    const xt = 5;
+    // Six labels were always drawn, so on a half-width card or a phone labels
+    // like "Sep 12, 4 PM" ran into each other. Fit as many as the width allows,
+    // and keep each one fully inside the plot instead of a fixed 24px inset.
+    const maxXt = 5;
+    const sampleW = Math.max(...Array.from({ length: maxXt + 1 }, (_, k) =>
+      ctx.measureText(this.o.xFormat(xmin + ((xmax - xmin) * k) / maxXt)).width));
+    const xt = Math.max(1, Math.min(maxXt, Math.floor((plotR - left - sampleW) / (sampleW + 14))));
     for (let k = 0; k <= xt; k++) {
       const xv = xmin + ((xmax - xmin) * k) / xt;
-      ctx.fillText(this.o.xFormat(xv), Math.min(plotR - 24, Math.max(24, X(xv))), this.h - 10);
+      const label = this.o.xFormat(xv);
+      const half = ctx.measureText(label).width / 2;
+      ctx.fillText(label, Math.min(plotR - half, Math.max(left + half, X(xv))), this.h - 10);
     }
     // divider
     if (this.divider !== null) {
