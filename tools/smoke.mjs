@@ -29,6 +29,12 @@ const ROUTES = [
 
 // Network noise we expect in a sandbox with no internet.
 const IGNORE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|fonts\.googleapis|429|403|backend unavailable|Failed to fetch|NetworkError|Load failed|ServiceWorker|sw\.js|WebSocket connection to/i;
+// Binance and Bybit geo-block some regions, and CoinGecko rate-limits; all three
+// answer those with no CORS header, so the browser logs a CORS error that the
+// app already handles by falling back. A CORS error from any OTHER host is still
+// reported — that is how a browser-unreadable endpoint gets caught.
+const GEO_CORS = /blocked by CORS policy/i;
+const GEO_HOSTS = /(fapi\.binance\.com|api\.bybit\.com|api\.coingecko\.com)/i;
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -39,6 +45,7 @@ page.on('console', (m) => {
   if (m.type() !== 'error') return;
   const text = m.text();
   if (IGNORE.test(text)) return;
+  if (GEO_CORS.test(text) && GEO_HOSTS.test(text.split(' from origin')[0])) return;
   problems.push(`[${current}] console: ${text}`);
 });
 page.on('pageerror', (e) => { problems.push(`[${current}] pageerror: ${e.message}`); });
