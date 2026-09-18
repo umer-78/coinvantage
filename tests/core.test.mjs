@@ -1334,3 +1334,28 @@ test('a suggested question is allowed to wrap, so one long prompt cannot widen a
   const longest = [...view.matchAll(/'([^']{25,})'/g)].map((m) => m[1]).sort((a, b) => b.length - a.length)[0] || '';
   assert.ok(longest.length > 40, 'expected the assistant to offer sentence-length prompts');
 });
+
+test('a coin reference lookup that failed is never shown as a coin with no supply cap', async () => {
+  const fs = await import('node:fs');
+  const market = fs.readFileSync('js/api/market.js', 'utf8');
+  const view = fs.readFileSync('js/views/coin.js', 'utf8');
+
+  // CoinGecko rate-limits free requests, so getCoinProfile fails intermittently.
+  // It used to answer a failure and "this coin has no profile" with the same
+  // null, and the About tab rendered both as "Max supply ∞ / —". Bitcoin is
+  // capped at 21 million, so on a throttled load the page stated the opposite
+  // of the truth.
+  const fn = market.match(/export async function getCoinProfile[\s\S]*?\n}/);
+  assert.ok(fn, 'getCoinProfile is gone');
+  assert.match(fn[0], /unavailable:\s*true/, 'a failed profile lookup is indistinguishable from an absent one again');
+
+  // the infinity claim may only be made about a profile that actually loaded
+  const infinity = [...view.matchAll(/[^\n]*∞[^\n]*/g)].map((m) => m[0]);
+  for (const line of infinity) {
+    assert.fail(`the About tab still claims an infinite supply: ${line.trim()}`);
+  }
+  assert.match(view, /loaded \? 'No cap' : unknown/, 'the max-supply cell no longer distinguishes "no cap" from "not loaded"');
+
+  // and a failed load must say so rather than printing bare dashes
+  assert.match(view, /Reference data did not load/, 'a failed reference lookup is silent again');
+});
