@@ -1,8 +1,9 @@
 # CoinVantage — live crypto markets, signals & AI forecasts
 
-A fast, installable website (works on phones and computers) that shows live crypto
-market data, Binance-style charts, buy/sell signals, multi-year history comparison and
-an AI price forecast — **with its own built-in AI, no paid API keys required**.
+An installable website for live crypto markets: prices, Binance-style charts,
+buy/sell signals, multi-year history comparison and an AI price forecast that
+runs right on your machine — **no paid API keys required**. Works on phones and
+computers alike.
 
 > Signals, forecasts and AI answers are educational tools, not financial advice.
 > The site never places trades and never asks for exchange API keys, private keys or seed phrases.
