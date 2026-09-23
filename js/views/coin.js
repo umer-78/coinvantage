@@ -1,7 +1,7 @@
 import { findCoin, getCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
-import { generateSignal, confluence, geometryFor } from '../lib/signals.js';
+import { generateSignal, confluence, geometryFor, upRateFor } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { TESTED_ACCURACY, summarizeForecast } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
@@ -17,6 +17,12 @@ import { logActivity, logForecastShown } from '../api/activity.js';
 import { tradeSummary } from '../lib/summary.js';
 import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
 import { fx } from '../api/fx.js';
+import {
+  loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger,
+  rollingAccuracy, learningStatus, accuracySparkline, adaptiveWeights,
+  dampenConfidence, threeModelEnsemble, signalMeter, riskWarnings, anomalyFlags,
+  sparklineSvg,
+} from '../lib/selfimprove.js';
 
 export const title = (p) => (p[0] || 'Coin').toUpperCase();
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -440,12 +446,26 @@ export async function render(el, [symParam]) {
     if (!sig.ok) { card.innerHTML = `<h3>Signal</h3><p class="muted">${esc(sig.reason)}</p>`; return; }
     const pos = (sig.score + 100) / 2;
     const plan = sig.plan;
+    const meter = signalMeter(sig.score);
+    const meterTone = meter.tone === 'up' ? 'up' : meter.tone === 'down' ? 'down' : 'flat';
+    const warnings = riskWarnings({
+      signal: sig, forecast: st.forecast, backtest: st.backtest, interval: st.interval,
+      anomalies: st.anomalies || [],
+      noEdgeTimeframe: (TESTED_ACCURACY.noEdge || []).includes(st.interval) || (['1s', '5s', '10s', '1m', '5m', '1w'].includes(st.interval)),
+    });
     card.innerHTML = `
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
       <div class="verdict">
         <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
         <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Extended down</span><span>No trend</span><span>Extended up</span></div></div>
       </div>
+      <div class="signal-meter mt">
+        <div class="row spread"><b>Signal strength</b><span class="chip ${meterTone}">${esc(meter.label)}</span></div>
+        <div class="meter-track" style="margin-top:8px"><i class="meter-needle" style="left:${meter.pos}%"></i></div>
+        <div class="row spread fine" style="margin-top:4px"><span>Strong sell</span><span>Sell</span><span>Neutral</span><span>Buy</span><span>Strong buy</span></div>
+        <p class="fine" style="margin:6px 0 0">Conventional strength meter for how far the indicators are extended. The measured record is separate: on ${esc(st.interval)}, readings like this were followed by a higher price <b>${(() => { const b = upRateFor(st.interval, sig.score); return b ? b.upRatePct + '%' : 'unmeasured here'; })()}</b> of the time — a high score means the move is extended, not that it will continue.</p>
+      </div>
+      ${warnings.length ? `<div class="risk-list mt">${warnings.map((w) => `<div class="risk-item ${w.level}">${icon('info', 14)}<span>${esc(w.text)}</span></div>`).join('')}</div>` : ''}
       ${conf ? `<p class="combined mt">Standing view across all timeframes: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). The panel below reads the ${st.interval} chart only.</p>` : ''}
       <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
       ${summaryHtml(sig)}
@@ -502,6 +522,24 @@ export async function render(el, [symParam]) {
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
     st.forecast = fc;
     st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
+
+    // Local self-improvement ledger: resolve forecasts whose horizon has passed
+    // on this coin/interval, then record the new one before its outcome is known.
+    try {
+      let ledger = loadLedger();
+      ledger = resolveDueLedger(ledger, st.candles, { symbol: coin.symbol, interval: iv });
+      if (fc.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
+        ledger = recordForecast(ledger, {
+          symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
+          horizonBars: fc.horizon, horizonAt: fc.path[fc.path.length - 1]?.t,
+        });
+      }
+      saveLedger(ledger);
+      st.ledger = ledger;
+      st.ensemble3 = threeModelEnsemble(st.candles, { ledger, horizon: H });
+      st.anomalies = anomalyFlags(st.candles);
+    } catch { /* ledger is a convenience, never load-bearing */ }
+
     if (fc.ok) {
       // Logged before the outcome is known, so "your hit rate" is honest.
       logForecastShown({
@@ -529,6 +567,20 @@ export async function render(el, [symParam]) {
   function drawForecastCard(fc) {
     const dirTxt = fc.direction === 'UP' ? '<b class="up">Likely higher</b>' : fc.direction === 'DOWN' ? '<b class="down">Likely lower</b>' : '<b class="flat">Sideways / uncertain</b>';
     const e = fc.ensemble;
+    const ledger = st.ledger || loadLedger();
+    const ls = learningStatus(ledger);
+    const spark = accuracySparkline(ledger, 50);
+    const ens3 = st.ensemble3;
+    const band50 = typeof TESTED_ACCURACY.band50?.[st.interval] === 'number' ? TESTED_ACCURACY.band50[st.interval] : null;
+    const band80 = typeof TESTED_ACCURACY.band80?.[st.interval] === 'number' ? TESTED_ACCURACY.band80[st.interval] : null;
+    const brier = typeof TESTED_ACCURACY.brier?.[st.interval] === 'number' ? TESTED_ACCURACY.brier[st.interval] : (typeof e.brier === 'number' ? e.brier : null);
+    const trendCls = ls.trend === 'improving' ? 'up' : ls.trend === 'declining' ? 'down' : '';
+    const winHtml = (w) => {
+      const r = ls.windows[w];
+      if (r.pct === null) return '<span class="muted">—</span>';
+      const cls = r.pct >= 55 ? 'up' : r.pct < 45 ? 'down' : '';
+      return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
+    };
     $('#fcCard', el).innerHTML = `
       <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${fc.confidence === 'High' ? 'up' : fc.confidence === 'Moderate' ? 'warn' : ''}">${fc.confidence} confidence</span></div>
       <div class="prob">${ring(fc.probUp)}
@@ -539,6 +591,31 @@ export async function render(el, [symParam]) {
           <div class="fine">Tested accuracy: <b>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'}</b> on ${e.samples} unseen cases</div>
         </div>
       </div>
+      <div class="learning-box mt">
+        <div class="row spread"><b>Self-improving model</b><span class="chip ${trendCls}">${esc(ls.trend.replace('-', ' '))}</span></div>
+        <div class="grid g4" style="margin-top:8px">
+          <div class="stat"><span class="k">Last 20</span><span class="v" style="font-size:16px">${winHtml(20)}</span></div>
+          <div class="stat"><span class="k">Last 50</span><span class="v" style="font-size:16px">${winHtml(50)}</span></div>
+          <div class="stat"><span class="k">Last 100</span><span class="v" style="font-size:16px">${winHtml(100)}</span></div>
+          <div class="stat"><span class="k">Recorded</span><span class="v" style="font-size:16px">${ls.resolved}<span class="fine"> resolved</span></span><span class="s fine">${ls.pending} waiting</span></div>
+        </div>
+        ${spark.length > 1 ? `<div style="margin-top:8px">${sparklineSvg(spark, { width: 220, height: 32, color: 'var(--accent)' })}</div>` : ''}
+        <p class="fine" style="margin:6px 0 0">Hit rate over this device's own resolved forecasts (rolling windows). Small samples are labelled as one; nothing here is fabricated. Model v${ls.modelVersion}.</p>
+      </div>
+      ${ens3?.ok ? `
+      <div class="ensemble3 mt">
+        <div class="row spread"><b>Three-family ensemble (experimental)</b><span class="chip">cross-check</span></div>
+        <div class="grid g3" style="margin-top:8px">
+          ${ens3.models.map((m) => `<div class="stat"><span class="k">${esc(m.name)}</span><span class="v ${m.probUp >= 0.5 ? 'up' : 'down'}" style="font-size:16px">${(m.probUp * 100).toFixed(1)}%</span><span class="s fine">weight ${m.weightPct}%</span></div>`).join('')}
+        </div>
+        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b> (${ens3.direction}). Weights adapt to your local rolling accuracy (source: ${esc(ens3.weights.source)}). Experimental cross-check — not part of the published walk-forward accuracy. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
+      </div>` : ''}
+      <dl class="kv mt">
+        <dt>Brier score (lower is better)</dt><dd>${brier !== null ? brier.toFixed(3) : '—'}</dd>
+        <dt>Calibration slope</dt><dd>${typeof e.calibrationSlope === 'number' ? e.calibrationSlope.toFixed(3) : '—'}</dd>
+        <dt>Measured 50% band coverage</dt><dd>${band50 !== null ? band50 + '%' : '—'} <span class="muted">target ~50%</span></dd>
+        <dt>Measured 80% band coverage</dt><dd>${band80 !== null ? band80 + '%' : '—'} <span class="muted">target ~80%</span></dd>
+      </dl>
       ${timingCardBlock()}
       <div class="row mt"><span class="fine">Horizon</span><div class="seg" id="hSeg">${[Math.max(3, Math.round(st.horizon / 2)), DEFAULT_HORIZON[st.interval] || 12, (DEFAULT_HORIZON[st.interval] || 12) * 2].filter((v, i, a) => a.indexOf(v) === i).map((h) => `<button data-v="${h}" class="${h === st.horizon ? 'on' : ''}">${horizonText(st.interval, h)}</button>`).join('')}</div></div>
       <div id="histLine" class="mt"></div>`;
