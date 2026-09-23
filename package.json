@@ -1,1 +1,7 @@
-{"name":"coinvantage","type":"module"}
+{
+  "name": "coinvantage",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}
