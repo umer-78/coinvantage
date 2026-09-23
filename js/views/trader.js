@@ -8,20 +8,48 @@ import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js
 import { esc, pct, money, compact, dateTime, ago, amount, price } from '../format.js';
 import { fx } from '../api/fx.js';
 import { load, save } from '../store.js';
+import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger } from '../lib/selfimprove.js';
 
 export const title = 'Trading';
 
 const CFG_KEY = 'traderCfg';
 const STATE_KEY = 'traderState';
 const RUN_KEY = 'traderRunning';
+const SESSION_KEY = 'aiSession';
 
 export async function render(el) {
   const st = { disposed: false, charts: [], prices: {}, running: false };
-  // Whether the AI is allowed to open new trades. It used to run whenever the
-  // page was open with no way to stop it short of resetting the account.
-  let autoOn = load(RUN_KEY, false) === true;
+  // Formal session machine: idle → running → stopped → running, RESET from any
+  // state. autoOn mirrors status === 'running' so the periodic catch-up timer
+  // and RUN_KEY keep working exactly as before.
+  let session = load(SESSION_KEY, null);
+  if (!session || !['idle', 'running', 'stopped'].includes(session.status)) {
+    const hasState = !!load(STATE_KEY, null);
+    session = initialSession(hasState && load(RUN_KEY, false) === true ? 'running' : hasState ? 'stopped' : 'idle');
+    save(SESSION_KEY, session);
+  }
+  let autoOn = session.status === 'running';
   const cfg = { ...DEFAULT_CONFIG, ...load(CFG_KEY, {}) };
   let state = load(STATE_KEY, null);
+
+  const applySession = (event) => {
+    const next = sessionReducer(session, event);
+    if (next !== session) {
+      session = next;
+      autoOn = next.status === 'running';
+      save(SESSION_KEY, session);
+      save(RUN_KEY, autoOn);
+    }
+    syncSessionChip();
+    syncRunButtons();
+  };
+
+  function syncSessionChip() {
+    const chip = $('#sessionChip', el);
+    if (!chip) return;
+    chip.className = `session-chip ${session.status}`;
+    chip.innerHTML = `<i></i>${sessionLabel(session.status)}`;
+  }
 
   const all = await markets().catch(() => []);
   const tradable = all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 60);
@@ -31,6 +59,7 @@ export async function render(el) {
       <div><h1>Trading</h1>
         <p>Three accounts, side by side: the practice trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p></div>
       <div class="row">
+        <span class="session-chip ${session.status}" id="sessionChip"><i></i>${sessionLabel(session.status)}</span>
         <button class="btn" id="cfgBtn">${icon('chip', 16)} Settings</button>
         ${state ? '<button class="btn ghost" id="resetBtn">Reset</button>' : ''}
         <button class="btn ghost" id="stopBtn" hidden>${icon('close', 16)} Stop the AI</button>
@@ -54,12 +83,52 @@ export async function render(el) {
     </div>`;
   }
 
+  // Self-improvement status: rolling hit-rate windows over forecasts this
+  // device recorded and later resolved. Purely local — nothing is invented.
+  function learningCard() {
+    const ledger = loadLedger();
+    const ls = learningStatus(ledger);
+    const spark = accuracySparkline(ledger, 50);
+    const trendText = {
+      'improving': 'recent window above the longer one',
+      'stable': 'holding steady',
+      'declining': 'recent window below the longer one',
+      'warming-up': 'needs at least 10 resolved forecasts',
+      'unknown': 'not enough resolved forecasts yet',
+    }[ls.trend] || ls.trend;
+    const trendCls = ls.trend === 'improving' ? 'up' : ls.trend === 'declining' ? 'down' : 'flat';
+    const win = (w) => {
+      const r = ls.windows[w];
+      if (r.pct === null) return `<span class="muted">—</span>`;
+      const cls = r.pct >= 55 ? 'up' : r.pct < 45 ? 'down' : '';
+      return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
+    };
+    return `<div class="card mt">
+      <div class="card-h"><h3>${icon('ai', 16)} Self-improving model</h3><span class="chip ${trendCls}">${esc(ls.trend.replace('-', ' '))}</span></div>
+      <p class="fine">Every forecast this device shows is logged before the outcome is known, then scored when its horizon passes. Rolling windows below are hit rates over the last N resolved forecasts on <b>this device only</b> — not a claim about future performance.</p>
+      <div class="grid g4 mt">
+        <div class="stat"><span class="k">Last 20</span><span class="v">${win(20)}</span></div>
+        <div class="stat"><span class="k">Last 50</span><span class="v">${win(50)}</span></div>
+        <div class="stat"><span class="k">Last 100</span><span class="v">${win(100)}</span></div>
+        <div class="stat"><span class="k">Trend</span><span class="v ${trendCls}" style="font-size:16px">${esc(ls.trend.replace('-', ' '))}</span><span class="s fine">${esc(trendText)}</span></div>
+      </div>
+      ${spark.length > 1 ? `<div class="mt"><div class="fine" style="margin-bottom:4px">Hit rate over the last ${spark.length} resolved forecasts (rolling 20)</div>${sparklineSvg(spark, { width: 240, height: 36, color: 'var(--accent)' })}</div>` : ''}
+      <p class="fine mt">Model v${ls.modelVersion} · ${ls.total} forecast${ls.total === 1 ? '' : 's'} recorded · ${ls.resolved} resolved · ${ls.pending} still waiting for their horizon.</p>
+      <div class="mt">
+        <div class="fine">Confidence bands are derived from rolling hit-rate windows — when the last ${ls.windows[0]} window exceeds 55% accuracy, the up-band activates; below 45% triggers the down-band. This is purely local measurement; no external validation is performed.</div>
+      </div>
+    </div>`;
+  }
+
   function startCard() {
     return `<div class="card empty">
       <h3>Run the strategy on play money</h3>
       <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with the fee it would have paid.</p>
       <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
-    </div>`;
+      <div class="mt">
+        <div class="fine">Prediction accuracy: confidence bands are derived from rolling hit-rate windows over this device's own resolved forecasts. When the last ${ls.windows[0]}-forecast window exceeds 55% accuracy, the up-band activates; below 45% triggers the down-band. This is local measurement only.</div>
+      </div>
+    </div>${learningCard()}`;
   }
 
   // ---------------------------------------------------------------- engine
@@ -373,7 +442,7 @@ export async function render(el) {
   }
 
   function draw() {
-    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div><div class="mt">${startCard()}</div>`; wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); return; }
+    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${startCard()}`; wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
     const s = stats(state, st.prices);
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
@@ -427,7 +496,8 @@ export async function render(el) {
         <h3>What this is and is not</h3>
         <p class="fine">${esc(PAPER_NOTICE)} Results include a ${cfg.feePct}% fee per side and assume the stop is hit first whenever a candle contains both the stop and the target — so the record errs against the strategy, never for it.</p>
         <p class="fine">A simulation cannot reproduce slippage, thin order books or an exchange going down mid-move. Treat a good run here as evidence the rules are sane, not as an expected return.</p>
-      </div>`;
+      </div>
+      ${learningCard()}`;
 
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
     wireMyDemo();
@@ -435,6 +505,7 @@ export async function render(el) {
     wireExports();
     drawRealChart();
     syncRunButtons();
+    syncSessionChip();
 
     st.charts.forEach((c) => c.destroy());
     st.charts = [];
@@ -480,11 +551,14 @@ export async function render(el) {
   });
 
   $('#resetBtn', el)?.addEventListener('click', () => {
-    const m = modal(`<h3>Reset the trader?</h3><p>This wipes the simulated balance and the whole trade log, and starts again from ${money(cfg.startingBalance)}.</p>
+    const m = modal(`<h3>Reset the AI session?</h3><p>This stops the AI, wipes the simulated balance and the whole trade log, and starts again from ${money(cfg.startingBalance)}. It cannot be undone.</p>
       <div class="row mt" style="gap:8px"><button class="btn" id="no">Keep it</button><button class="btn primary" id="yes">Reset</button></div>`);
     $('#no', m.el).addEventListener('click', m.close);
     $('#yes', m.el).addEventListener('click', () => {
-      state = newState(cfg); save(STATE_KEY, state); autoOn = false; save(RUN_KEY, false); m.close(); draw(); syncRunButtons(); toast('Trader reset. It is stopped — press Resume when you want it running.', 'info');
+      state = newState(cfg); save(STATE_KEY, state);
+      applySession('RESET');
+      saveLedger(newLedger());
+      m.close(); draw(); toast('Trader reset. Session is idle — press Start when you want it running.', 'info');
     });
   });
 
@@ -498,18 +572,18 @@ export async function render(el) {
     if (startB) {
       startB.innerHTML = !state ? `${icon('bolt', 16)} Start the trader`
         : autoOn ? `${icon('refresh', 16)} Catch up now`
-        : `${icon('bolt', 16)} Resume the AI`;
+        : `${icon('bolt', 16)} ${session.status === 'stopped' ? 'Resume the AI' : 'Start the trader'}`;
     }
   }
 
   $('#stopBtn', el)?.addEventListener('click', () => {
-    autoOn = false; save(RUN_KEY, false); syncRunButtons();
+    applySession('STOP');
     const openCount = Object.keys(state?.open || {}).length;
     toast(openCount ? `AI stopped. ${openCount} open position${openCount > 1 ? 's stay' : ' stays'} open — close them from the table, or resume.` : 'AI stopped. It will not open any new trades.', 'info');
   });
 
   $('#startBtn', el).addEventListener('click', () => {
-    autoOn = true; save(RUN_KEY, true); syncRunButtons();
+    applySession('START');
     catchUp();
   });
 
@@ -542,8 +616,9 @@ export async function render(el) {
   // from a coin page arrives here and sees nothing but the start card.
   draw();
   syncRunButtons();
+  syncSessionChip();
   if (state && autoOn) catchUp();
-  void compact; void amount; void bindSeg;
+  void compact; void amount; void bindSeg; void LEARN_KEY;
 
   return () => {
     st.disposed = true;

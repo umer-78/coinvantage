@@ -535,3 +535,50 @@ body { background: transparent; }
 .foot-links a { transition: color .15s ease; }
 .side-gh { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); transition: color .15s ease; }
 .side-gh:hover { color: var(--accent-text); }
+
+/* ============================================================ AI session & self-improvement */
+.session-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 99px;
+  font-size: 12px; font-weight: 700;
+  border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-muted);
+}
+.session-chip i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+.session-chip.running { color: var(--up); background: var(--up-soft); border-color: transparent; }
+.session-chip.running i { box-shadow: 0 0 0 4px var(--up-soft); animation: pulse 2s infinite; }
+.session-chip.stopped { color: var(--warn); background: var(--accent-soft); border-color: transparent; }
+.session-chip.idle { color: var(--text-muted); }
+
+.learning-box, .ensemble3 {
+  padding: 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.spark { display: block; }
+
+.signal-meter { padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.meter-track {
+  position: relative; height: 12px; border-radius: 99px;
+  background: linear-gradient(90deg, var(--down), var(--surface-3) 50%, var(--up));
+}
+.meter-needle {
+  position: absolute; top: -3px; width: 4px; height: 18px;
+  border-radius: 3px; background: var(--text);
+  transform: translateX(-2px);
+  transition: left .3s var(--ease);
+}
+
+.risk-list { display: flex; flex-direction: column; gap: 8px; }
+.risk-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 10px 12px; border-radius: 10px;
+  font-size: 13px; line-height: 1.45;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-2);
+}
+.risk-item .ico { flex: none; margin-top: 2px; color: var(--text-muted); }
+.risk-item.warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--accent-soft); }
+.risk-item.warn .ico { color: var(--warn); }
+.risk-item.down { border-color: color-mix(in srgb, var(--down) 45%, transparent); background: var(--down-soft); }
+.risk-item.down .ico { color: var(--down); }
+.risk-item.info .ico { color: var(--accent); }

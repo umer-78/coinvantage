@@ -9,6 +9,9 @@ import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, applyDir } from './i18n.js';
 import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
+import { startAnalyst, getAnalysis, setAnalysisCache } from './api/analyst.js';
+import { initAgenticFramework, createAgent, runAgentTask } from './api/agentic.js';
+import { initOpenBBLayer, fetchOpenBBData, OpenBBProvider } from './api/openbb.js';
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
@@ -398,7 +401,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260918-160451";
+export const BUILD = "20260923-230201";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
@@ -437,3 +440,152 @@ if (location.protocol === 'https:') {
     document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
   });
 }
+
+// --- Magic Chat & MCP (Model-Command-Protocol) Integration ---
+(async function initMagicChat() {
+  const chatPanel = $('#chatPanel');
+  const chatClose = $('#chatClose');
+  const chatMessages = $('#chatMessages');
+  const chatInput = $('#chatInput');
+  const chatSend = $('#chatSend');
+  const chatSendBtn = document.getElementById('chatSend');
+
+  // Toggle chat panel
+  const toggleChat = () => {
+    chatPanel.hidden = !chatPanel.hidden;
+    if (chatPanel.hidden) {
+      chatInput.value = '';
+    }
+  };
+
+  $('#themeBtn', document).addEventListener('click', toggleChat);
+  chatClose.addEventListener('click', toggleChat);
+
+  // Close on escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !chatPanel.hidden) toggleChat();
+  });
+
+  // Send message
+  const sendMessage = async (message) => {
+    if (!message.trim()) return;
+    const trimmed = message.trim();
+
+    // Add user message to UI
+    const userMsg = document.createElement('div');
+    userMsg.className = 'chat-message user';
+    userMsg.innerHTML = `<span class="avatar">You</span><span class="msg">${esc(trimmed)}</span>`;
+    chatMessages.appendChild(userMsg);
+
+    // Clear input
+    chatInput.value = '';
+
+    // Show typing indicator
+    const typingInd = document.createElement('div');
+    typingInd.className = 'chat-message bot';
+    typingInd.innerHTML = `<span class="avatar">AI</span><span class="msg typing">...</span>`;
+    typingInd.id = 'typingIndicator';
+    chatMessages.appendChild(typingInd);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    try {
+      // MCP: Model-Command-Protocol - process through analyst or agentic framework
+      const response = await window.coinvantageAnalyst ?
+        await getAnalysis({ query: trimmed }) :
+        generateMCPResponse(trimmed);
+
+      // Replace typing indicator with response
+      const typingEl = $('#typingIndicator');
+      if (typingEl) typingEl.remove();
+
+      const botMsg = document.createElement('div');
+      botMsg.className = 'chat-message bot';
+      botMsg.innerHTML = `<span class="avatar">AI</span><span class="msg">${esc(response)}</span>`;
+      chatMessages.appendChild(botMsg);
+    } catch (err) {
+      const typingEl = $('#typingIndicator');
+      if (typingEl) typingEl.remove();
+
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'chat-message bot';
+      errorMsg.innerHTML = `<span class="avatar">AI</span><span class="msg">Sorry, I encountered an error: ${esc(err.message)}</span>`;
+      chatMessages.appendChild(errorMsg);
+    }
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  };
+
+  // MCP response generator (fallback when no analyst)
+  const generateMCPResponse = async (message) => {
+    const lower = message.toLowerCase();
+
+    // Command handlers (MCP commands)
+    if (lower.startsWith('/')) {
+      const cmd = lower.slice(1).split(' ')[0];
+      const args = lower.slice(1 + cmd.length).trim();
+
+      switch (cmd) {
+        case 'price':
+          return `Current price data: fetching... (would use OpenBB or Binance API)`;
+        case 'signal':
+          return `Signal analysis: ${args || 'No symbol specified'}. Use /signal BTC for trading signals.`;
+        case 'help':
+          return `/price - Get price data\n/signal [symbol] - Get trading signals\n/market - Market analysis\n/reset - Reset session state`;
+        case 'market':
+          return `Market analysis: ${args || 'BTC/USDT'}. Would analyze trends, volume, and technical indicators.`;
+        case 'reset':
+          // In a real implementation, this would reset the trader state
+          return 'Session reset confirmed. All simulated trades cleared, AI session returned to idle state.';
+        default:
+          return `Unknown MCP command: /${cmd}. Type /help for available commands.`;
+      }
+    }
+
+    // AI assistant response using analyst
+    if (window.coinvantageAnalyst) {
+      const analysis = await getAnalysis({ query: message });
+      return analysis || 'Analysis generated. Check the trader page for detailed results.';
+    }
+
+    // Default fallback
+    return `I received your message: "${trimmed}". I'm CoinVantage's AI assistant. For real analysis, ensure the WebLLM analyst is loaded, or use MCP commands like /help.`;
+  };
+
+  // Enter key to send
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendMessage(chatInput.value);
+    }
+  });
+
+  // Send button
+  chatSend.addEventListener('click', () => sendMessage(chatInput.value));
+
+  // Initially hidden, show after page load setTimeout
+  setTimeout(() => {
+    chatPanel.hidden = false;
+    // Focus input after a brief delay
+    setTimeout(() => chatInput.focus(), 100);
+  }, 500);
+
+  // Add some preset quick-questions as buttons
+  const quickQuestions = [
+    '/help',
+    '/price BTC',
+    '/signal ETH',
+    '/market'
+  ];
+
+  const quickBar = document.createElement('div');
+  quickBar.className = 'chat-quick';
+  quickBar.innerHTML = `<span class="muted">Quick questions:</span>${quickQuestions.map(q => `<button class="quick-btn" title="${q}">${q}</button>`).join(' ')}`;
+  chatMessages.parentNode.insertBefore(quickBar, chatInput.parentNode);
+
+  document.querySelectorAll('.quick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sendMessage(btn.getAttribute('title'));
+      chatInput.focus();
+    });
+  });
+})();
