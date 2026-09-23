@@ -479,3 +479,59 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   .summary .steps { grid-template-columns: 1fr; gap: 2px; }
   .summary dd { margin-bottom: 8px; }
 }
+
+/* ============================================================ premium */
+:root { --ease: cubic-bezier(.16, 1, .3, 1); }
+
+/* Warm accent glow in the page gutters. Body must stay transparent so the
+   mesh on html shows through; sidebar/topbar surfaces cover it where needed. */
+html { background:
+  radial-gradient(ellipse 80% 50% at 20% -10%, var(--accent-soft), transparent 55%),
+  radial-gradient(ellipse 60% 40% at 85% 110%, var(--accent-soft), transparent 55%),
+  var(--bg); }
+body { background: transparent; }
+
+/* Entrance motion: views settle in instead of popping. `backwards` (not
+   `both`) so the animation's end state never pins the transform and block
+   hover lifts once it finishes. */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.page-head, #view > .card, .grid > .card, .advice-grid > .advice-card, .price-grid > .plan-card, .foot {
+  animation: fadeUp .5s var(--ease) backwards;
+}
+.page-head { animation-delay: .04s; }
+.grid > .card:nth-child(2) { animation-delay: .07s; }
+.grid > .card:nth-child(3) { animation-delay: .1s; }
+.grid > .card:nth-child(4) { animation-delay: .13s; }
+.advice-grid > .advice-card:nth-child(2) { animation-delay: .07s; }
+.advice-grid > .advice-card:nth-child(3) { animation-delay: .1s; }
+.foot { animation-delay: .25s; }
+
+/* Hover elevation. Chart/table cards only deepen the shadow — lifting them
+   would jitter under the cursor while tracking candles or rows. */
+#view > .card:hover, .grid > .card:hover { box-shadow: var(--shadow-lg); }
+#view > .card:not(:has(canvas)):not(:has(table)):hover,
+.grid > .card:not(:has(canvas)):not(:has(table)):hover { transform: translateY(-2px); }
+.advice-card, .plan-card { transition: border-color .15s var(--ease), box-shadow .2s var(--ease), transform .2s var(--ease); }
+.advice-card:hover, .plan-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--border-strong); }
+.plan-card.hero:hover { border-color: var(--accent); }
+
+/* Primary action: gradient + glow so it reads as the one thing to press. */
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 65%, #ea580c));
+  box-shadow: 0 2px 10px var(--accent-soft), inset 0 1px 0 rgb(255 255 255 / .15);
+}
+.btn.primary:hover {
+  box-shadow: 0 4px 16px var(--accent-soft), inset 0 1px 0 rgb(255 255 255 / .2);
+  transform: translateY(-1px);
+}
+.btn.primary:active { transform: translateY(1px); }
+
+/* Brand mark + search focus + footer link polish. */
+.brand svg { filter: drop-shadow(0 2px 8px var(--accent-soft)); transition: filter .2s var(--ease); }
+.brand:hover svg { filter: drop-shadow(0 3px 12px var(--accent-soft)); }
+.brand .brand-name { transition: color .15s ease; }
+.brand:hover .brand-name { color: var(--accent-text); }
+.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.foot-links a { transition: color .15s ease; }
+.side-gh { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); transition: color .15s ease; }
+.side-gh:hover { color: var(--accent-text); }
