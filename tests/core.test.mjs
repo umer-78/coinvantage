@@ -1434,3 +1434,26 @@ test('the assistant never calls the chart score a buy or a sell, including when 
 
   assert.ok(exercised > 0, 'the disagreement warning never rendered, so this test proved nothing');
 });
+
+
+test('one weakly trusted reading cannot produce a full-conviction BUY', async () => {
+  const { adviseCoin } = await import('../js/lib/advice.js');
+  const candles = demoCandles('bitcoin', '4h', 400);
+  const signal = generateSignal(candles, { interval: '4h' });
+  // A forecast barely better than a coin flip (51% accurate) that leans hard up.
+  const forecast = { ok: true, probUp: 0.8, ensemble: { accuracy: 0.51 } };
+  const a = adviseCoin({ signal, forecast, interval: '4h' });
+  assert.ok(a.ok);
+  assert.ok(a.conviction <= 20, `conviction ${a.conviction} from a 0.14-weight reading`);
+  assert.notEqual(a.verdict, 'BUY');
+});
+
+test('everyday words are not read as coins, real mentions still are', async () => {
+  const { namedCoins, detectCompare, isMarketWide } = await import('../js/lib/analyst.js');
+  assert.deepEqual(namedCoins('what about the near term for BTC?'), ['BTC']);
+  assert.equal(detectCompare('what about the near term for BTC?'), null);
+  assert.deepEqual(namedCoins('is link a good buy'), ['LINK']);
+  assert.deepEqual(namedCoins('compare NEAR and dot'), ['NEAR', 'DOT']);
+  assert.deepEqual(namedCoins('BTC, ETH, etc. are up'), ['BTC', 'ETH']);
+  assert.equal(isMarketWide('which coin looks strongest on the 4h chart?'), true);
+});

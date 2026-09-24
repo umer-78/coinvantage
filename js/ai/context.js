@@ -7,6 +7,7 @@ import { runForecast, runHistory } from '../lib/compute.js';
 import { timingOutlook, summarizeTiming, timingText } from '../lib/timing.js';
 import { adviseCoin, rankAdvice } from '../lib/advice.js';
 import { isStable } from '../api/market.js';
+import { isTickerMention } from '../lib/tickers.js';
 import { horizonText } from '../format.js';
 import { load } from '../store.js';
 import { getNews, backendEnabled } from '../api/backend.js';
@@ -281,16 +282,26 @@ export function llmData(a) {
   };
 }
 
+const COMMON_COINS = /^(btc|bitcoin|eth|ether|ethereum|bnb|sol|solana|xrp|ripple|ada|cardano|doge|dogecoin|trx|tron|avax|dot|polkadot|link|chainlink|matic|polygon|ltc|litecoin|shib|ton|near|atom|uni|xlm|bch|etc|fil|apt|arb|op|sui|pepe|hbar|icp|inj|tao|sei|rndr|aave|mkr|zec)$/;
 export async function detectSymbol(text) {
   const list = await markets().catch(() => []);
   const words = String(text).replace(/[^A-Za-z0-9$ ]/g, ' ').split(/\s+/).filter(Boolean);
+  const raw = String(text);
+  let from = 0;
   for (const w of words) {
+    const at = raw.indexOf(w, from); from = at + w.length;
+    // Lower-case words are only tickers when they are a well-known coin used
+    // like one: "looks" (LooksRare) or "near term" (NEAR) are just English.
+    const typedAsTicker = w.startsWith('$') || (w === w.toUpperCase() && /[A-Z]/.test(w));
+    if (!typedAsTicker && !(COMMON_COINS.test(w.toLowerCase()) && isTickerMention(w, raw, at))) continue;
     const t = w.replace(/^\$/, '').toUpperCase();
     if (t.length < 2 || ['I', 'A', 'AN', 'IS', 'IT', 'TO', 'OR', 'ON', 'AT', 'BE', 'MY', 'ME', 'DO', 'SO', 'UP', 'IN', 'OF', 'THE', 'AND', 'FOR', 'NOW', 'BUY', 'SELL', 'CAN', 'WILL', 'GO', 'NEXT', 'HOW', 'WHAT', 'WHEN', 'SHOULD', 'ONE', 'ANY', 'ALL', 'NEW', 'OUT', 'GET', 'PUT', 'TOP'].includes(t)) continue;
     const bySym = list.find((c) => c.symbol === t && c.binance);
     if (bySym) return bySym.symbol;
   }
   const lower = String(text).toLowerCase();
-  const byName = list.filter((c) => c.name.length > 3).find((c) => lower.includes(c.name.toLowerCase()));
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const byName = list.filter((c) => c.name.length > 3)
+    .find((c) => new RegExp(`\\b${esc(c.name.toLowerCase())}\\b`).test(lower));
   return byName?.symbol || null;
 }

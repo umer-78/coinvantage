@@ -11,6 +11,7 @@
 // Nothing here executes anything.
 
 import { upRateFor } from './signals.js';
+import { accuracyFor } from './predict.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -61,14 +62,24 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
   // 2. Model ensemble, weighted by its own out-of-sample accuracy on this coin.
   if (forecast?.ok) {
     const edge = (forecast.probUp - 0.5) * 2;
-    const w = edgeWeight(forecast.ensemble?.accuracy) * 1.4;
+    // Accuracy only counts above what always naming the more common direction
+    // would have scored on the same rows, not above 50%: 62% in a window that
+    // rose 60% of the time is no skill. And where the published walk-forward
+    // test found no edge on this timeframe at all (1m, 1h, 4h), one coin's short
+    // validation run is not allowed to overrule it — it counts a quarter.
+    const floor = Math.max(0.5, Number.isFinite(forecast.ensemble?.baseline) ? forecast.ensemble.baseline : 0.5);
+    const tested = accuracyFor(interval);
+    const noTestedEdge = Boolean(tested && !tested.beatsBaseline);
+    const w = edgeWeight(forecast.ensemble?.accuracy, floor) * 1.4 * (noTestedEdge ? 0.25 : 1);
     parts.push({ key: 'forecast', value: clamp(edge * 2.5, -1, 1), weight: w });
     const accTxt = forecast.ensemble?.accuracy !== null && forecast.ensemble?.accuracy !== undefined
       ? `${(forecast.ensemble.accuracy * 100).toFixed(0)}% accurate on unseen data`
       : 'accuracy not measured';
     reasons.push({
       tone: forecast.probUp >= 0.54 ? 'good' : forecast.probUp <= 0.46 ? 'bad' : 'flat',
-      text: `AI forecast: ${(forecast.probUp * 100).toFixed(0)}% chance of rising (${accTxt})${w < 0.25 ? ' — little measured edge, so it barely counts here' : ''}.`,
+      text: `AI forecast: ${(forecast.probUp * 100).toFixed(0)}% chance of rising (${accTxt})${noTestedEdge
+        ? ` — on ${interval} charts it has not beaten the simple baseline in testing (${tested.accuracyPct}% vs ${tested.baselinePct}%), so it barely counts`
+        : w < 0.25 ? ' — little measured edge, so it barely counts here' : ''}.`,
     });
   }
 
@@ -97,8 +108,12 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
     });
   }
 
-  const wsum = parts.reduce((s, p) => s + p.weight, 0) || 1;
-  const score = parts.reduce((s, p) => s + p.value * p.weight, 0) / wsum; // -1..1
+  // Dividing by the total weight alone let one barely-trusted reading speak for
+  // the whole verdict: a forecast with a 0.1 weight and a strong lean came out
+  // as BUY at conviction 100/100. Below a combined weight of 1 the score now
+  // shrinks with the evidence behind it, so weak evidence gives a weak verdict.
+  const wsum = parts.reduce((s, p) => s + p.weight, 0);
+  const score = parts.reduce((s, p) => s + p.value * p.weight, 0) / Math.max(wsum, 1); // -1..1
   const conviction = Math.round(Math.abs(score) * 100);
 
   // How much of the verdict rests on things that have actually been shown to work?
