@@ -1,5 +1,9 @@
 # CoinVantage — live crypto markets, signals & AI forecasts
 
+[![CI](https://github.com/umer-78/coinvantage/actions/workflows/ci.yml/badge.svg)](https://github.com/umer-78/coinvantage/actions/workflows/ci.yml)
+
+**Live demo:** https://umer-78.github.io/coinvantage/
+
 An installable website for live crypto markets: prices, Binance-style charts,
 buy/sell signals, multi-year history comparison and an AI price forecast that
 runs right on your machine — **no paid API keys required**. Works on phones and
