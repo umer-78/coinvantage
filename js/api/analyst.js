@@ -1,8 +1,8 @@
 // Analyst layer: provides AI-powered market analysis, sentiment, and predictions
 // Runs locally in the visitor's browser using WebLLM — no API key required.
 
-import { CONFIG } from './config.js';
-import { icon } from './ui.js';
+import { CONFIG } from '../config.js';
+import { $, icon } from '../ui.js';
 
 const ANALYST_KEY = 'coinvantageAnalystCache';
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour cache
@@ -14,7 +14,7 @@ export async function startAnalyst() {
   }
 
   const { createWebLLM } = await import('./webllm-loader.js');
-  const modelConfig = CONFIG.WEBLLM_MODELS || CONFIG.WEBLLM_MODELS[1]; // Default to recommended
+  const modelConfig = CONFIG.WEBLLM_MODELS?.[1] || {}; // Default to recommended
 
   window.coinvantageAnalyst = createWebLLM({
     model: modelConfig.id,
@@ -38,8 +38,6 @@ export async function startAnalyst() {
 }
 
 export async function getAnalysis(query, context = {}) {
-  const analyst = await startAnalyst();
-
   // Build the context for the analyst
   const marketData = context.marketData || {};
   const portfolio = context.portfolio || {};
@@ -62,6 +60,7 @@ Keep the analysis factual, never predictive of future prices, and include a disc
 that this is AI-generated analysis for informational purposes only.`;
 
   try {
+    const analyst = await startAnalyst();
     const analysis = await analyst.generate(prompt, {
       maxTokens: 500,
       temperature: 0.3,

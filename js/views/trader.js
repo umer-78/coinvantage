@@ -115,7 +115,7 @@ export async function render(el) {
       ${spark.length > 1 ? `<div class="mt"><div class="fine" style="margin-bottom:4px">Hit rate over the last ${spark.length} resolved forecasts (rolling 20)</div>${sparklineSvg(spark, { width: 240, height: 36, color: 'var(--accent)' })}</div>` : ''}
       <p class="fine mt">Model v${ls.modelVersion} · ${ls.total} forecast${ls.total === 1 ? '' : 's'} recorded · ${ls.resolved} resolved · ${ls.pending} still waiting for their horizon.</p>
       <div class="mt">
-        <div class="fine">Confidence bands are derived from rolling hit-rate windows — when the last ${ls.windows[0]} window exceeds 55% accuracy, the up-band activates; below 45% triggers the down-band. This is purely local measurement; no external validation is performed.</div>
+        <div class="fine">Once 15 forecasts have resolved, a hit rate below 55% over the last 50 (or 20, if fewer) pulls displayed confidence toward 50/50 — halfway below 40%. This is purely local measurement; no external validation is performed.</div>
       </div>
     </div>`;
   }
@@ -125,9 +125,6 @@ export async function render(el) {
       <h3>Run the strategy on play money</h3>
       <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with the fee it would have paid.</p>
       <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
-      <div class="mt">
-        <div class="fine">Prediction accuracy: confidence bands are derived from rolling hit-rate windows over this device's own resolved forecasts. When the last ${ls.windows[0]}-forecast window exceeds 55% accuracy, the up-band activates; below 45% triggers the down-band. This is local measurement only.</div>
-      </div>
     </div>${learningCard()}`;
   }
 
