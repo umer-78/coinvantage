@@ -16,6 +16,7 @@ const ROUTES = [
   ['futures', '#/futures'],
   ['news', '#/news'],
   ['compare', '#/compare'],
+  ['tools', '#/tools'],
   ['exchanges', '#/exchanges'],
   ['wallet', '#/wallet'],
   ['alerts', '#/alerts'],
