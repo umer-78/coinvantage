@@ -1063,7 +1063,9 @@ export async function render(el, [symParam]) {
   }
 
   function seasonBlock(season) {
-    if (!season?.summary?.some((m) => m.count)) return '';
+    if (!season?.summary?.some((m) => m.count)) {
+      return `<div class="card empty mt"><h3>Seasonality unavailable</h3><p>There are not enough complete calendar months in the available history to calculate a seasonal reading for ${esc(coin.symbol)}.</p><p class="fine">This section will populate when more daily history is available.</p></div>`;
+    }
     const cur = season.currentMonth;
     return `
       <h3 class="mt" style="margin-bottom:6px">Seasonality — how ${esc(coin.symbol)} usually does each month</h3>
