@@ -4,6 +4,7 @@
 import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
 import { accuracyFor, TESTED_ACCURACY } from './predict.js';
 import { fx } from '../api/fx.js';
+import { isTickerMention } from './tickers.js';
 
 // Every price the assistant quotes — levels, stops, targets, EMAs, Bollinger
 // bands, ATR, forecast ranges — came out unconverted and labelled USD, while
@@ -35,13 +36,18 @@ function pct(v) {
 // rule-based analyst from answering market-wide when a coin was clearly named.
 const NAMES_A_COIN_G = /\b(btc|bitcoin|eth|ether|ethereum|bnb|sol|solana|xrp|ripple|ada|cardano|doge|dogecoin|trx|tron|avax|dot|polkadot|link|chainlink|matic|polygon|ltc|litecoin|shib|ton|near|atom|uni|xlm|bch|etc|fil|apt|arb|op|sui|pepe|hbar|icp|inj|tao|sei|rndr|aave|mkr|zec)\b/gi;
 const NAMES_A_COIN = new RegExp(NAMES_A_COIN_G.source);
+/** Coins named in the question, with everyday words ("near term") left out. */
+export function namedCoins(q) {
+  const text = String(q || '');
+  return [...text.matchAll(NAMES_A_COIN_G)].filter((m) => isTickerMention(m[0], text, m.index)).map((m) => m[0].toUpperCase());
+}
 
 // "Which coin should I buy?" is a different question from "should I buy BTC?".
 export function isMarketWide(q) {
   const s = (q || '').toLowerCase();
   if (/(which|what) (coin|crypto|one|token|altcoin)|best (coin|crypto|buy|pick|token)|top (coin|pick|buy)|what (should i|to) buy|anything (good|worth)|all (the|of the)? ?coins|every coin|whole market|scan the market|market overview|any (good )?(buy|opportunit)|recommend|picks?\b|where should i (put|invest)|shopping list/.test(s)) return true;
   // A buy/sell/timing question that names no coin is a question about the market.
-  if (NAMES_A_COIN.test(s) || /\b(this coin|my)\b/.test(s)) return false;
+  if (namedCoins(q).length || /\b(this coin|my)\b/.test(s)) return false;
   return /\b(buy|sell|short|long|invest|entry|exit|hold)\b/.test(s)
     && /\b(what|which|when|anything|something|now|today|this week|time ?frame|timeframe|short term|long term|how long)\b/.test(s);
 }
@@ -49,7 +55,7 @@ export function isMarketWide(q) {
 // "compare BTC and ETH" / "BTC vs SOL" / "which is better, X or Y"
 export function detectCompare(q) {
   const s = String(q || '');
-  const named = [...s.matchAll(NAMES_A_COIN_G)].map((m) => m[0].toUpperCase());
+  const named = namedCoins(s);
   const uniq = [...new Set(named)];
   const asksToCompare = /\b(compare|versus|vs\.?|better|stronger|which of|between)\b/i.test(s);
   return uniq.length >= 2 && (asksToCompare || uniq.length >= 2) ? uniq.slice(0, 4) : null;
@@ -337,7 +343,11 @@ function sentimentLine(ctx) {
 }
 
 export function ruleBasedAnswer(question, ctx = {}) {
-  const intent = detectIntent(question);
+  let intent = detectIntent(question);
+  // A market-wide question that arrived with one coin's analysis and no scan
+  // (the page decided a coin was named) is answered about that coin, instead of
+  // "ask again in a moment" — asking again gave the same non-answer.
+  if (intent === 'market' && !ctx.marketFrames && !ctx.market && ctx.signal) intent = 'summary';
   const sig = ctx.signal;
   const out = [];
 

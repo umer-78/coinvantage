@@ -16,7 +16,7 @@ A fresh session should **clone this repo, read this file, and continue from "Ope
 ## How to verify (always run all of these before deploying)
 ```
 node --check $(find js -name '*.js')      # syntax
-node --test tests/*.test.mjs              # 25 unit tests, incl. the missing-import guard
+node --test tests/*.test.mjs              # 63 unit tests, incl. the missing-import guard
 node tools/smoke.mjs                      # route smoke test
 bash tools/deploy-github.sh               # commit + push to gh-pages
 ```
@@ -72,7 +72,7 @@ Umer picked these four, plus the Binance import which is DONE and live.
       judge, and carries the not-advice line.
 
 ### Repair / maintenance sweep to run each time
-1. `node --check` every file in js/, then `node --test tests/*.test.mjs` (31 tests).
+1. `node --check` every file in js/, then `node --test tests/*.test.mjs` (63 tests).
 2. Walk every route on the live site and confirm zero console errors.
 3. Re-run the Supabase security advisors; confirm nothing new.
 4. Confirm engine parity: `js/lib/{signals,predict,indicators,barrier}.js` must be
@@ -146,3 +146,9 @@ A short-side test has not been run.
   with below-chance models zeroed out (51.5%). Four variants tested, one shipped.
 - Timing peak-hit: 61.2% vs 53.6% random — 15m 45% (worse than chance, flagged as such in the UI),
   1h 51.6%, 4h 67.9%, 1d 66.3%.
+
+### Assistant and advice fixes (2026-09-25)
+- `adviseCoin` scales the score by the evidence behind it (divides by `max(total weight, 1)`), so one barely-trusted reading can no longer produce "BUY, conviction 100/100".
+- The forecast's weight is measured against the per-coin baseline (always naming the commoner direction), not 50%, and counts a quarter on timeframes where the published walk-forward test found no edge (`TESTED_ACCURACY.noEdge`).
+- `js/lib/tickers.js`: ambiguous tickers (near, link, dot, etc, op…) count as coins only in capitals, with a `$`, or next to a trading word. "Which coin looks strongest" no longer resolves to LooksRare, and "near term for BTC" no longer turns into BTC vs NEAR.
+- Tools page (`#/tools`, `js/lib/calc.js`): converter, DCA backtest, position sizer.
