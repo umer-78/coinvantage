@@ -243,7 +243,7 @@ export function threeModelEnsemble(candles, { ledger = null, horizon = 12, windo
  */
 export function signalMeter(score) {
   const s = clamp(Number.isFinite(score) ? score : 0, -100, 100);
-  const pos = ((s + 100) / 2) * 100;
+  const pos = (s + 100) / 2; // percent along the track, 0 = strong sell, 100 = strong buy
   let label, tone;
   if (s >= 45) { label = 'Strong buy'; tone = 'up'; }
   else if (s >= 18) { label = 'Buy'; tone = 'up'; }
