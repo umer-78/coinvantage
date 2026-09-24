@@ -11,7 +11,7 @@ import { t, applyDir } from './i18n.js';
 import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
 import { startAnalyst, getAnalysis, setAnalysisCache } from './api/analyst.js';
 import { initAgenticFramework, createAgent, runAgentTask } from './api/agentic.js';
-import { initOpenBBLayer, fetchOpenBBData, OpenBBProvider } from './api/openbb.js';
+import { initOpenBBLayer, fetchOpenBBData } from './api/openbb.js';
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
@@ -490,9 +490,9 @@ if (location.protocol === 'https:') {
 
     try {
       // MCP: Model-Command-Protocol - process through analyst or agentic framework
-      const response = await window.coinvantageAnalyst ?
+      const response = window.coinvantageAnalyst ?
         await getAnalysis({ query: trimmed }) :
-        generateMCPResponse(trimmed);
+        await generateMCPResponse(trimmed);
 
       // Replace typing indicator with response
       const typingEl = $('#typingIndicator');
@@ -548,7 +548,7 @@ if (location.protocol === 'https:') {
     }
 
     // Default fallback
-    return `I received your message: "${trimmed}". I'm CoinVantage's AI assistant. For real analysis, ensure the WebLLM analyst is loaded, or use MCP commands like /help.`;
+    return `I received your message: "${message.trim()}". I'm CoinVantage's AI assistant. For real analysis, ensure the WebLLM analyst is loaded, or use MCP commands like /help.`;
   };
 
   // Enter key to send

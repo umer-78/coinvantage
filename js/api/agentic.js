@@ -2,12 +2,12 @@
 // Provides a paperclip-inspired agent framework that coordinates multiple
 // trading agents (market scanner, portfolio rebalancer, risk manager, etc.)
 
-import { CONFIG } from './config.js';
-import { $, $$ , toast } from './ui.js';
+import { CONFIG } from '../config.js';
+import { $, $$ , toast } from '../ui.js';
 
 const AGENT_KEY = 'coinvantageAgents';
 const TASK_LOG_KEY = 'coinvantageTaskLog';
-MAX_TASKS = 100;
+const MAX_TASKS = 100;
 
 // Base agent class
 class BaseAgent {
@@ -282,9 +282,9 @@ class RiskManagerAgent extends BaseAgent {
     this.lastRun = new Date().toISOString();
 
     try {
-      const risk assessment = await this.assessRisk(context);
+      const riskAssessment = await this.assessRisk(context);
       this.status = 'completed';
-      return risk assessment;
+      return riskAssessment;
     } catch (err) {
       this.status = 'failed';
       this.recordRiskEvent('risk assessment failed: ' + err.message);

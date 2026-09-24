@@ -2,11 +2,9 @@
 // Provides access to financial data, analytics, and research tools
 // https://openbb.co/
 
-import { CONFIG } from './config.js';
-
 const OPENBB_BASE = 'https://demo.openbb.co/api/v1';
 const CACHE_KEY = 'coinvantageOpenBBCache';
-CACHE_TTL = 60 * 15 * 1000; // 15 minutes
+const CACHE_TTL = 60 * 15 * 1000; // 15 minutes
 
 // Data types supported by OpenBB
 export const DataType = {
