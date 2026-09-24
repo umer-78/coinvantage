@@ -82,7 +82,23 @@ export async function render(el) {
     const run = ++st.run;
     st.rows = [];
     draw();
-    const list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+    let list;
+    try {
+      list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+    } catch (err) {
+      if (run !== st.run) return;
+      $('#prog', el).textContent = 'Scan unavailable';
+      $('#meter i', el).style.width = '0%';
+      $('#tbl', el).innerHTML = `<div class="empty"><h3>Scanner data unavailable</h3><p>${esc(err?.message || 'The market list could not be loaded.')}</p><button class="btn sm" id="retryScan" type="button">${icon('refresh', 14)} Try again</button></div>`;
+      $('#retryScan', el)?.addEventListener('click', scan);
+      return;
+    }
+    if (!list.length) {
+      $('#prog', el).textContent = 'No supported pairs';
+      $('#meter i', el).style.width = '0%';
+      $('#tbl', el).innerHTML = '<div class="empty"><h3>No supported market pairs</h3><p>The market source returned no Binance-listed pairs for this scan.</p></div>';
+      return;
+    }
     const iv = st.interval;
     let done = 0;
     const setProg = () => { $('#prog', el).textContent = done < list.length ? `Scanning ${done}/${list.length}…` : `Scanned ${list.length} coins · ${new Date().toLocaleTimeString()}`; $('#meter i', el).style.width = `${(done / list.length) * 100}%`; };

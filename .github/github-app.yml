@@ -1,0 +1,19 @@
+instructions: |
+  CoinVantage is a static ES-module demo. Keep market, forecast, signal, and
+  trading claims evidence-based and label paper/demo data clearly. Do not add
+  secrets or claim live execution, guaranteed accuracy, or unsupported APIs.
+
+scripts:
+  - name: Run tests
+    command: node --test tests/*.test.mjs
+  - name: Check JavaScript
+    command: sh -c 'for f in $(find js -name "*.js" -type f); do node --check "$f" || exit 1; done'
+  - name: Start demo server
+    command: node tools/serve.mjs 8080
+
+server_ready_pattern: '(?i)CoinVantage running at (https?://\S+)'
+auto_open_in_browser: true
+
+automation:
+  auto_issue_session: true
+  remote_control: false

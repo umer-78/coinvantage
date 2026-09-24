@@ -129,7 +129,7 @@ export async function render(el, [preset]) {
   const drawSelfPick = () => {
     const host = $('#selfPick', el);
     if (!host) return;
-    if (!st.coins.length) { host.innerHTML = ''; return; }
+    if (!st.coins.length) { host.innerHTML = '<span class="fine muted">Add a coin above to compare its history.</span>'; return; }
     if (!st.coins.includes(st.selfSym)) st.selfSym = st.coins[0];
     host.innerHTML = st.coins.map((s) => `<button data-self="${esc(s)}" class="${s === st.selfSym ? 'on' : ''}">${esc(s)}</button>`).join('');
     $$('[data-self]', host).forEach((b) => b.addEventListener('click', () => {

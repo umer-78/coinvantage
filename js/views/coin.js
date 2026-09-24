@@ -380,8 +380,8 @@ export async function render(el, [symParam]) {
       runBt();
     } catch (err) {
       $('#chart', el).innerHTML = errorBox(err.message);
-      $('#signalCard', el).innerHTML = '';
-      $('#fcCard', el).innerHTML = '';
+      $('#signalCard', el).innerHTML = `<h3>Indicator reading unavailable</h3><p class="muted">${esc(err.message || 'The candle source did not return enough data.')}</p><p class="fine">Try another timeframe, or retry when the market source is reachable.</p>`;
+      $('#fcCard', el).innerHTML = '<h3>AI forecast unavailable</h3><p class="muted">A forecast needs the same candle history as the chart, so none was generated.</p>';
     }
   }
 
@@ -518,7 +518,17 @@ export async function render(el, [symParam]) {
       if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
       return;
     }
-    const fc = await runForecast(st.candles, { horizon: H, intervalMs: INTERVAL_MS[iv] });
+    let fc;
+    try {
+      fc = await runForecast(st.candles, { horizon: H, intervalMs: INTERVAL_MS[iv] });
+    } catch (err) {
+      if (st.disposed || iv !== st.interval || H !== st.horizon) return;
+      st.forecast = { ok: false, reason: err?.message || 'The forecast engine could not finish with this candle history.' };
+      st.timing = null;
+      $('#fcCard', el).innerHTML = `<h3>AI forecast unavailable</h3><p class="muted">${esc(st.forecast.reason)}</p><p class="fine">The indicator reading above is still valid; no forecast value is made up.</p>`;
+      if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
+      return;
+    }
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
     st.forecast = fc;
     st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
@@ -708,7 +718,10 @@ export async function render(el, [symParam]) {
     if (!node) return;
     node.innerHTML = '<span class="fine muted">Checking previous years…</span>';
     let h;
-    try { h = await computeHistory(st.histHorizon || 30); } catch { node.innerHTML = ''; return; }
+    try { h = await computeHistory(st.histHorizon || 30); } catch (err) {
+      node.innerHTML = `<p class="fine muted">History comparison unavailable: ${esc(err?.message || 'the history source did not return enough data')}.</p>`;
+      return;
+    }
     if (st.disposed) return;
     const target = $('#histLine', el);
     if (!target) return;
@@ -1142,7 +1155,9 @@ export async function render(el, [symParam]) {
   }
 
   function seasonBlock(season) {
-    if (!season?.summary?.some((m) => m.count)) return '';
+    if (!season?.summary?.some((m) => m.count)) {
+      return `<div class="card empty mt"><h3>Seasonality unavailable</h3><p>There are not enough complete calendar months in the available history to calculate a seasonal reading for ${esc(coin.symbol)}.</p></div>`;
+    }
     const cur = season.currentMonth;
     return `
       <h3 class="mt" style="margin-bottom:6px">Seasonality — how ${esc(coin.symbol)} usually does each month</h3>
