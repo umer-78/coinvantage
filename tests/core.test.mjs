@@ -169,8 +169,11 @@ test('analyst quotes the multi-year history when it is supplied', () => {
 
 
 test('timing: shaped path ends where the ensemble says, and never peaks on the last bar', () => {
+  // Pin endTime: demoCandles defaults to Date.now(), and pattern-match
+  // counts drift with the wall clock — bitcoin/1h can fall below minMatches.
+  const END = Date.UTC(2026, 8, 24, 12, 0, 0);
   for (const [id, iv, H, ms] of [['bitcoin', '1h', 12, 3600e3], ['ethereum', '4h', 6, 4 * 3600e3], ['solana', '15m', 8, 900e3]]) {
-    const c = demoCandles(id, iv, 900);
+    const c = demoCandles(id, iv, 900, END);
     const f = forecast(c, { horizon: H });
     assert.ok(f.ok, f.reason);
     const t = timingOutlook(f, { intervalMs: ms });
