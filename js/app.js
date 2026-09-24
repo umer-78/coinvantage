@@ -2,9 +2,10 @@
 // account menu, cloud sync and the alerts watcher.
 import { CONFIG } from './config.js';
 import { $, $$, icon, coinLogo, toast, modal } from './ui.js';
-import { esc, price, changeHtml, money } from './format.js';
+import { esc, price, changeHtml, money, pct } from './format.js';
 import { settings, load, save } from './store.js';
-import { markets, searchCoins, dataStatus, syncExchangeClock } from './api/market.js';
+import { markets, searchCoins, dataStatus, syncExchangeClock, findCoin, getCandles } from './api/market.js';
+import { generateSignal } from './lib/signals.js';
 import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, applyDir } from './i18n.js';
@@ -441,7 +442,8 @@ if (location.protocol === 'https:') {
   });
 }
 
-// --- Magic Chat & MCP (Model-Command-Protocol) Integration ---
+// --- Quick chat: slash commands answered from live market data ---
+// (Not the Model Context Protocol; these are plain in-page commands.)
 (async function initMagicChat() {
   const chatPanel = $('#chatPanel');
   const chatClose = $('#chatClose');
@@ -450,15 +452,18 @@ if (location.protocol === 'https:') {
   const chatSend = $('#chatSend');
   const chatSendBtn = document.getElementById('chatSend');
 
-  // Toggle chat panel
+  const chatBtn = $('#chatBtn');
+  chatBtn.innerHTML = `${icon('ai', 18)}<span>Quick chat</span>`;
+
+  // Toggle chat panel (its own button; the theme button only changes the theme)
   const toggleChat = () => {
     chatPanel.hidden = !chatPanel.hidden;
-    if (chatPanel.hidden) {
-      chatInput.value = '';
-    }
+    chatBtn.setAttribute('aria-expanded', String(!chatPanel.hidden));
+    if (chatPanel.hidden) { chatInput.value = ''; chatBtn.focus(); }
+    else setTimeout(() => chatInput.focus(), 50);
   };
 
-  $('#themeBtn', document).addEventListener('click', toggleChat);
+  chatBtn.addEventListener('click', toggleChat);
   chatClose.addEventListener('click', toggleChat);
 
   // Close on escape
@@ -489,14 +494,13 @@ if (location.protocol === 'https:') {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
-      // MCP: Model-Command-Protocol - process through analyst or agentic framework
-      const response = window.coinvantageAnalyst ?
-        await getAnalysis({ query: trimmed }) :
-        await generateMCPResponse(trimmed);
+      // Commands are answered from live data; other text goes to the analyst when it is loaded.
+      const response = await generateMCPResponse(trimmed);
 
       // Replace typing indicator with response
       const typingEl = $('#typingIndicator');
       if (typingEl) typingEl.remove();
+      if (response === null) return; // e.g. /clear
 
       const botMsg = document.createElement('div');
       botMsg.className = 'chat-message bot';
@@ -515,40 +519,61 @@ if (location.protocol === 'https:') {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   };
 
-  // MCP response generator (fallback when no analyst)
+  // Command answers, all from the same live data the pages use.
+  const HELP = [
+    '/price BTC   live price, 24h and 7d change',
+    '/signal ETH  indicator score on the 1h chart (educational, not advice)',
+    '/market      what is moving over the last 24h',
+    '/clear       clear this chat',
+    'Open questions: use the Ask page (#/ai).',
+  ].join('\n');
   const generateMCPResponse = async (message) => {
-    const lower = message.toLowerCase();
-
-    // Command handlers (MCP commands)
-    if (lower.startsWith('/')) {
-      const cmd = lower.slice(1).split(' ')[0];
-      const args = lower.slice(1 + cmd.length).trim();
-
+    if (message.startsWith('/')) {
+      const [cmdRaw, ...rest] = message.slice(1).trim().split(/\s+/);
+      const cmd = (cmdRaw || '').toLowerCase();
+      const arg = rest.join(' ').trim();
       switch (cmd) {
-        case 'price':
-          return `Current price data: fetching... (would use OpenBB or Binance API)`;
-        case 'signal':
-          return `Signal analysis: ${args || 'No symbol specified'}. Use /signal BTC for trading signals.`;
         case 'help':
-          return `/price - Get price data\n/signal [symbol] - Get trading signals\n/market - Market analysis\n/reset - Reset session state`;
-        case 'market':
-          return `Market analysis: ${args || 'BTC/USDT'}. Would analyze trends, volume, and technical indicators.`;
+          return HELP;
+        case 'price': {
+          const c = await findCoin(arg || 'BTC');
+          if (!c) return `No coin found for "${arg}". Try /price BTC or /price SOL.`;
+          return `${c.name} (${c.symbol}): ${money(c.price)}\n24h ${pct(c.change24h)} · 7d ${pct(c.change7d)}`;
+        }
+        case 'signal': {
+          const c = await findCoin(arg || 'BTC');
+          if (!c) return `No coin found for "${arg}". Try /signal BTC.`;
+          const { candles } = await getCandles(c, '1h', 300);
+          const s = generateSignal(candles, { interval: '1h' });
+          if (!s.ok) return `${c.symbol}: ${s.reason}`;
+          const rsi = Number.isFinite(s.indicators?.rsi) ? s.indicators.rsi.toFixed(1) : '—';
+          return `${c.symbol} on the 1h chart: score ${s.score > 0 ? '+' : ''}${s.score} (${s.text}), RSI ${rsi}.\n` +
+            'A high score means the move is extended, not that it will continue. Full breakdown on the coin page.';
+        }
+        case 'market': {
+          const list = (await markets()).filter((c) => Number.isFinite(c.change24h));
+          if (!list.length) return 'Market data is not available right now. Try again in a minute.';
+          const up = list.filter((c) => c.change24h > 0).length;
+          const sorted = [...list].sort((a, b) => b.change24h - a.change24h);
+          const fmt = (c) => `${c.symbol} ${pct(c.change24h)}`;
+          return `${up} of ${list.length} coins are up over 24h.\n` +
+            `Top gainers: ${sorted.slice(0, 3).map(fmt).join(', ')}\n` +
+            `Top losers: ${sorted.slice(-3).reverse().map(fmt).join(', ')}`;
+        }
+        case 'clear':
         case 'reset':
-          // In a real implementation, this would reset the trader state
-          return 'Session reset confirmed. All simulated trades cleared, AI session returned to idle state.';
+          chatMessages.querySelectorAll('.chat-message').forEach((m, i) => { if (i > 0) m.remove(); });
+          return null;
         default:
-          return `Unknown MCP command: /${cmd}. Type /help for available commands.`;
+          return `Unknown command /${cmd}. Type /help to see what is available.`;
       }
     }
 
-    // AI assistant response using analyst
     if (window.coinvantageAnalyst) {
       const analysis = await getAnalysis({ query: message });
       return analysis || 'Analysis generated. Check the trader page for detailed results.';
     }
-
-    // Default fallback
-    return `I received your message: "${message.trim()}". I'm CoinVantage's AI assistant. For real analysis, ensure the WebLLM analyst is loaded, or use MCP commands like /help.`;
+    return 'I answer quick commands from live data. Type /help to see them, or ask open questions on the Ask page (#/ai).';
   };
 
   // Enter key to send
@@ -562,24 +587,20 @@ if (location.protocol === 'https:') {
   // Send button
   chatSend.addEventListener('click', () => sendMessage(chatInput.value));
 
-  // Initially hidden, show after page load setTimeout
-  setTimeout(() => {
-    chatPanel.hidden = false;
-    // Focus input after a brief delay
-    setTimeout(() => chatInput.focus(), 100);
-  }, 500);
+  // The panel stays closed until the visitor opens it with the Quick chat button.
 
   // Add some preset quick-questions as buttons
   const quickQuestions = [
     '/help',
     '/price BTC',
     '/signal ETH',
-    '/market'
+    '/market',
+    '/clear'
   ];
 
   const quickBar = document.createElement('div');
   quickBar.className = 'chat-quick';
-  quickBar.innerHTML = `<span class="muted">Quick questions:</span>${quickQuestions.map(q => `<button class="quick-btn" title="${q}">${q}</button>`).join(' ')}`;
+  quickBar.innerHTML = `<span class="muted">Try:</span>${quickQuestions.map(q => `<button class="quick-btn" type="button" title="${q}">${q}</button>`).join(' ')}`;
   chatMessages.parentNode.insertBefore(quickBar, chatInput.parentNode);
 
   document.querySelectorAll('.quick-btn').forEach(btn => {
