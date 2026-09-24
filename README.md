@@ -25,6 +25,7 @@ computers alike.
 | **Exchanges** | Same coin on 10 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Gate.io, Bitget, HTX, Gemini, Crypto.com): price, spread, volume, best buy/sell venue |
 | **Signal scanner** | Ranks the top 20/30/50 coins by signal score and fast AI forecast; filters for buy, sell, oversold and overbought |
 | **Compare** | Up to 6 coins: normalised performance, volatility, max drawdown, return/risk, correlation matrix |
+| **Tools** | Coin ↔ currency converter (PKR and 16 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
 | **Price alerts** | Browser notifications while the site is open, plus server-side alerts by e-mail and Telegram while it is closed |
 | **Track record** | Public page scoring every signal the server logged *before* the outcome was known |
@@ -160,7 +161,7 @@ js/api/                 market data, exchanges, futures, WebSocket hub, FX rates
 js/lib/                 indicators, signals + backtest, forecast engine, history engine, analyst, worker
 js/ai/                  in-browser LLM engine and context builder
 js/charts/              canvas candlestick chart, line chart, sparkline/donut/gauge/treemap
-js/views/               pages: markets, coin, scanner, track, futures, news, compare, exchanges,
+js/views/               pages: markets, coin, scanner, track, futures, news, compare, tools, exchanges,
                         wallet, alerts, premium, account, admin, legal, auth, assistant
 supabase/functions/cv/  edge function: account, admin, alerts, news, track, telegram, stripe + engine copy
 tools/                  local server, accuracy evaluation, sitemap builder, browser smoke test

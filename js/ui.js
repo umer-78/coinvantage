@@ -29,6 +29,7 @@ const ICONS = {
   // icon('chart') was used on the coin page but never defined, so the button
   // shipped with a blank 14x14 gap where its icon should be.
   chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  calc: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/>',
 };
 export const icon = (name, size = 18) =>
   `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;

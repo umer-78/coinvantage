@@ -21,6 +21,7 @@ const NAV = [
   { path: 'futures', label: 'Futures', icon: 'bolt', short: 'Futures' },
   { path: 'news', label: 'News', icon: 'info', short: 'News' },
   { path: 'compare', label: 'Compare', icon: 'compare', short: 'Compare' },
+  { path: 'tools', label: 'Tools', icon: 'calc', short: 'Tools' },
   { path: 'exchanges', label: 'Exchanges', icon: 'exchanges', short: 'Exchanges' },
   { path: 'wallet', label: 'Wallet', icon: 'wallet', short: 'Wallet' },
   { path: 'alerts', label: 'Alerts', icon: 'alerts', short: 'Alerts' },
@@ -41,6 +42,7 @@ const VIEWS = {
   futures: () => import('./views/futures.js'),
   news: () => import('./views/news.js'),
   compare: () => import('./views/compare.js'),
+  tools: () => import('./views/tools.js'),
   exchanges: () => import('./views/exchanges.js'),
   wallet: () => import('./views/wallet.js'),
   alerts: () => import('./views/alerts.js'),
@@ -399,7 +401,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260924-151405";
+export const BUILD = "20260924-152628";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
