@@ -2,7 +2,7 @@
 // several timeframes, the AI forecast, backtest, sentiment and the user's holdings.
 import { markets, findCoin, getCandles, getFearGreed, INTERVAL_MS } from '../api/market.js';
 import { generateSignal, confluence, backtest } from '../lib/signals.js';
-import { summarizeForecast } from '../lib/predict.js';
+import { summarizeForecast, forecastTrust } from '../lib/predict.js';
 import { runForecast, runHistory } from '../lib/compute.js';
 import { timingOutlook, summarizeTiming, timingText } from '../lib/timing.js';
 import { adviseCoin, rankAdvice } from '../lib/advice.js';
@@ -13,6 +13,12 @@ import { getNews, backendEnabled } from '../api/backend.js';
 
 const cache = new Map();
 export const DEFAULT_HORIZON = { '1s': 30, '5s': 24, '10s': 18, '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+
+function validatedForecast(forecast, interval) {
+  const trust = forecastTrust(forecast, interval);
+  if (!trust.usable) return null;
+  return { ...forecast, trust };
+}
 
 export function remember(symbol, interval, patch) {
   const key = `${symbol}:${interval}`;
@@ -42,6 +48,7 @@ export async function analyzeCoin(symbol, { interval = '4h', withForecast = true
     onStep?.('Running AI forecast (pattern matching + ML models)…');
     forecast = await runForecast(main.candles, { horizon });
   }
+  forecast = validatedForecast(forecast, interval);
   // Long-range study on daily candles: what happened the last times this chart
   // looked like today, plus this coin's seasonality. Never blocks the answer.
   let history = hit?.history || null;
@@ -100,8 +107,8 @@ export async function scanMarket({ interval = '4h', count = 20, onStep } = {}) {
     onStep?.(`Forecasting ${row.coin.symbol}…`);
     try {
       const fc = await runForecast(row.candles, { horizon, fast: true, intervalMs: INTERVAL_MS[interval] });
-      row.forecast = fc;
-      row.timing = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[interval] }) : null;
+      row.forecast = validatedForecast(fc, interval);
+      row.timing = row.forecast ? timingOutlook(row.forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
     } catch { /* advice still works from the signal alone */ }
   }
   for (const row of rows) {
@@ -206,8 +213,8 @@ export async function compareCoins(symbols, { interval = '4h', onStep } = {}) {
       const signal = generateSignal(candles, { interval });
       let forecast = null, timing = null;
       try {
-        forecast = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, fast: true, intervalMs: INTERVAL_MS[interval] });
-        timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
+        forecast = validatedForecast(await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, fast: true, intervalMs: INTERVAL_MS[interval] }), interval);
+        timing = forecast ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
       } catch { /* the chart signal alone still ranks */ }
       const advice = adviseCoin({ signal, forecast, timing });
       const live = list.find((c) => c.symbol === coin.symbol);

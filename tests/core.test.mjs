@@ -245,8 +245,8 @@ test('analyst answers whole-market questions with ranked picks, not one coin', a
   assert.match(a, /Market scan/);
   assert.match(a, /SOL/);
   assert.match(a, /Solana/);
-  assert.match(a, /stop-loss/i);
-  assert.match(a, /Sell targets/);
+  assert.match(a, /protective level/i);
+  assert.match(a, /Illustrative resistance levels/);
   assert.match(a, /DOGE/);
   assert.match(a, /not financial advice/i);
 
@@ -665,7 +665,7 @@ test('the trade summary answers what, when, when to sell and where you are wrong
   const wrong = s.steps.find((x) => x.label === 'Where you are wrong').text;
   assert.match(wrong, /\$76343/);
   assert.match(wrong, /1\.17%/);
-  assert.ok(s.caveats.some((c) => /stop-loss/i.test(c)));
+  assert.ok(s.caveats.some((c) => /illustrative|do not tell you what to trade/i.test(c)));
 
   // a conflict downgrades the verdict and the confidence rather than selling it
   const clash = tradeSummary({
@@ -747,7 +747,7 @@ test('a whole-market question is answered across every timeframe', () => {
     avoid: [{ coin: 'DOGE', verdict: 'AVOID', conviction: 20, interval: '4h', topReason: 'Downtrend' }],
   };
   const a = ruleBasedAnswer('which coin should i buy and when do i sell?', { marketFrames, portfolio: [] });
-  for (const must of ['Short term', 'Swing', 'Position', 'SOL', 'BTC', 'Sell at', 'Strongest overall', 'Avoid or sell', 'DOGE']) {
+  for (const must of ['Short term', 'Swing', 'Position', 'SOL', 'BTC', 'Illustrative resistance levels', 'Strongest overall', 'Downward readings', 'DOGE']) {
     assert.ok(a.includes(must), `whole-market answer is missing "${must}"`);
   }
   // it must not collapse into a single coin
@@ -1126,6 +1126,7 @@ test('OKX futures fallback maps funding interval, basis and history correctly', 
   });
   assert.equal(f.source, 'OKX');
   assert.equal(f.fundingIntervalHours, 4);
+  assert.equal(f.nextFundingTime, 1789617600000);
   assert.ok(Math.abs(f.basisPct - 1) < 1e-9);
   assert.equal(f.openInterestUsd, 1010);
   assert.deepEqual(f.fundingHistory.map((r) => r.rate), [0.0001, 0.0002]);
@@ -1140,9 +1141,17 @@ test('OKX futures fallback maps funding interval, basis and history correctly', 
   const rows = okxOverviewFrom(['BTC', 'NOPE'], {
     marks: [{ instId: 'BTC-USDT-SWAP', markPx: '100' }],
     ois: [{ instId: 'BTC-USDT-SWAP', oiCcy: '2', oiUsd: '200' }],
-    funds: [],
+    funds: [{ instId: 'BTC-USDT-SWAP', fundingRate: '0.0001', fundingTime: '1789603200000', nextFundingTime: '1789617600000' }],
   });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].openInterestUsd, 200);
-  assert.equal(rows[0].fundingRate, null);                // missing funding stays unknown, not 0
+  assert.equal(rows[0].fundingRate, 0.0001);
+  assert.equal(rows[0].nextFundingTime, 1789617600000);
+  assert.equal(rows[0].fundingIntervalHours, 4);
+  const missing = okxOverviewFrom(['BTC', 'NOPE'], {
+    marks: [{ instId: 'BTC-USDT-SWAP', markPx: '100' }],
+    ois: [{ instId: 'BTC-USDT-SWAP', oiCcy: '2', oiUsd: '200' }],
+    funds: [],
+  });
+  assert.equal(missing[0].fundingRate, null);                // missing funding stays unknown, not 0
 });

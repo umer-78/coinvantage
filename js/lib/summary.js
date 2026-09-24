@@ -320,7 +320,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
       label: 'How long',
       text: timing.rising
         ? `Strength has typically lasted about ${horizonText || `${timing.bars} candles`} in similar past setups, topping near ${fmt(timing.targetPrice)}${timing.turnBars ? ', then turning down' : ''}. Timing is the least reliable part of any forecast — use it to plan an exit, never to skip the stop.`
-        : `Weakness has typically run about ${horizonText || `${timing.bars} candles`} in similar setups, so waiting is likely to get a better price than buying now.`,
+        : `Weakness has typically run about ${horizonText || `${timing.bars} candles`} in similar setups; waiting may offer a better price, but this is not a forecast.`,
     });
   }
 
@@ -372,7 +372,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   }
   if (acc !== null && acc < 52) caveats.push(`The forecast has no measured edge on this coin and timeframe (${acc}%), so weight the chart signal more heavily here.`);
   if (strength < 25 && !conflict) caveats.push('This is a weak reading. A small score means the indicators barely agree, which is a reason to size down or skip it.');
-  caveats.push('This is a reading of public market data, not advice. Use a stop-loss on every trade and only risk what you can afford to lose.');
+  caveats.push('This is a reading of public market data, not advice. Levels are illustrative and do not tell you what to trade.');
 
   return { verdict, tone, headline, steps, caveats, confidence, confidenceWhy, reconciled: rec };
 }

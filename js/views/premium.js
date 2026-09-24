@@ -11,7 +11,7 @@ const FREE = [
   'Live prices from Binance + 10 exchanges',
   'Candlestick charts with 12 indicators',
   'Buy / sell signals with entry, stop and targets',
-  'AI forecast with published accuracy',
+  'Historical analysis with published evaluation',
   'History & cycles: past-pattern comparison',
   'Portfolio, watch-only wallets and watchlist sync',
   '3 server-side price alerts',

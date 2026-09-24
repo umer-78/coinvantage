@@ -1,5 +1,5 @@
-// "What should I buy, and when do I sell?" — one ranked opinion per coin.
-import { markets, getCandles, isStable, INTERVAL_MS } from '../api/market.js';
+// One measured market reading per coin.
+import { markets, getCandles, isStable, INTERVAL_MS, dataStatus } from '../api/market.js';
 import { generateSignal } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
@@ -11,14 +11,14 @@ import { $, $$, icon, coinLogo, skeleton, bindSeg, modal } from '../ui.js';
 import { esc, pct, money, horizonText, changeHtml } from '../format.js';
 import { load } from '../store.js';
 
-export const title = 'What to buy';
+export const title = 'Market readings';
 
 export async function render(el) {
   const st = { interval: '4h', rows: [], run: 0, disposed: false, count: 30 };
 
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>What to buy</h1><p>One verdict per coin, built by blending the chart signal, the AI forecast, the move timing and the multi-year history check — each weighted by how accurate it has actually been.</p></div>
+      <div><h1>Market readings</h1><p>Descriptive technical readings, historical comparisons and data-quality notes. The app does not turn unvalidated indicators into buy or sell instructions.</p></div>
       <div class="row">
         <div class="seg" id="iv">${['1m', '5m', '15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
         <button class="btn" id="rescan">${icon('refresh', 16)} Rescan</button>
@@ -43,20 +43,20 @@ export async function render(el) {
         </div>
 
         ${a.plan ? `<div class="plan mt">
-          <div><div class="k">Buy between</div><div class="v">${money(a.plan.entryZone[0])} – ${money(a.plan.entryZone[1])}</div></div>
-          <div><div class="k">Stop-loss</div><div class="v down">${money(a.plan.stopLoss)} <span class="fine">(${a.plan.riskPct}%)</span></div></div>
-          <div><div class="k">Sell target 1</div><div class="v up">${money(a.plan.takeProfits[0])}</div></div>
-          <div><div class="k">Sell target 2</div><div class="v up">${money(a.plan.takeProfits[1])}</div></div>
+          <div><div class="k">Illustrative entry zone</div><div class="v">${money(a.plan.entryZone[0])} – ${money(a.plan.entryZone[1])}</div></div>
+          <div><div class="k">Reference downside level</div><div class="v down">${money(a.plan.stopLoss)} <span class="fine">(${a.plan.riskPct}%)</span></div></div>
+          <div><div class="k">Reference path 1</div><div class="v up">${money(a.plan.takeProfits[0])}</div></div>
+          <div><div class="k">Reference path 2</div><div class="v up">${money(a.plan.takeProfits[1])}</div></div>
         </div>` : `<p class="fine mt">No entry yet. ${esc(a.waitFor?.[0] || 'Waiting for a trigger.')}</p>`}
 
         ${t ? `<p class="fine mt">${t.rising
-          ? `Expected to keep rising for about <b>${esc(horizonText(st.interval, t.bars))}</b>, topping near <b>${money(t.targetPrice)}</b>${t.turnBars ? `, then turning down around ${esc(horizonText(st.interval, t.turnBars))}` : ''}.`
-          : `Expected to keep falling for about <b>${esc(horizonText(st.interval, t.bars))}</b> — waiting is likely to get a better price.`}</p>` : ''}
+          ? `Similar historical paths rose for about <b>${esc(horizonText(st.interval, t.bars))}</b>, reaching a reference high near <b>${money(t.targetPrice)}</b>${t.turnBars ? `, then weakening around ${esc(horizonText(st.interval, t.turnBars))}` : ''}. This is historical context, not a prediction.`
+          : `Similar historical paths weakened for about <b>${esc(horizonText(st.interval, t.bars))}</b> — this is context, not a prediction.`}</p>` : ''}
 
         <ul class="reasons mt">${a.reasons.map((x) => `<li class="${x.tone === 'good' ? 'b' : x.tone === 'bad' ? 's' : ''}">${esc(x.text)}</li>`).join('')}</ul>
         <div class="row mt" style="gap:8px">
-          <a class="btn sm" href="#/coin/${esc(r.coin.symbol)}">Open chart</a>
-          ${tradable(r.coin.symbol) ? `<button class="btn sm ghost" data-trade="${esc(r.coin.symbol)}">Where to buy</button>` : ''}
+          <a class="btn sm" href="#/coin/${esc(r.coin.symbol)}">Open market</a>
+          ${tradable(r.coin.symbol) ? `<button class="btn sm ghost" data-trade="${esc(r.coin.symbol)}">View venues</button>` : ''}
           <span class="fine" style="margin-left:auto">evidence: ${esc(a.evidence)}</span>
         </div>
       </div>`;
@@ -64,21 +64,24 @@ export async function render(el) {
 
   const draw = () => {
     const done = st.rows.filter((r) => r.advice);
-    if (!done.length) { $('#body', el).innerHTML = skeleton(8, 26); return; }
+    if (!done.length) {
+      $('#body', el).innerHTML = `<div class="card empty"><h3>No market readings available yet</h3><p>Waiting for enough candle data to calculate the indicators. Try Rescan when the market API is reachable.</p><p class="fine">${dataStatus.demo ? 'The app is using clearly labelled demo/fallback market data.' : 'Live market data has not returned enough complete candles.'}</p></div>`;
+      return;
+    }
     const { buys, avoid, wait } = rankAdvice(done);
     const holdings = load('holdings', []);
     const held = done.filter((r) => holdings.some((h) => h.symbol === r.coin.symbol));
 
     $('#body', el).innerHTML = `
-      ${held.length ? `<h2 class="mt" style="margin-bottom:8px">Your holdings — what to do</h2>
+      ${held.length ? `<h2 class="mt" style="margin-bottom:8px">Your holdings — market readings</h2>
         <div class="advice-grid">${held.map((r) => card(r)).join('')}</div>` : ''}
 
-      <h2 class="mt" style="margin-bottom:8px">Best buys right now</h2>
+      <h2 class="mt" style="margin-bottom:8px">Strongest measured readings</h2>
       ${buys.length
         ? `<div class="advice-grid">${buys.slice(0, 9).map((r, i) => card(r, i + 1)).join('')}</div>`
-        : `<div class="card empty"><h3>Nothing worth buying on this timeframe</h3><p>No coin currently clears the bar. That is a real answer — the strategy sits out more often than it trades. Try another timeframe, or wait.</p></div>`}
+        : `<div class="card empty"><h3>No reading clears the evidence bar</h3><p>No coin currently clears the bar. That is a real answer — the strategy sits out more often than it trades. Try another timeframe, or wait.</p></div>`}
 
-      ${avoid.length ? `<h2 class="mt" style="margin-bottom:8px">Avoid or sell</h2>
+      ${avoid.length ? `<h2 class="mt" style="margin-bottom:8px">Caution readings</h2>
         <div class="advice-grid">${avoid.slice(0, 6).map((r) => card(r)).join('')}</div>` : ''}
 
       <div class="card mt" style="background:var(--surface-2)">
@@ -104,10 +107,20 @@ export async function render(el) {
     const run = ++st.run;
     st.rows = [];
     draw();
-    const list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+    let list = [];
+    try {
+      list = (await markets(true)).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+    } catch {
+      $('#body', el).innerHTML = `<div class="card empty"><h3>Market readings unavailable</h3><p>Live market lists could not be loaded, so no indicator result is shown. Check your connection and try Rescan.</p></div>`;
+      return;
+    }
+    if (!list.length) {
+      $('#body', el).innerHTML = `<div class="card empty"><h3>No supported market pairs available</h3><p>The exchange list returned no supported pairs for this scan. Nothing is being invented.</p></div>`;
+      return;
+    }
     const iv = st.interval;
     let done = 0;
-    const setProg = () => { $('#meter i', el).style.width = `${(done / list.length) * 100}%`; };
+    const setProg = () => { $('#meter i', el).style.width = `${Math.min(100, (done / list.length) * 100)}%`; };
 
     const queue = [...list];
     const worker = async () => {
@@ -117,7 +130,11 @@ export async function render(el) {
           const { candles } = await getCandles(coin, iv, 500);
           if (run !== st.run || st.disposed) return;
           const signal = generateSignal(candles, { interval: iv });
-          st.rows.push({ coin, signal, candles });
+          const row = { coin, signal, candles, advice: adviseCoin({ signal, forecast: null, timing: null }) };
+          st.rows.push(row);
+          // Show the measured technical reading immediately; forecast enrichment
+          // is optional and must not leave the whole page looking empty.
+          draw();
         } catch { /* skip coin */ }
         done++; setProg();
       }
@@ -132,6 +149,7 @@ export async function render(el) {
       let fc = null, tm = null;
       try {
         fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], fast: true, intervalMs: INTERVAL_MS[iv] });
+        if ((TESTED_ACCURACY.noEdge || []).includes(iv) || !fc?.validated) fc = null;
         tm = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
       } catch { /* the advice still works without it */ }
       row.advice = adviseCoin({ signal: row.signal, forecast: fc, timing: tm });

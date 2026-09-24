@@ -1,8 +1,9 @@
-# CoinVantage — live crypto markets, signals & AI forecasts
+# CoinVantage — live crypto markets & measured readings
 
 A fast, installable website (works on phones and computers) that shows live crypto
-market data, Binance-style charts, buy/sell signals, multi-year history comparison and
-an AI price forecast — **with its own built-in AI, no paid API keys required**.
+market data, Binance-style charts, descriptive technical readings, multi-year history
+comparison and clearly labelled model experiments. Forecasts and timing are withheld
+when their published evaluation does not beat a baseline.
 
 > Signals, forecasts and AI answers are educational tools, not financial advice.
 > The site never places trades and never asks for exchange API keys, private keys or seed phrases.
@@ -13,8 +14,8 @@ an AI price forecast — **with its own built-in AI, no paid API keys required**
 |---|---|
 | **Markets** | Top 250 coins (CoinGecko, CoinPaprika fallback), live prices via Binance WebSocket, 1h/24h/7d change, sparklines, global market cap, BTC/ETH dominance, Fear & Greed gauge, trending, top gainers/losers, heatmap, watchlist |
 | **Coin page** | Live candlestick chart (15m–1w) with zoom/pan/pinch, EMA 20/50/200, Bollinger, volume, RSI, MACD, support/resistance, backtest markers and the AI forecast cone |
-| **Trade signal** | Buy/Sell score (−100…+100) from 9 indicator groups, multi-timeframe confluence, entry zone, stop-loss, three take-profits, exit rules and reasons |
-| **AI forecast** | Chance of rise, expected move, target and 50%/80% ranges. An ensemble of 7 models trained in the browser on that coin's own history, each weighted by its accuracy on data it never saw |
+| **Market reading** | Directional score (−100…+100) from 9 indicator groups, multi-timeframe context, support/resistance geometry and reasons. It is not a trade instruction. |
+| **Model experiment** | An ensemble of 7 browser models is computed only on measured timeframes. It is labelled as trusted only when it beats the published same-timeframe baseline; otherwise the result is shown with an explicit no-edge warning and never drives advice. Ranges and paths are illustrative, not targets. |
 | **History & cycles** | The long-range study: finds every past 45-day stretch whose *shape* matched today's, shows what price did 7/30/90 days later, overlays those charts on today's, adds year-by-year paths and monthly seasonality — and publishes how often that method was actually right on this coin |
 | **Pattern comparison** | Same idea on the trading timeframe: overlays today's chart on the most similar past charts and shows what happened next |
 | **History vs now** | Compares the latest 7/30/90/365 days with the previous period and the same dates 1 and 2 years ago |
@@ -22,7 +23,7 @@ an AI price forecast — **with its own built-in AI, no paid API keys required**
 | **Futures** | Funding rate, annualised funding, basis, open interest and its 12h change, long/short account ratios, top-trader positioning, plus a live liquidation feed |
 | **Order book & trades** | Live Binance depth and recent trades |
 | **Exchanges** | Same coin on 10 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Gate.io, Bitget, HTX, Gemini, Crypto.com): price, spread, volume, best buy/sell venue |
-| **Signal scanner** | Ranks the top 20/30/50 coins by signal score and fast AI forecast; filters for buy, sell, oversold and overbought |
+| **Signal scanner** | Ranks the top 20/30/50 coins by descriptive signal score and technical readings; it does not present unsupported buy/sell forecasts |
 | **Compare** | Up to 6 coins: normalised performance, volatility, max drawdown, return/risk, correlation matrix |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
 | **Price alerts** | Browser notifications while the site is open, plus server-side alerts by e-mail and Telegram while it is closed |
@@ -62,26 +63,27 @@ an AI price forecast — **with its own built-in AI, no paid API keys required**
 
 ### Measured accuracy (honest numbers)
 
-`tools/evaluate-engine.mjs` ran **672 forecasts on 12 major coins** (BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT). Each forecast used only data available at that moment, on real Binance candles.
+`tools/evaluate-engine.mjs` ran **1,440 forecasts on 12 major coins** (BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT). Each forecast used only data available at that moment, on real Binance candles.
 
 | Timeframe | Horizon | Direction accuracy |
 |---|---|---|
-| 15m | 2 hours | **60.1%** |
-| 1h | 12 hours | **55.4%** |
-| 4h | 1 day | **56.0%** |
-| 1d | 1 week | 49.4% |
-| **All** | | **55.2%** (up-moves were 51.3% of cases) |
+| 5m | measured horizon | **55.0%** (52.5% baseline) |
+| 15m | measured horizon | **52.5%** (51.2% baseline) |
+| 1h | measured horizon | **48.8%** (64.2% baseline) |
+| 4h | measured horizon | **43.8%** (75.4% baseline) |
+| 1d | measured horizon | **52.9%** (52.1% baseline) |
+| **All** | | **49.6%** (51.0% baseline) |
 
 - Predicted ranges were calibrated on the same test: σ is scaled by 0.75 so the 50% and 80% bands match reality.
-- Daily/weekly forecasts showed no edge. The UI says so, and suggests 15m–4h charts for timing.
+- 1m, 1h and 4h did not beat their baselines. The UI withholds those forecasts instead of presenting them as useful.
 - The **History & cycles** tab scores itself separately, per coin, and prints that number next to its verdict — on most coins it lands in the 45–62% range, which is context, not a trading edge.
-- No model can predict crypto reliably. Treat forecasts as probabilities and always use stop-losses.
+- No model can predict crypto reliably. Treat any displayed output as measured context, never a promise or instruction.
 
 Re-run it yourself: `node tools/fetch-klines.mjs klines.json` then `node tools/evaluate-engine.mjs klines.json 0 1 out.json`.
 
 ## Run locally
 
-No build step and no dependencies: plain HTML, CSS and ES modules.
+No runtime build step: plain HTML, CSS and ES modules. The optional browser smoke test requires Playwright to be installed in the development environment.
 
 ```bash
 node tools/serve.mjs 8080      # then open http://localhost:8080

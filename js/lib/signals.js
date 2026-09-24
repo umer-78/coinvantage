@@ -199,11 +199,11 @@ export function scoreAt(candles, ind, i) {
     let pts = 0, label = `RSI ${r.toFixed(0)} — neutral`;
     const rising = rp !== null && rp !== undefined && r > rp;
     const up = e50 !== null && c.c > e50;
-    if (r < 25) { pts = 1.5; label = `RSI ${r.toFixed(0)} — deeply oversold, bounce likely`; }
+    if (r < 25) { pts = 1.5; label = `RSI ${r.toFixed(0)} — deeply oversold`; }
     else if (r < 30) { pts = 1; label = `RSI ${r.toFixed(0)} — oversold`; }
     else if (r < 45) { pts = rising ? 0.5 : -0.3; label = `RSI ${r.toFixed(0)} — weak${rising ? ' but turning up' : ''}`; }
     else if (r <= 55) { pts = 0; }
-    else if (r <= 70) { pts = up ? 0.6 : 0.2; label = `RSI ${r.toFixed(0)} — bullish momentum`; }
+    else if (r <= 70) { pts = up ? 0.6 : 0.2; label = `RSI ${r.toFixed(0)} — positive momentum`; }
     else if (r <= 80) { pts = -1; label = `RSI ${r.toFixed(0)} — overbought`; }
     else { pts = -1.5; label = `RSI ${r.toFixed(0)} — extremely overbought, pullback risk`; }
     add('rsi', label, pts, 1.5, 'momentum');
@@ -271,7 +271,7 @@ export function generateSignal(candles, { interval = '' } = {}) {
   // Levels come from the measured geometry for this timeframe, not a fixed rule.
   const geo = geometryFor(interval);
   let plan = null;
-  if (score >= THRESHOLDS.normal) {
+  if (score >= THRESHOLDS.normal && (!geo.tested || geo.ev > 0)) {
     let stop = entryStop(price - geo.stopAtr * atrV, s1 !== null ? s1 - 0.25 * atrV : null, 'long', price, atrV);
     const risk = price - stop;
     const tp3Candidate = sr.resistances.find((l) => l.price > price + geo.rr * risk)?.price;
@@ -293,7 +293,7 @@ export function generateSignal(candles, { interval = '' } = {}) {
         'Exit or tighten stop if RSI goes above 75 and momentum fades',
       ].filter(Boolean),
     };
-  } else if (score <= -THRESHOLDS.normal) {
+  } else if (score <= -THRESHOLDS.normal && (!geo.tested || geo.ev > 0)) {
     let stop = entryStop(price + geo.stopAtr * atrV, r1 !== null ? r1 + 0.25 * atrV : null, 'short', price, atrV);
     const risk = stop - price;
     const tp3Candidate = sr.supports.find((l) => l.price < price - geo.rr * risk)?.price;
@@ -323,6 +323,9 @@ export function generateSignal(candles, { interval = '' } = {}) {
   // cannot pay. 0.3% is roughly two round trips at a typical 0.1% taker fee.
   const MIN_TRADEABLE_MOVE = 0.003;
   let noEdgeReason = null;
+  if (!plan && geo.tested && geo.ev <= 0 && Math.abs(score) >= THRESHOLDS.normal) {
+    noEdgeReason = `This timeframe's measured trade geometry has negative expectancy (${geo.ev.toFixed(3)}R per trade after fees), so no entry plan is shown. The indicator reading is descriptive only.`;
+  }
   if (plan) {
     const target = plan.takeProfits[0];
     const move = Math.abs(target - price) / price;
@@ -474,9 +477,9 @@ export function adviseHolding({ signal, avgBuyPrice, price }) {
   const rsiV = signal.indicators.rsi;
   if (signal.score <= -THRESHOLDS.strong) return { text: 'Strong sell signal — consider exiting or tightening your stop', tone: 'down' };
   if (signal.score <= -THRESHOLDS.normal) {
-    return { text: pnl !== null && pnl > 0 ? 'Trend weakening — consider locking in profit' : 'Bearish — review your stop-loss', tone: 'down' };
+    return { text: pnl !== null && pnl > 0 ? 'Trend weakening — review the measured levels' : 'Downward readings — no action is implied', tone: 'down' };
   }
-  if (rsiV !== null && rsiV > 75 && pnl !== null && pnl > 15) return { text: 'Overbought while in profit — consider taking partial profit', tone: 'warn' };
-  if (signal.score >= THRESHOLDS.normal) return { text: 'Bullish — hold; trail stop below support', tone: 'up' };
-  return { text: 'Neutral — hold and watch key levels', tone: 'flat' };
+  if (rsiV !== null && rsiV > 75 && pnl !== null && pnl > 15) return { text: 'Overbought while in profit — review the historical context', tone: 'warn' };
+  if (signal.score >= THRESHOLDS.normal) return { text: 'Upward readings — review key levels', tone: 'up' };
+  return { text: 'Neutral readings — monitor key levels', tone: 'flat' };
 }

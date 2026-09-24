@@ -1,7 +1,7 @@
 // Site-wide settings. Rebrand the app by changing APP_NAME / TAGLINE.
 export const CONFIG = {
   APP_NAME: 'CoinVantage',
-  TAGLINE: 'Live crypto markets, signals & AI forecasts',
+  TAGLINE: 'Live crypto markets, measured signals & transparent data',
 
   // Market data (all public, key-less, CORS-enabled endpoints)
   BINANCE_REST: ['https://data-api.binance.vision', 'https://api.binance.com'],

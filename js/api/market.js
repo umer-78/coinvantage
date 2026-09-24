@@ -104,8 +104,8 @@ export async function getMarkets() {
 }
 
 let marketsCache = { at: 0, promise: null };
-export function markets() {
-  if (!marketsCache.promise || Date.now() - marketsCache.at > 60e3) {
+export function markets(force = false) {
+  if (force || !marketsCache.promise || Date.now() - marketsCache.at > 60e3) {
     marketsCache = { at: Date.now(), promise: getMarkets().catch((e) => { marketsCache.at = 0; throw e; }) };
   }
   return marketsCache.promise;

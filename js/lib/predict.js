@@ -818,6 +818,34 @@ export function accuracyFor(interval) {
   return { accuracyPct: acc, baselinePct: base, edgePts: +(acc - base).toFixed(1), beatsBaseline: acc > base };
 }
 
+/**
+ * Decide whether a computed forecast is usable as displayed evidence.
+ * "Usable" only means the engine produced enough validation rows to show;
+ * "trusted" means it also beats the published same-timeframe baseline.
+ */
+export function forecastTrust(forecast, interval) {
+  if (!forecast?.ok) return { usable: false, trusted: false, reason: forecast?.reason || 'The forecast engine returned no result.' };
+  const e = forecast.ensemble || {};
+  const samples = Number(e.samples);
+  const accuracy = Number(e.accuracy);
+  const baseline = Number(e.baseline);
+  const tested = accuracyFor(interval);
+  if (!Number.isFinite(samples) || samples < 30 || !Number.isFinite(accuracy) || !Number.isFinite(baseline)) {
+    return { usable: false, trusted: false, reason: 'Too few complete out-of-sample cases to report this forecast responsibly.' };
+  }
+  const trusted = Boolean(tested?.beatsBaseline && accuracy > baseline + 0.02);
+  return {
+    usable: true,
+    trusted,
+    samples,
+    accuracyPct: +(accuracy * 100).toFixed(1),
+    baselinePct: +(baseline * 100).toFixed(1),
+    reason: trusted
+      ? 'The computed result clears the published same-timeframe baseline.'
+      : 'The computed result does not demonstrate a reliable edge over the same-timeframe baseline.',
+  };
+}
+
 // Compact version for prompts / scanner rows
 export function summarizeForecast(f) {
   if (!f?.ok) return null;
@@ -833,6 +861,7 @@ export function summarizeForecast(f) {
     validatedAccuracyPct: f.ensemble.accuracy !== null ? +(f.ensemble.accuracy * 100).toFixed(1) : null,
     baselineAccuracyPct: +(f.ensemble.baseline * 100).toFixed(1),
     accuracyWhenConfidentPct: f.ensemble.confidentAccuracy !== null ? +(f.ensemble.confidentAccuracy * 100).toFixed(1) : null,
+    trust: f.trust || null,
     models: f.models.map((m) => ({ model: m.name, probUpPct: m.probUp !== null ? +(m.probUp * 100).toFixed(1) : null, accuracyPct: m.accuracy !== null ? +(m.accuracy * 100).toFixed(1) : null, weightPct: m.weightPct })),
     patternMatches: f.patterns.matches.slice(0, 5).map((m) => ({ date: new Date(m.startTime).toISOString().slice(0, 10), similarityPct: +(m.similarity * 100).toFixed(0), thenMovedPct: +m.futureReturnPct.toFixed(2) })),
     notes: f.notes,

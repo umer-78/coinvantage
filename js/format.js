@@ -2,6 +2,11 @@ import { fx } from './api/fx.js';
 import { now } from './api/clock.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const locale = () => {
+  const lang = typeof document !== 'undefined' ? (document.documentElement.lang || 'en') : 'en';
+  return lang === 'ur' ? 'ur-PK' : (typeof navigator !== 'undefined' ? (navigator.language || 'en-US') : 'en-US');
+};
+const number = (v, options) => Number(v).toLocaleString(locale(), options);
 
 export function price(v) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
@@ -9,8 +14,8 @@ export function price(v) {
   const a = Math.abs(v);
   // Decimals follow the size of the number: cents matter on a $600 coin, but
   // ten-thousandths do not — while on a $1.36 coin they are the whole story.
-  if (a >= 100) return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (a >= 1) return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  if (a >= 100) return number(v, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (a >= 1) return number(v, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   if (a === 0) return '0.00';
   const digits = Math.min(10, Math.max(4, -Math.floor(Math.log10(a)) + 3));
   return v.toFixed(digits).replace(/(\.\d*?[1-9])0+$/, '$1');
@@ -23,8 +28,9 @@ export function money(v, { showCode = false, dp } = {}) {
   // the number the exchange quotes — no rounding of your own on top of it.
   const text = dp === undefined
     ? price(converted)
-    : converted.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
-  return `${fx.symbol}${text}${showCode && fx.code !== 'USD' ? ` ${fx.code}` : ''}`;
+    : number(converted, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  const codeText = showCode || fx.code !== 'USD' ? ` ${fx.code}` : '';
+  return `${fx.symbol}${text}${codeText}`;
 }
 // Kept for readability at call sites: same thing, currency-aware.
 export const usd = (v) => money(v);
@@ -36,12 +42,12 @@ export function compact(v, prefix = '$') {
   const value = isMoney ? +v * fx.rate : +v;
   const sign = isMoney ? fx.symbol : prefix;
   const a = Math.abs(value);
-  const f = (x, suffix) => `${sign}${x.toLocaleString('en-US', { maximumFractionDigits: x >= 100 ? 1 : 2 })}${suffix}`;
+  const f = (x, suffix) => `${sign}${number(x, { maximumFractionDigits: x >= 100 ? 1 : 2 })}${suffix}`;
   if (a >= 1e12) return f(value / 1e12, 'T');
   if (a >= 1e9) return f(value / 1e9, 'B');
   if (a >= 1e6) return f(value / 1e6, 'M');
   if (a >= 1e3) return f(value / 1e3, 'K');
-  return `${sign}${value.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  return `${sign}${number(value, { maximumFractionDigits: 2 })}`;
 }
 
 export function pct(v, dp = 2, sign = true) {
@@ -51,13 +57,13 @@ export function pct(v, dp = 2, sign = true) {
 
 export function num(v, dp = 2) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
-  return (+v).toLocaleString('en-US', { maximumFractionDigits: dp });
+  return number(+v, { maximumFractionDigits: dp });
 }
 
 export function amount(v) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
   const a = Math.abs(v);
-  return (+v).toLocaleString('en-US', { maximumFractionDigits: a >= 1000 ? 2 : a >= 1 ? 4 : 8 });
+  return number(+v, { maximumFractionDigits: a >= 1000 ? 2 : a >= 1 ? 4 : 8 });
 }
 
 export const tone = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
@@ -71,7 +77,7 @@ export function changeHtml(v, dp = 2) {
 
 export function dateTime(t, withTime = true) {
   const d = new Date(t);
-  return d.toLocaleString('en-US', withTime ? { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleString(locale(), withTime ? { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export function ago(t) {

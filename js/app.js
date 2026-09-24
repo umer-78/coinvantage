@@ -4,7 +4,8 @@ import { CONFIG } from './config.js';
 import { $, $$, icon, coinLogo, toast, modal } from './ui.js';
 import { esc, price, changeHtml, money } from './format.js';
 import { settings, load, save } from './store.js';
-import { markets, searchCoins, dataStatus, syncExchangeClock } from './api/market.js';
+import { markets, searchCoins, findCoin, getCandles, getGlobal, dataStatus, syncExchangeClock } from './api/market.js';
+import { generateSignal } from './lib/signals.js';
 import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, I18N, setLang, applyDir } from './i18n.js';
@@ -12,7 +13,7 @@ import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData,
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
-  { path: 'advice', label: 'What to buy', icon: 'bolt', badge: 'NEW', short: 'Buy' },
+  { path: 'advice', label: 'Market readings', icon: 'bolt', badge: 'NEW', short: 'Readings' },
   { path: 'ai', label: 'Assistant', icon: 'ai', short: 'Ask' },
   { path: 'trader', label: 'Trading', icon: 'forecast', short: 'Trading' },
   { path: 'scanner', label: 'Scanner', icon: 'scanner', short: 'Scanner' },
@@ -150,15 +151,17 @@ function initSearch() {
 // ---------------------------------------------------------------- currency & language
 async function initSelectors() {
   const cur = $('#curSel'), lang = $('#langSel');
-  cur.innerHTML = CONFIG.CURRENCIES.map(([c, s]) => `<option value="${c}">${c} ${s}</option>`).join('');
+  cur.innerHTML = CONFIG.CURRENCIES.map(([c, s, name]) => `<option value="${c}">${c} ${s} · ${esc(name)}</option>`).join('');
   lang.innerHTML = CONFIG.LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join('');
   await initCurrency();
   cur.value = fx.code;
   lang.value = I18N.lang;
+  cur.title = `Display currency: ${fx.code}. Rates are converted from USD and may be delayed.`;
   cur.addEventListener('change', async () => {
     const ok = await setCurrency(cur.value);
     if (!ok) { toast('Exchange rate unavailable for that currency right now.', 'info'); cur.value = fx.code; return; }
     refreshTickerPrices();
+    cur.title = `Display currency: ${fx.code}. Rates are converted from USD and may be delayed.`;
     route();
   });
   lang.addEventListener('change', () => { setLang(lang.value); route(); });
@@ -385,6 +388,89 @@ initSelectors().then(route).catch(route);
 initTicker();
 initAccount();
 riskGate();
+initMagicChat();
+
+function initMagicChat() {
+  const launcher = $('#magicChatLauncher');
+  const panel = $('#magicChat');
+  const log = $('#magicChatLog');
+  const input = $('#magicChatInput');
+  if (!launcher || !panel || !log || !input) return;
+  let request = null;
+  const key = 'cv:magic-chat:v2';
+  const stamp = () => new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const add = (role, text, meta = '') => {
+    const row = document.createElement('div');
+    row.className = `magic-msg ${role}`;
+    row.innerHTML = `<div>${esc(text).replace(/\n/g, '<br>')}</div>${meta ? `<small>${esc(meta)}</small>` : ''}`;
+    log.append(row);
+    log.scrollTop = log.scrollHeight;
+  };
+  const saveChat = () => localStorage.setItem(key, log.innerHTML);
+  const restore = () => {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      log.innerHTML = saved;
+      if (!log.children.length) localStorage.removeItem(key);
+    }
+    else add('bot', 'Hi — I can check live market data and indicator-based signals. I will label demo, stale, or unavailable data clearly.', 'Not financial advice · ' + stamp());
+  };
+  const setBusy = (busy) => {
+    panel.classList.toggle('busy', busy);
+    $('#magicChatStop').hidden = !busy;
+    $('#magicChatSend').disabled = busy;
+  };
+  const reply = async (question) => {
+    const raw = question.trim();
+    if (!raw) return;
+    add('user', raw, stamp());
+    input.value = '';
+    setBusy(true);
+    request = new AbortController();
+    try {
+      const cmd = raw.match(/^\/(\w+)(?:\s+(.+))?$/i);
+      const name = cmd?.[1]?.toLowerCase();
+      const arg = cmd?.[2]?.trim() || 'BTC';
+      if (name === 'help') {
+        add('bot', 'Try /price BTC, /signal ETH, or /market. For broader questions, use Open full Assistant.', 'Commands');
+      } else if (name === 'price') {
+        const coin = await findCoin(arg);
+        if (request.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (!coin || coin.price == null) throw new Error(`I could not find a current price for ${arg}.`);
+        add('bot', `${coin.name} (${coin.symbol}): ${price(coin.price)}${coin.change24h == null ? '' : ` (${coin.change24h >= 0 ? '+' : ''}${coin.change24h.toFixed(2)}% 24h)`}`, `Source: ${coin.source} · checked ${stamp()}${dataStatus.demo ? ' · demo/fallback data' : ''}`);
+      } else if (name === 'signal') {
+        const coin = await findCoin(arg);
+        if (!coin) throw new Error(`I could not find ${arg}.`);
+        const { candles, source } = await getCandles(coin, '1h', 240);
+        if (request.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        const signal = generateSignal(candles, { interval: '1h' });
+        add('bot', signal.ok ? `${coin.symbol} 1h signal: ${signal.label}. This is an indicator result, not a prediction or trade instruction.` : signal.reason, `Source: ${source} · checked ${stamp()}`);
+      } else if (name === 'market') {
+        const global = await getGlobal();
+        if (request.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        add('bot', global.totalMarketCap == null ? 'Market overview is currently unavailable.' : `Total market cap: ${money(global.totalMarketCap)}. BTC dominance: ${global.btcDominance == null ? 'unavailable' : `${global.btcDominance.toFixed(1)}%`}.`, `Checked ${stamp()} · values may be cached or fallback data`);
+      } else {
+        add('bot', 'I can answer quick market commands here. For natural-language analysis, open the full Assistant so model status, sources, and uncertainty are visible.', 'No fabricated answer');
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') add('bot', `I could not complete that request: ${e.message || 'data unavailable'}`, `Checked ${stamp()}`);
+    } finally {
+      request = null;
+      setBusy(false);
+      saveChat();
+    }
+  };
+  restore();
+  launcher.addEventListener('click', () => { panel.hidden = false; launcher.hidden = true; input.focus(); });
+  $('#magicChatClose').addEventListener('click', () => { panel.hidden = true; launcher.hidden = false; });
+  $('#magicChatClear').addEventListener('click', () => { localStorage.removeItem(key); log.innerHTML = ''; add('bot', 'Conversation cleared. Market data and trading accounts were not changed.', 'Local chat only'); saveChat(); });
+  $('#magicChatStop').addEventListener('click', () => request?.abort());
+  $('#magicChatRefresh').addEventListener('click', () => { markets(true).then(() => { add('bot', 'Market data refreshed.', `Checked ${stamp()}`); saveChat(); }).catch(() => add('bot', 'Refresh failed; live APIs are unavailable.', `Checked ${stamp()}`)); });
+  $('#magicChatOpen').addEventListener('click', () => { sessionStorage.setItem('cv:assistant-question', input.value.trim()); location.hash = '#/ai'; });
+  $('#magicChatSend').addEventListener('click', () => reply(input.value));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); reply(input.value); } });
+  $$('#magicChat .magic-quick').forEach((button) => button.addEventListener('click', () => reply(button.dataset.command)));
+}
 
 // ---------------------------------------------------------------- updates
 //

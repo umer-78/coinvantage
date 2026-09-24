@@ -113,8 +113,18 @@ export async function account(req: Request): Promise<Response> {
       const premium = await setting<{ price: number; currency: string; period_days: number; stripe_enabled: boolean }>('premium');
       const key = await secret('stripe_secret_key');
       if (!premium?.stripe_enabled || !key) throw new HttpError('Online card payments are not enabled. Use the manual payment option.', 503);
-      const origin = String(body.return_url || '').startsWith('http') ? String(body.return_url).split('#')[0] : '';
-      if (!origin) throw new HttpError('Missing return URL');
+      const returnUrl = String(body.return_url || '').split('#')[0];
+      let origin = '';
+      try {
+        const target = new URL(returnUrl);
+        const requestOrigin = req.headers.get('origin');
+        if (!requestOrigin || target.origin !== requestOrigin || !['http:', 'https:'].includes(target.protocol)) {
+          throw new Error('origin mismatch');
+        }
+        origin = target.origin + target.pathname + target.search;
+      } catch {
+        throw new HttpError('Return URL must match the site origin.');
+      }
       const form = new URLSearchParams({
         mode: 'payment',
         'line_items[0][quantity]': '1',

@@ -21,6 +21,11 @@ export async function render(el) {
   let autoOn = load(RUN_KEY, false) === true;
   const cfg = { ...DEFAULT_CONFIG, ...load(CFG_KEY, {}) };
   let state = load(STATE_KEY, null);
+  // A saved account must keep replaying on the timeframe it was created with.
+  // Otherwise changing settings silently mixes (for example) daily candles
+  // into an account that the UI describes as hourly.
+  const accountInterval = state?.interval || cfg.interval;
+  const runCfg = { ...cfg, interval: accountInterval };
 
   const all = await markets().catch(() => []);
   const tradable = all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 60);
@@ -31,7 +36,7 @@ export async function render(el) {
         <p>Three accounts, side by side: the practice trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p></div>
       <div class="row">
         <button class="btn" id="cfgBtn">${icon('chip', 16)} Settings</button>
-        ${state ? '<button class="btn ghost" id="resetBtn">Reset</button>' : ''}
+        <button class="btn ghost" id="resetBtn">Reset trading data</button>
         <button class="btn ghost" id="stopBtn" hidden>${icon('close', 16)} Stop the AI</button>
         <button class="btn primary" id="startBtn">${state ? icon('refresh', 16) + ' Catch up now' : icon('bolt', 16) + ' Start the trader'}</button>
       </div>
@@ -44,10 +49,10 @@ export async function render(el) {
   // never seen it did not beat simply owning the coins, on any timeframe. A
   // feature that cannot beat buying and holding should say so on its own page.
   function verdictCard() {
-    const t = AUTOTRADER_TESTED[cfg.interval] || AUTOTRADER_TESTED['1h'];
+    const t = AUTOTRADER_TESTED[runCfg.interval] || AUTOTRADER_TESTED['1h'];
     return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured, not estimated</span></div>
-      <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(cfg.interval)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
+      <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(runCfg.interval)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
       <p class="fine">Out of ${t.configs} settings tested on that timeframe, <b>${t.beatBuyHold}</b> beat buy-and-hold. Fees alone consumed ${t.feeDragPct}% of the balance across ${t.trades} trades. Across 1h, 4h and 1d — ${AUTOTRADER_TESTED.configs || 324} settings in total — nothing beat holding the coins.</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a way to make money, and CoinVantage will not tell you it is. It places no real orders and holds no keys.</p>
     </div>`;
@@ -56,7 +61,7 @@ export async function render(el) {
   function startCard() {
     return `<div class="card empty">
       <h3>Run the strategy on play money</h3>
-      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with the fee it would have paid.</p>
+      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} trading timeframe. This is independent of the chart timeframe on other pages. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with its timeframe and fee.</p>
       <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
     </div>`;
   }
@@ -70,6 +75,7 @@ export async function render(el) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Working…';
     if (!state) state = newState(cfg);
+    const activeCfg = { ...cfg, interval: state.interval || cfg.interval };
 
     let processed = 0, failed = [];
     for (const sym of cfg.universe) {
@@ -77,10 +83,10 @@ export async function render(el) {
       const coin = all.find((c) => c.symbol === sym);
       if (!coin) { failed.push(sym); continue; }
       try {
-        const r = await getCandles(coin, cfg.interval, 500);
+        const r = await getCandles(coin, activeCfg.interval, 500);
         // only fully closed candles drive decisions
         const candles = r.candles.slice(0, -1);
-        processed += replaySymbol(state, cfg, sym, candles).processed;
+        processed += replaySymbol(state, activeCfg, sym, candles).processed;
       } catch { failed.push(sym); }
     }
     save(STATE_KEY, state);
@@ -408,7 +414,7 @@ export async function render(el) {
       ${state.equityCurve.length > 2 ? `<div class="card mt"><div class="card-h"><h3>Balance over time</h3><span class="fine">simulated</span></div><div id="eqChart"></div></div>` : ''}
 
       <div class="card mt">
-        <div class="card-h"><h3>Trade log</h3><div class="row" style="gap:8px"><span class="fine">${s.trades} closed · ${money(s.feesPaid)} paid in fees</span><button class="btn sm ghost" data-export="ai-csv">CSV</button><button class="btn sm ghost" data-report="ai">Report</button></div></div>
+        <div class="card-h"><h3>Trade log</h3><div class="row" style="gap:8px"><span class="fine">${s.trades} closed · ${money(s.feesPaid)} paid in fees · ${esc(state.interval || cfg.interval)} timeframe</span><button class="btn sm ghost" data-export="ai-csv">CSV</button><button class="btn sm ghost" data-report="ai">Report</button></div></div>
         ${closed.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Opened</th><th class="l">Closed</th><th>Entry</th><th>Exit</th><th>Result</th><th class="l">Why it closed</th></tr></thead><tbody>
           ${closed.slice(0, 60).map((t) => `<tr data-sym="${esc(t.symbol)}">
             <td class="l"><b>${esc(t.symbol)}</b></td>
@@ -476,11 +482,20 @@ export async function render(el) {
   });
 
   $('#resetBtn', el)?.addEventListener('click', () => {
-    const m = modal(`<h3>Reset the trader?</h3><p>This wipes the simulated balance and the whole trade log, and starts again from ${money(cfg.startingBalance)}.</p>
+    const m = modal(`<h3>Reset all trading data?</h3><p>This removes the AI simulation, your demo trades, and recorded real-account trades from this browser. Settings are kept. This cannot be undone.</p>
       <div class="row mt" style="gap:8px"><button class="btn" id="no">Keep it</button><button class="btn primary" id="yes">Reset</button></div>`);
     $('#no', m.el).addEventListener('click', m.close);
     $('#yes', m.el).addEventListener('click', () => {
-      state = newState(cfg); save(STATE_KEY, state); autoOn = false; save(RUN_KEY, false); m.close(); draw(); syncRunButtons(); toast('Trader reset. It is stopped — press Resume when you want it running.', 'info');
+      localStorage.removeItem(STATE_KEY);
+      localStorage.removeItem(MY_KEY);
+      localStorage.removeItem(REAL_KEY);
+      state = null;
+      autoOn = false;
+      save(RUN_KEY, false);
+      m.close();
+      draw();
+      syncRunButtons();
+      toast('All trading records cleared. The trader is stopped.', 'info');
     });
   });
 

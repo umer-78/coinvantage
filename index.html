@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>CoinVantage — Live Crypto Markets, Signals & AI Forecasts</title>
-  <meta name="description" content="Live crypto prices from Binance and 10 exchanges, candlestick charts, buy/sell signals, historical pattern comparison and an AI price forecast that runs in your browser.">
+  <title>CoinVantage — Live Crypto Markets & Measured Signals</title>
+  <meta name="description" content="Live crypto prices, candlestick charts, measured technical signals, historical comparisons and transparent market-data status.">
   <!-- Locks the page down against injected scripts: only our own files and the
        pinned CDN may run code, framing is blocked by the server header, and forms cannot be
        redirected off-site. Inline markup styles still work; inline SCRIPTS do not,
@@ -13,8 +13,8 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-m7v0T+41AdKl0dUdyHrXrQhNl2dT2S6AEr9UN/Q71nI=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src 'self' https: wss: blob: data:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#0b0e14">
-  <meta property="og:title" content="CoinVantage — Crypto markets, signals & AI forecasts">
-  <meta property="og:description" content="Live prices, charts, signals, pattern comparison and in-browser AI forecasts.">
+  <meta property="og:title" content="CoinVantage — Crypto markets & measured signals">
+  <meta property="og:description" content="Live prices, charts, measured technical signals, historical comparisons and transparent data status.">
   <meta property="og:type" content="website">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e14'/%3E%3Cpath d='M14 42l12-12 8 8 16-18' stroke='%23f5b301' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="manifest" href="manifest.webmanifest">
@@ -29,6 +29,7 @@
   </script>
 </head>
 <body>
+  <a class="skip-link" href="#view">Skip to content</a>
   <div class="app">
     <aside class="sidebar" aria-label="Main navigation">
       <a class="brand" href="#/">
@@ -69,6 +70,14 @@
     <nav class="bottombar" id="bottombar" aria-label="Mobile navigation"></nav>
   </div>
   <noscript><p style="padding:24px;color:#fff">This site needs JavaScript enabled.</p></noscript>
+  <button class="magic-chat-launcher" id="magicChatLauncher" aria-label="Open Magic Chat">✦ <span>Magic Chat</span></button>
+  <section class="magic-chat" id="magicChat" hidden role="dialog" aria-modal="false" aria-labelledby="magicChatTitle">
+    <header><div><strong id="magicChatTitle">Magic Chat</strong><small class="fine" style="display:block">Live data only; unavailable sources are shown</small></div><div><button class="icon-btn" id="magicChatRefresh" aria-label="Refresh market data">↻</button><button class="icon-btn" id="magicChatClear" aria-label="Clear chat">⌫</button><button class="icon-btn" id="magicChatClose" aria-label="Close Magic Chat">×</button></div></header>
+    <div class="magic-log" id="magicChatLog" aria-live="polite"></div>
+    <div class="magic-quick-row"><button class="btn sm magic-quick" data-command="/help">/help</button><button class="btn sm magic-quick" data-command="/price BTC">/price BTC</button><button class="btn sm magic-quick" data-command="/signal ETH">/signal ETH</button><button class="btn sm magic-quick" data-command="/market">/market</button></div>
+    <div class="magic-input"><input id="magicChatInput" type="text" placeholder="Ask a market question…" autocomplete="off" aria-label="Magic Chat message"><button class="btn sm" id="magicChatStop" hidden>Stop</button><button class="btn sm primary" id="magicChatSend">Send</button></div>
+    <button class="magic-open" id="magicChatOpen">Open full Assistant</button>
+  </section>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

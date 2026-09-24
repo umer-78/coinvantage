@@ -1,6 +1,6 @@
 // Crypto news, collected server-side from public RSS feeds every 20 minutes.
 import { $, $$, skeleton, bindSeg, icon } from '../ui.js';
-import { esc, ago } from '../format.js';
+import { esc, ago, dateTime } from '../format.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 
 export const title = 'News';
@@ -16,7 +16,14 @@ export async function render(el, [coinParam]) {
     return;
   }
 
-  const rows = await getNews({ coin: coinParam ? coinParam.toUpperCase() : null, limit: 120 }).catch(() => []);
+  let loadError = null;
+  const rows = await getNews({ coin: coinParam ? coinParam.toUpperCase() : null, limit: 120 }).catch((e) => { loadError = e; return []; });
+  const newest = rows.reduce((max, r) => Math.max(max, Date.parse(r.published_at) || 0), 0);
+  const staleNews = !newest || Date.now() - newest > 2 * 3600e3;
+  if (loadError) {
+    $('#body', el).innerHTML = `<div class="card empty"><h3>News is temporarily unavailable</h3><p>${esc(loadError.message || 'The news service did not return data.')}</p><p class="fine">Prices and headlines are separate services; an unavailable news feed does not change market data.</p></div>`;
+    return;
+  }
   const sources = [...new Set(rows.map((r) => r.source))].sort();
   const coins = [...new Set(rows.flatMap((r) => r.coins || []))].sort();
   let source = 'all', coin = coinParam ? coinParam.toUpperCase() : 'all', q = '';
@@ -41,8 +48,9 @@ export async function render(el, [coinParam]) {
     <div class="card">
       <div class="card-h">
         <div class="seg" id="src"><button data-v="all" class="on">All sources</button>${sources.map((s) => `<button data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-        <span class="fine">${rows.length} headlines</span>
+        <span class="fine">${rows.length} headlines · ${newest ? `latest ${dateTime(newest)}` : 'no publication time'}</span>
       </div>
+      ${staleNews ? `<div class="banner warn">${icon('info', 16)} No headline newer than two hours was received. The scheduled collector may be delayed; these are not live headlines.</div>` : ''}
       ${coins.length ? `<div class="seg" id="cn" style="margin-bottom:10px"><button data-v="all" class="${coin === 'all' ? 'on' : ''}">Any coin</button>${coins.slice(0, 14).map((c) => `<button data-v="${esc(c)}" class="${coin === c ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>` : ''}
       <div class="news-list" id="list"></div>
     </div>

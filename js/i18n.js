@@ -5,6 +5,17 @@ import { settings } from './store.js';
 const UR = {
   // navigation & shell
   'Markets': 'مارکیٹس',
+  'Readings': 'ریڈنگز',
+  'Ask': 'پوچھیں',
+  'Record': 'ریکارڈ',
+  'Scanner': 'اسکینر',
+  'Trading': 'ٹریڈنگ',
+  'Market readings': 'مارکیٹ ریڈنگز',
+  'Assistant': 'اسسٹنٹ',
+  'Alerts': 'الرٹس',
+  'Premium': 'پریمیم',
+  'Exchanges': 'ایکسچینجز',
+  'Wallet': 'والٹ',
   'AI Assistant': 'اے آئی اسسٹنٹ',
   'Signal Scanner': 'سگنل اسکینر',
   'Compare': 'موازنہ',

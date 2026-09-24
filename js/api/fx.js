@@ -2,7 +2,7 @@
 import { CONFIG } from '../config.js';
 import { settings } from '../store.js';
 
-export const fx = { code: 'USD', symbol: '$', rate: 1, updated: 0 };
+export const fx = { code: 'USD', symbol: '$', rate: 1, updated: 0, source: 'base currency', error: null };
 
 const SYMBOLS = Object.fromEntries(CONFIG.CURRENCIES.map(([c, s]) => [c, s]));
 export const currencyName = (code) => CONFIG.CURRENCIES.find((c) => c[0] === code)?.[2] || code;
@@ -44,10 +44,16 @@ export async function initCurrency() {
 }
 
 export async function setCurrency(code, notify = true) {
+  code = String(code || 'USD').toUpperCase();
   const all = await rates();
   const rate = code === 'USD' ? 1 : all[code];
-  if (!rate) return false;
-  fx.code = code; fx.symbol = SYMBOLS[code] || `${code} `; fx.rate = rate; fx.updated = Date.now();
+  if (!Number.isFinite(Number(rate)) || Number(rate) <= 0) {
+    fx.error = `No exchange rate is available for ${code}.`;
+    return false;
+  }
+  fx.code = code; fx.symbol = SYMBOLS[code] || `${code} `; fx.rate = Number(rate); fx.updated = Date.now();
+  fx.source = code === 'USD' ? 'base currency' : 'live/cached USD exchange rate';
+  fx.error = null;
   settings.set({ currency: code });
   if (notify) window.dispatchEvent(new CustomEvent('cv:currency', { detail: { code } }));
   return true;

@@ -68,6 +68,7 @@ export const DEFAULT_CONFIG = {
 export function newState(cfg = DEFAULT_CONFIG) {
   return {
     version: 1,
+    interval: cfg.interval,
     startedAt: Date.now(),
     balance: cfg.startingBalance,
     startingBalance: cfg.startingBalance,
@@ -145,7 +146,7 @@ export function replaySymbol(state, cfg, symbol, candles) {
     const fee = notional * (cfg.feePct / 100);
     state.balance -= fee;
     state.open[symbol] = {
-      symbol, side: 'long',
+      symbol, side: 'long', interval: cfg.interval,
       entry: round(entry), initialStop: round(stop), stop: round(stop),
       tp: round(entry + cfg.rMultiple * riskPerUnit),
       qty: round(qty, 10), notional: round(notional, 2),
@@ -193,7 +194,7 @@ export function openManual(state, cfg, symbol, price, { notional, stopPrice, tar
   const fee = size * (cfg.feePct / 100);
   state.balance -= fee;
   state.open[symbol] = {
-    symbol, side: 'long', manual: true,
+    symbol, side: 'long', manual: true, interval: cfg.interval,
     entry: round(price), initialStop: round(stop), stop: round(stop), tp: round(tp),
     qty: round(qty, 10), notional: round(size, 2),
     openedAt: at, openScore: null, movedToBreakEven: false, feePaid: round(fee, 4),
@@ -223,7 +224,7 @@ export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry,
   if (exit === null || exit === '' || exit === undefined) {
     if (state.open[symbol]) return { ok: false, error: `You already have an open ${symbol} trade recorded. Close it first, or record it as a closed trade.` };
     state.open[symbol] = {
-      symbol, side, real: true,
+      symbol, side, real: true, interval: cfg.interval,
       entry: round(e), initialStop: null, stop: null, tp: null,
       qty: round(q, 10), notional: round(notional, 2),
       openedAt, openScore: null, movedToBreakEven: false, feePaid: round(feePaid, 4), note,

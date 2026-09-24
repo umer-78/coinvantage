@@ -33,14 +33,14 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null }
   // 2. Model ensemble, weighted by its own out-of-sample accuracy on this coin.
   if (forecast?.ok) {
     const edge = (forecast.probUp - 0.5) * 2;
-    const w = edgeWeight(forecast.ensemble?.accuracy) * 1.4;
+    const w = forecast.trust?.trusted ? edgeWeight(forecast.ensemble?.accuracy) * 1.4 : 0;
     parts.push({ key: 'forecast', value: clamp(edge * 2.5, -1, 1), weight: w });
     const accTxt = forecast.ensemble?.accuracy !== null && forecast.ensemble?.accuracy !== undefined
       ? `${(forecast.ensemble.accuracy * 100).toFixed(0)}% accurate on unseen data`
       : 'accuracy not measured';
     reasons.push({
       tone: forecast.probUp >= 0.54 ? 'good' : forecast.probUp <= 0.46 ? 'bad' : 'flat',
-      text: `AI forecast: ${(forecast.probUp * 100).toFixed(0)}% chance of rising (${accTxt})${w < 0.25 ? ' — little measured edge, so it barely counts here' : ''}.`,
+      text: `Model-estimated upward share: ${(forecast.probUp * 100).toFixed(0)}% (${accTxt})${w < 0.25 ? ' — no validated edge, so it does not drive this reading' : ''}.`,
     });
   }
 
@@ -77,16 +77,20 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null }
   const evidenceWeight = parts.filter((p) => p.key !== 'signal').reduce((s, p) => s + p.weight, 0);
   const evidence = evidenceWeight < 0.5 ? 'thin' : evidenceWeight < 1.2 ? 'moderate' : 'good';
 
+  // The technical score has no demonstrated tradeable edge on its own. Do not
+  // turn it into BUY/SELL/ACCUMULATE language; callers may still show the
+  // descriptive reasons and illustrative levels.
+  const hasMeasuredEdge = parts.some((p) => p.key !== 'signal' && p.weight >= 0.8 && p.value !== 0);
   let verdict, tone, headline;
   if (holding) {
-    if (score <= -0.35) { verdict = 'SELL'; tone = 'down'; headline = 'Reduce or close'; }
-    else if (score <= -0.12) { verdict = 'TRIM'; tone = 'warn'; headline = 'Take some off'; }
-    else if (score >= 0.3) { verdict = 'ADD'; tone = 'up'; headline = 'Hold and add on dips'; }
-    else { verdict = 'HOLD'; tone = 'flat'; headline = 'Hold, nothing to do'; }
-  } else if (score >= 0.35) { verdict = 'BUY'; tone = 'up'; headline = 'Buy candidate'; }
-  else if (score >= 0.15) { verdict = 'ACCUMULATE'; tone = 'up'; headline = 'Worth accumulating'; }
-  else if (score <= -0.3) { verdict = 'AVOID'; tone = 'down'; headline = 'Avoid for now'; }
-  else { verdict = 'WAIT'; tone = 'flat'; headline = 'No edge — wait'; }
+    verdict = 'HOLD';
+    tone = 'flat';
+    headline = hasMeasuredEdge ? 'Hold while the measured evidence develops' : 'Hold — no validated edge';
+  } else {
+    verdict = 'WAIT';
+    tone = 'flat';
+    headline = hasMeasuredEdge ? 'Wait for confirmation' : 'No validated edge — wait';
+  }
 
   // Trade levels only come from the signal engine, which is the part that was
   // backtested with stops and targets. No plan = no levels, and we say so.
@@ -123,4 +127,4 @@ export function rankAdvice(rows) {
   return { buys, avoid, wait, total: scored.length };
 }
 
-export const ADVICE_DISCLAIMER = 'This is a reading of public market data, not personalised financial advice. Every level assumes you set the stop-loss. The app never places a trade for you.';
+export const ADVICE_DISCLAIMER = 'This is a reading of public market data, not personalised financial advice. Reference levels are illustrative and do not tell you what to trade. The app never places a trade for you.';

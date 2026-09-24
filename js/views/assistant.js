@@ -18,7 +18,7 @@ export async function render(el, [symParam]) {
   const s = settings.get();
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built from live prices, signals, backtests and the forecast — and run on your device. No account, no API key, nothing sent to a server.</p></div></div>
+    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built from live prices, measured signals and historical tests — and run on your device. No account, no API key, nothing sent to a server.</p></div><div class="row"><button class="btn sm" id="assistantRefresh">Refresh data</button><button class="btn sm" id="assistantStop" disabled>Stop</button><button class="btn sm" id="assistantClear">Clear chat</button></div></div>
     <div class="chat">
       <div class="card chat-box">
         <div class="chat-log" id="log" aria-live="polite"></div>
@@ -42,7 +42,7 @@ export async function render(el, [symParam]) {
           <b>How the assistant works</b>
           <ol style="padding-left:18px;margin:6px 0 0">
             <li>Pulls live candles from Binance for the coin you ask about.</li>
-            <li>Computes signals on 4 timeframes, a backtest, and the AI forecast (7 models incl. pattern matching, neural network and boosted trees — accuracy-checked).</li>
+            <li>Computes signals on 4 timeframes and a backtest. Forecasts are withheld when the published evaluation does not show a reliable edge.</li>
             <li>The built-in language model turns those verified numbers into a plain-English answer.</li>
           </ol>
           <p class="mt">Not financial advice. The assistant cannot place trades.</p>
@@ -77,11 +77,11 @@ export async function render(el, [symParam]) {
     if (c?.binance) watchFocus(c.binance);
     const sym = st.symbol;
     $('#suggest', el).innerHTML = [
-      'Which coin should I buy right now?', 'Best buys for each timeframe, and when do I sell?',
+      'Which coins have the strongest market readings?', 'Compare the measured readings across timeframes',
       'What should I hold for weeks, and what is only a quick trade?',
       'Compare BTC, ETH and SOL',
       `Will ${sym} go up or down next?`, `When should I take profit on ${sym}?`,
-      `I have $1,000 — how much ${sym} should I buy?`, 'Review my portfolio',
+      `I have $1,000 — show an illustrative risk calculation for ${sym}`, 'Review my portfolio',
     ].map((q) => `<button class="btn sm" type="button">${esc(q)}</button>`).join('');
     $$('#suggest button', el).forEach((b) => b.addEventListener('click', () => ask(b.textContent)));
   };
@@ -144,11 +144,11 @@ export async function render(el, [symParam]) {
     if (!history.length) {
       addMsg('bot', markdown(`**Ask me anything about the market.**
 
-Start broad — *"What should I buy right now?"* — and I'll rank every coin across three horizons: short term, swing and position, each with an entry, a stop and a target.
+Start broad — *"What are the current market readings?"* — and I'll summarize measured, descriptive evidence across short-term, swing and position horizons without pretending to know the future.
 
-Or ask about one coin: *"Is ETH worth buying this week?"* · *"Where should I sell SOL?"* · *"How is my portfolio doing?"*
+Or ask about one coin: *"What does the ETH evidence show this week?"* · *"What are SOL's resistance levels?"* · *"How is my portfolio doing?"*
 
-Every answer is built from live prices, signals across four timeframes, a backtest, and a forecast whose accuracy is measured and published — never a guess dressed up as a number.`));
+Every answer is built from live prices, signals across four timeframes and a backtest. Unsupported forecasts are withheld rather than presented as facts.`));
     }
     for (const m of history) addMsg(m.role === 'user' ? 'user' : 'bot', m.role === 'user' ? esc(m.content) : markdown(m.content) + (m.meta ? `<div class="src">${m.meta}</div>` : ''));
   };
@@ -158,6 +158,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
     if (!question || st.busy) return;
     st.busy = true;
     $('#send', el).disabled = true;
+    $('#assistantStop', el).disabled = false;
     history.push({ role: 'user', content: question });
     addMsg('user', esc(question));
     const bot = addMsg('bot', '<span class="typing"><i></i><i></i><i></i></span> <span class="fine" data-step>Thinking…</span>');
@@ -215,12 +216,16 @@ Every answer is built from live prices, signals across four timeframes, a backte
       history.push({ role: 'assistant', content: `Sorry — ${err.message}` });
     } finally {
       st.busy = false; st.abort = null;
+      if (!st.disposed) $('#assistantStop', el).disabled = true;
       if (!st.disposed) $('#send', el).disabled = false;
       log.scrollTop = log.scrollHeight;
     }
   }
 
   $('#form', el).addEventListener('submit', (e) => { e.preventDefault(); const q = $('#q', el); ask(q.value); q.value = ''; });
+  $('#assistantStop', el).addEventListener('click', () => st.abort?.abort());
+  $('#assistantClear', el).addEventListener('click', () => { if (st.busy) st.abort?.abort(); history.length = 0; drawHistory(); });
+  $('#assistantRefresh', el).addEventListener('click', () => markets(true).then(() => { drawFocus(); toast('Market data refreshed.', 'up'); }).catch((e) => toast(`Refresh failed: ${e.message}`, 'down')));
   $('#q', el).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#form', el).requestSubmit(); } });
   $('#coinSel', el).addEventListener('change', (e) => { st.symbol = e.target.value; history.lastSymbol = st.symbol; drawFocus(); });
   bindSeg($('#ivSeg', el), (v) => { st.interval = v; });

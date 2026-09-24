@@ -3,7 +3,7 @@ import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { generateSignal, confluence } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
-import { TESTED_ACCURACY, summarizeForecast } from '../lib/predict.js';
+import { TESTED_ACCURACY, summarizeForecast, forecastTrust } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
@@ -26,7 +26,7 @@ const SERIES = ['--series-1', '--series-2', '--series-3', '--series-5', '--serie
 const INTERVALS = ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'];
 // Timeframes the forecast engine was never measured on — say so rather than
 // letting a number imply an accuracy nobody checked.
-const UNMEASURED = ['1s', '5s', '10s', '1m', '5m'];
+const UNMEASURED = ['1s', '5s', '10s'];
 
 export async function render(el, [symParam]) {
   const sym = (symParam || 'BTC').toUpperCase();
@@ -414,16 +414,16 @@ export async function render(el, [symParam]) {
     const pos = (sig.score + 100) / 2;
     const plan = sig.plan;
     card.innerHTML = `
-      <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
+      <div class="card-h"><h3>${icon('bolt', 16)} Indicator reading · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
       <div class="verdict">
         <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
-        <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Sell</span><span>Neutral</span><span>Buy</span></div></div>
+        <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Downward</span><span>Neutral</span><span>Upward</span></div></div>
       </div>
       ${conf ? `<p class="combined mt">Standing view across all timeframes: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). The panel below reads the ${st.interval} chart only.</p>` : ''}
       <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
       ${summaryHtml(sig)}
       ${plan ? `
-        <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
+        <h3 class="mt" style="margin-bottom:8px">Illustrative levels · ${esc(plan.side === 'long' ? 'upside' : 'downside')}</h3>
         <div class="plan">
           <div><div class="k">Entry zone</div><div class="v">${money(plan.entryZone[0])} – ${money(plan.entryZone[1])}</div></div>
           <div><div class="k">Stop-loss</div><div class="v down">${money(plan.stopLoss)} <span class="fine">(${plan.riskPct}%)</span></div></div>
@@ -466,6 +466,17 @@ export async function render(el, [symParam]) {
   // ------------------------------------------------------------ AI forecast
   async function runAi() {
     const iv = st.interval, H = st.horizon;
+    // The published walk-forward evaluation does not show a reliable edge
+    // overall (and is below baseline on several intervals). Do not turn those
+    // measurements into a precise-looking target or probability.
+    if (UNMEASURED.includes(iv) || iv === '1w') {
+      st.forecast = { ok: false, reason: `No forecast is shown for ${iv}: this timeframe has not been independently measured. The chart and historical comparisons remain available as descriptive context.` };
+      st.timing = null;
+      $('#fcCard', el).innerHTML = `<h3>Forecast unavailable</h3><p class="muted">${esc(st.forecast.reason)}</p>`;
+      if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
+      if (st.signal?.ok && !st.disposed && iv === st.interval) updateSignal();
+      return;
+    }
     if (st.candles.length < 200) {
       $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">Needs at least 200 candles of history on this timeframe.</p>`;
       if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
@@ -473,22 +484,23 @@ export async function render(el, [symParam]) {
     }
     const fc = await runForecast(st.candles, { horizon: H, intervalMs: INTERVAL_MS[iv] });
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
-    st.forecast = fc;
+    const trust = forecastTrust(fc, iv);
+    st.forecast = fc.ok && trust.usable ? { ...fc, trust } : fc;
     st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
-    if (fc.ok) {
+    if (st.forecast.ok) {
       // Logged before the outcome is known, so "your hit rate" is honest.
       logForecastShown({
         symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
-        targetPrice: fc.targetPrice, horizonBars: fc.horizon,
-        horizonAt: fc.path[fc.path.length - 1]?.t, modelAccuracy: fc.ensemble?.accuracy ?? null,
+        targetPrice: st.forecast.targetPrice, horizonBars: st.forecast.horizon,
+        horizonAt: st.forecast.path[st.forecast.path.length - 1]?.t, modelAccuracy: st.forecast.ensemble?.accuracy ?? null,
       });
     }
-    remember(coin.symbol, iv, { forecast: fc, timing: st.timing });
+    remember(coin.symbol, iv, { forecast: st.forecast, timing: st.timing });
     // the summary reads the forecast, so redraw the signal card now it exists
     if (st.signal?.ok && !st.disposed && iv === st.interval) updateSignal();
-    if (!fc.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(fc.reason)}</p>`; return; }
-    chart.setProjection(fc.path);
-    drawForecastCard(fc);
+    if (!st.forecast.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(st.forecast.reason)}</p>`; return; }
+    chart.setProjection(st.forecast.path);
+    drawForecastCard(st.forecast);
     if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
   }
 
@@ -496,19 +508,19 @@ export async function render(el, [symParam]) {
     const r = 50, c = 2 * Math.PI * r, up = prob >= 0.5;
     return `<div class="prob-ring"><svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="10"/>
       <circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--${up ? 'up' : 'down'})" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(up ? prob : 1 - prob) * c} ${c}"/></svg>
-      <div class="c"><div><b class="${up ? 'up' : 'down'}">${Math.round((up ? prob : 1 - prob) * 100)}%</b><small>chance ${up ? 'UP' : 'DOWN'}</small></div></div></div>`;
+      <div class="c"><div><b class="${up ? 'up' : 'down'}">${Math.round((up ? prob : 1 - prob) * 100)}%</b><small>model share ${up ? 'UP' : 'DOWN'}</small></div></div></div>`;
   }
 
   function drawForecastCard(fc) {
-    const dirTxt = fc.direction === 'UP' ? '<b class="up">Likely higher</b>' : fc.direction === 'DOWN' ? '<b class="down">Likely lower</b>' : '<b class="flat">Sideways / uncertain</b>';
+    const dirTxt = fc.direction === 'UP' ? '<b class="up">Model leans higher</b>' : fc.direction === 'DOWN' ? '<b class="down">Model leans lower</b>' : '<b class="flat">Sideways / uncertain</b>';
     const e = fc.ensemble;
     $('#fcCard', el).innerHTML = `
       <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${fc.confidence === 'High' ? 'up' : fc.confidence === 'Moderate' ? 'warn' : ''}">${fc.confidence} confidence</span></div>
       <div class="prob">${ring(fc.probUp)}
         <div class="stack" style="gap:4px">
           <div>Next <b>${horizonText(st.interval, fc.horizon)}</b>: ${dirTxt}</div>
-          <div class="fine">Target ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)})</div>
-          <div class="fine">Likely range ${usd(fc.range.p25)} – ${usd(fc.range.p75)}</div>
+          <div class="fine">Illustrative model path ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)}); not a target</div>
+          <div class="fine">Historical model range ${usd(fc.range.p25)} – ${usd(fc.range.p75)}</div>
           <div class="fine">Tested accuracy: <b>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'}</b> on ${e.samples} unseen cases</div>
         </div>
       </div>

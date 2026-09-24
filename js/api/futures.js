@@ -119,7 +119,7 @@ export function okxSnapshotFrom(symbol, { mark, fund, idx, oi, fHist }) {
     indexPrice: indexPx,
     basisPct: indexPx && markPx !== null ? ((markPx - indexPx) / indexPx) * 100 : null,
     fundingRate: n(fund?.fundingRate),
-    nextFundingTime: n(fund?.fundingTime),
+    nextFundingTime: n(fund?.nextFundingTime) ?? n(fund?.fundingTime),
     openInterest: n(oi?.oiCcy),
     openInterestUsd: n(oi?.oiUsd),
     // OKX's positioning and open-interest history live under /rubik, which
@@ -163,7 +163,7 @@ export function okxOverviewFrom(symbols, { marks = [], ois = [], funds = [] }) {
     return {
       symbol: s, markPrice: n(mk.markPx),
       fundingRate: fr ? n(fr.fundingRate) : null,
-      nextFundingTime: fr ? n(fr.fundingTime) : null,
+      nextFundingTime: fr ? (n(fr.nextFundingTime) ?? n(fr.fundingTime)) : null,
       fundingIntervalHours: fr ? okxFundingHours(fr.fundingTime, fr.nextFundingTime) : 8,
       // OKX's bulk lists carry no index price, so there is no basis to show
       basisPct: null,
