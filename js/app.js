@@ -10,9 +10,6 @@ import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, applyDir } from './i18n.js';
 import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
-import { startAnalyst, getAnalysis, setAnalysisCache } from './api/analyst.js';
-import { initAgenticFramework, createAgent, runAgentTask } from './api/agentic.js';
-import { initOpenBBLayer, fetchOpenBBData } from './api/openbb.js';
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
@@ -494,7 +491,7 @@ if (location.protocol === 'https:') {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
-      // Commands are answered from live data; other text goes to the analyst when it is loaded.
+      // Commands are answered from live data.
       const response = await generateMCPResponse(trimmed);
 
       // Replace typing indicator with response
@@ -569,10 +566,6 @@ if (location.protocol === 'https:') {
       }
     }
 
-    if (window.coinvantageAnalyst) {
-      const analysis = await getAnalysis({ query: message });
-      return analysis || 'Analysis generated. Check the trader page for detailed results.';
-    }
     return 'I answer quick commands from live data. Type /help to see them, or ask open questions on the Ask page (#/ai).';
   };
 
