@@ -22,7 +22,17 @@ export async function render(el, [preset]) {
 
   const load = async () => {
     const base = st.base;
-    const r = await compareExchanges(base);
+    let r;
+    try {
+      r = await compareExchanges(base);
+    } catch (e) {
+      if (st.disposed || base !== st.base) return;
+      $('#summary', el).innerHTML = '';
+      $('#table', el).innerHTML = `<div class="empty"><h3>Exchange comparison unavailable</h3><p>${esc(e?.message || 'No exchange returned a comparison for this coin.')}</p><button class="btn sm" id="retryExchanges">${icon('refresh', 14)} Try again</button></div>`;
+      $('#foot', el).textContent = 'No exchange prices are being shown until a source responds.';
+      $('#retryExchanges', el)?.addEventListener('click', load);
+      return;
+    }
     if (st.disposed || base !== st.base) return;
     const rows = r.rows.filter((x) => x.ok).sort((a, b) => (b.vol || 0) - (a.vol || 0));
     const maxVol = Math.max(...rows.map((x) => x.vol || 0), 1);
