@@ -90,15 +90,22 @@ export async function render(el) {
       const movers = state.rows.filter((r) => !isStable(r.symbol) && r.volume24h > 5e6 && Number.isFinite(r.change24h));
       const g = [...movers].sort((a, b) => b.change24h - a.change24h).slice(0, 5);
       const l = [...movers].sort((a, b) => a.change24h - b.change24h).slice(0, 5);
-      $('#gainers', el).innerHTML = g.map((c) => listRow(c, changeHtml(c.change24h))).join('');
-      $('#losers', el).innerHTML = l.map((c) => listRow(c, changeHtml(c.change24h))).join('');
+      $('#gainers', el).innerHTML = g.length ? g.map((c) => listRow(c, changeHtml(c.change24h))).join('') : '<p class="muted">No current mover data.</p>';
+      $('#losers', el).innerHTML = l.length ? l.map((c) => listRow(c, changeHtml(c.change24h))).join('') : '<p class="muted">No current mover data.</p>';
     } catch (e) {
       $('#tableArea', el).innerHTML = errorBox('Could not load market data.', loadMarkets);
     }
   };
 
+  // Each widget fails on its own: one source being down must not leave the
+  // others (or itself) stuck on a loading skeleton forever.
   const loadGlobal = async () => {
-    const g = await getGlobal();
+    let g;
+    try { g = await getGlobal(); } catch (e) {
+      if (disposed) return;
+      $('#globalStrip', el).innerHTML = `<div class="card empty" style="grid-column:1/-1"><b>Global market summary unavailable</b><p class="fine">${esc(e?.message || 'The global market source did not respond.')}</p></div>`;
+      return;
+    }
     if (disposed) return;
     const card = (k, v, s = '') => `<div class="card stat"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span></div>`;
     $('#globalStrip', el).innerHTML = [
@@ -112,8 +119,13 @@ export async function render(el) {
   };
 
   const loadFng = async () => {
-    const f = await getFearGreed();
-    if (disposed || !f?.length) return;
+    let f;
+    try { f = await getFearGreed(); } catch (e) {
+      if (!disposed) $('#fng', el).innerHTML = `<div class="empty"><p>Fear &amp; Greed unavailable.</p><p class="fine">${esc(e?.message || 'The sentiment source did not respond.')}</p></div>`;
+      return;
+    }
+    if (disposed) return;
+    if (!f?.length) { $('#fng', el).innerHTML = '<div class="empty"><p>No recent Fear &amp; Greed reading was returned.</p></div>'; return; }
     const now = f[0], week = f[7], month = f[29];
     // The header had an empty slot reserved for this and nothing ever filled it,
     // so the card gave no clue how fresh the reading was.
@@ -124,7 +136,11 @@ export async function render(el) {
   };
 
   const loadTrending = async () => {
-    const t = await getTrending();
+    let t;
+    try { t = await getTrending(); } catch (e) {
+      if (!disposed) $('#trending', el).innerHTML = `<p class="muted">Trending data unavailable: ${esc(e?.message || 'source unavailable')}.</p>`;
+      return;
+    }
     if (disposed) return;
     $('#trending', el).innerHTML = t.slice(0, 5).map((c) => listRow(c, changeHtml(c.change24h))).join('') || '<p class="muted">No data</p>';
   };
