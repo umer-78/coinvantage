@@ -108,12 +108,19 @@
     @media (prefers-reduced-motion: reduce) {
       body::before, .topbar, .card, .page-head, .foot { animation: none; }
     }
-  </style>
+  
+:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
+}
+</style>
   <script>
     try { const s = JSON.parse(localStorage.getItem('cv:settings') || '{}'); if (s.theme) document.documentElement.dataset.theme = s.theme; } catch (e) {}
   </script>
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
   <div class="app">
     <aside class="sidebar" aria-label="Main navigation">
       <a class="brand" href="#/">
@@ -139,12 +146,12 @@
           <div class="search-results" id="searchResults" hidden></div>
         </div>
         <select class="mini-sel" id="curSel" aria-label="Display currency"></select>
-        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme"></button>
-        <button class="btn sm" id="accountBtn" aria-label="Account"></button>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme" type="button"></button>
+        <button class="btn sm" id="accountBtn" aria-label="Account" type="button"></button>
       </header>
       <div id="banner"></div>
       <div class="ticker" id="ticker" aria-label="Live prices"></div>
-      <main id="view" tabindex="-1"></main>
+      <main id="main" id="view" tabindex="-1"></main>
       <footer class="foot">
         <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts and AI answers are educational tools, <b>not financial advice</b>. Crypto is volatile — never risk money you can't afford to lose.
         <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a> · <a href="https://github.com/umer-78/coinvantage">Source on GitHub</a></span>
@@ -154,7 +161,7 @@
       <div class="chat-panel" id="chatPanel" hidden>
         <div class="chat-header">
           <div class="chat-title">Magic Chat</div>
-          <button class="chat-close" id="chatClose">&times;</button>
+          <button class="chat-close" id="chatClose" type="button">&times;</button>
         </div>
         <div class="chat-messages" id="chatMessages">
           <div class="chat-message bot">
@@ -164,7 +171,7 @@
         </div>
         <div class="chat-input-wrapper">
           <input type="text" id="chatInput" placeholder="Type your message..." aria-label="Chat input">
-          <button class="chat-send" id="chatSend">Send</button>
+          <button class="chat-send" id="chatSend" type="button">Send</button>
         </div>
       </div>
     </div>
