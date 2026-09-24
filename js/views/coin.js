@@ -367,8 +367,8 @@ export async function render(el, [symParam]) {
       runBt();
     } catch (err) {
       $('#chart', el).innerHTML = errorBox(err.message);
-      $('#signalCard', el).innerHTML = '';
-      $('#fcCard', el).innerHTML = '';
+      $('#signalCard', el).innerHTML = `<h3>Indicator reading unavailable</h3><p class="muted">${esc(err.message || 'The candle source did not return enough data.')}</p><p class="fine">Try another timeframe or retry when the market source is reachable.</p>`;
+      $('#fcCard', el).innerHTML = `<h3>AI forecast unavailable</h3><p class="muted">A forecast needs the same candle history as the chart, so no result was generated.</p><p class="fine">The page is not substituting invented values.</p>`;
     }
   }
 
@@ -489,7 +489,17 @@ export async function render(el, [symParam]) {
       if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
       return;
     }
-    const fc = await runForecast(st.candles, { horizon: H, intervalMs: INTERVAL_MS[iv] });
+    let fc;
+    try {
+      fc = await runForecast(st.candles, { horizon: H, intervalMs: INTERVAL_MS[iv] });
+    } catch (err) {
+      if (st.disposed || iv !== st.interval || H !== st.horizon) return;
+      st.forecast = { ok: false, reason: err?.message || 'The forecast engine could not complete with this candle history.' };
+      st.timing = null;
+      $('#fcCard', el).innerHTML = `<h3>AI forecast unavailable</h3><p class="muted">${esc(st.forecast.reason)}</p><p class="fine">The indicator reading remains available; no forecast value is being invented.</p>`;
+      if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
+      return;
+    }
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
     const trust = forecastTrust(fc, iv);
     st.forecast = fc.ok && trust.usable ? { ...fc, trust } : fc;

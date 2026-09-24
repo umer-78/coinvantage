@@ -35,7 +35,12 @@ export async function render(el) {
     if (f === 'overbought') rows = rows.filter((r) => r.signal.indicators.rsi > 68);
     const key = { score: (r) => r.signal.score, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
-    if (!rows.length) { $('#tbl', el).innerHTML = st.rows.length ? '<div class="empty">No coins match this filter right now.</div>' : skeleton(10, 26); return; }
+    if (!rows.length) {
+      $('#tbl', el).innerHTML = st.rows.length
+        ? '<div class="empty">No coins match this filter right now. The scan completed, but none of the measured readings met this filter.</div>'
+        : '<div class="empty">Waiting for supported market data. The scan will show technical readings as soon as candle data arrives.</div>';
+      return;
+    }
     const th = (k, label) => `<th data-sort="${k}">${label}${st.sort === k ? ' ↓' : ''}</th>`;
     $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('score', 'Score')}${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
       ${rows.map((r) => {
@@ -57,7 +62,22 @@ export async function render(el) {
     const run = ++st.run;
     st.rows = [];
     draw();
-    const list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+    let list;
+    try {
+      list = (await markets(true)).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+    } catch (err) {
+      $('#prog', el).textContent = 'Scan unavailable';
+      $('#meter i', el).style.width = '0%';
+      $('#tbl', el).innerHTML = `<div class="empty"><h3>Scanner data unavailable</h3><p>${esc(err?.message || 'The market list could not be loaded.')}</p><button class="btn sm" id="retryScan">${icon('refresh', 14)} Try again</button></div>`;
+      $('#retryScan', el)?.addEventListener('click', scan);
+      return;
+    }
+    if (!list.length) {
+      $('#prog', el).textContent = 'No supported pairs';
+      $('#meter i', el).style.width = '0%';
+      $('#tbl', el).innerHTML = '<div class="empty"><h3>No supported market pairs</h3><p>The current market source returned no Binance-compatible pairs for this scan. Nothing is being invented.</p></div>';
+      return;
+    }
     const iv = st.interval;
     let done = 0;
     const setProg = () => { $('#prog', el).textContent = done < list.length ? `Scanning ${done}/${list.length}…` : `Scanned ${list.length} coins · ${new Date().toLocaleTimeString()}`; $('#meter i', el).style.width = `${(done / list.length) * 100}%`; };
