@@ -449,7 +449,14 @@ export async function render(el, [symParam]) {
       mtf: mtfCache,
       fmt: (v) => money(v, { dp: st.dp }),
     });
-    if (!sum.steps.length && sum.verdict === 'NO READING') return '';
+    if (!sum.steps.length && sum.verdict === 'NO READING') {
+      return `
+        <div class="summary mt">
+          <div class="row spread"><span class="chip">${esc(sum.verdict)}</span><span class="fine">Current chart result</span></div>
+          <p class="mt" style="margin-bottom:6px">${esc(sum.headline || 'The available indicators do not agree strongly enough to produce a trade geometry.')}</p>
+          <p class="fine">Indicators are still calculated above. No entry, target, or timing estimate is shown because the required evidence is not present on this timeframe.</p>
+        </div>`;
+    }
     return `
       <div class="summary mt">
         <div class="row spread">
@@ -584,7 +591,12 @@ export async function render(el, [symParam]) {
   // because a direction with no timing is only half an answer.
   function timingCardBlock() {
     const t = st.timing;
-    if (!t?.ok || !t.shaped) return '';
+    if (!t?.ok) {
+      return `<div class="timing-box mt"><b>Timing reading</b><p class="fine">${esc(t?.reason || 'A timing path could not be calculated from the available history.')}</p><p class="fine">The direction and indicator readings remain available; no turning point is being invented.</p></div>`;
+    }
+    if (!t.shaped) {
+      return `<div class="timing-box mt"><b>Timing reading</b><p class="fine">The matched historical paths do not form a clear peak or low inside this horizon. The result is a steady path, not an empty forecast.</p></div>`;
+    }
     const dur = (bars) => horizonText(st.interval, bars);
     const main = t.rising ? t.peak : t.trough;
     const cls = t.rising ? 'up' : 'down';
@@ -616,7 +628,10 @@ export async function render(el, [symParam]) {
     if (!node) return;
     node.innerHTML = '<span class="fine muted">Checking previous years…</span>';
     let h;
-    try { h = await computeHistory(st.histHorizon || 30); } catch { node.innerHTML = ''; return; }
+    try { h = await computeHistory(st.histHorizon || 30); } catch (err) {
+      node.innerHTML = `<p class="fine muted">History comparison unavailable: ${esc(err?.message || 'the history source did not return enough data')}.</p>`;
+      return;
+    }
     if (st.disposed) return;
     const target = $('#histLine', el);
     if (!target) return;

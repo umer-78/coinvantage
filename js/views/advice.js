@@ -79,7 +79,8 @@ export async function render(el) {
       <h2 class="mt" style="margin-bottom:8px">Strongest measured readings</h2>
       ${buys.length
         ? `<div class="advice-grid">${buys.slice(0, 9).map((r, i) => card(r, i + 1)).join('')}</div>`
-        : `<div class="card empty"><h3>No reading clears the evidence bar</h3><p>No coin currently clears the bar. That is a real answer — the strategy sits out more often than it trades. Try another timeframe, or wait.</p></div>`}
+        : `<div class="card empty"><h3>No reading clears the evidence bar</h3><p>No coin currently clears the bar, so the honest result is to wait. The measured technical readings are still shown below for inspection; they are not trade instructions.</p></div>
+          <div class="advice-grid">${done.slice().sort((a, b) => Math.abs(b.signal.score) - Math.abs(a.signal.score)).slice(0, 9).map((r, i) => card(r, i + 1)).join('')}</div>`}
 
       ${avoid.length ? `<h2 class="mt" style="margin-bottom:8px">Caution readings</h2>
         <div class="advice-grid">${avoid.slice(0, 6).map((r) => card(r)).join('')}</div>` : ''}
