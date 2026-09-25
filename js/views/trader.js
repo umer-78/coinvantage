@@ -8,7 +8,9 @@ import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js
 import { esc, pct, money, compact, dateTime, ago, amount, price } from '../format.js';
 import { fx } from '../api/fx.js';
 import { load, save } from '../store.js';
-import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger } from '../lib/selfimprove.js';
+import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger, recordForecast, resolveDueLedger } from '../lib/selfimprove.js';
+import { runForecast } from '../lib/compute.js';
+import { DEFAULT_HORIZON } from '../ai/context.js';
 
 export const title = 'Trading';
 
@@ -16,6 +18,7 @@ const CFG_KEY = 'traderCfg';
 const STATE_KEY = 'traderState';
 const RUN_KEY = 'traderRunning';
 const SESSION_KEY = 'aiSession';
+const AUTO_KEY = 'traderAutoStarted';
 
 export async function render(el) {
   const st = { disposed: false, charts: [], prices: {}, running: false };
@@ -61,7 +64,7 @@ export async function render(el) {
       <div class="row">
         <span class="session-chip ${session.status}" id="sessionChip"><i></i>${sessionLabel(session.status)}</span>
         <button class="btn" id="cfgBtn">${icon('chip', 16)} Settings</button>
-        ${state ? '<button class="btn ghost" id="resetBtn">Reset</button>' : ''}
+        <button class="btn ghost" id="resetBtn"${state ? '' : ' hidden'}>Reset</button>
         <button class="btn ghost" id="stopBtn" hidden>${icon('close', 16)} Stop the AI</button>
         <button class="btn primary" id="startBtn">${state ? icon('refresh', 16) + ' Catch up now' : icon('bolt', 16) + ' Start the trader'}</button>
       </div>
@@ -113,7 +116,7 @@ export async function render(el) {
       const cls = r.pct >= 55 ? 'up' : r.pct < 45 ? 'down' : '';
       return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
     };
-    return `<div class="card mt">
+    return `<div class="card mt" id="learnCard">
       <div class="card-h"><h3>${icon('ai', 16)} Self-improving model</h3><span class="chip ${trendCls}">${esc(ls.trend.replace('-', ' '))}</span></div>
       <p class="fine">Every forecast this device shows is logged before the outcome is known, then scored when its horizon passes. Rolling windows below are hit rates over the last N resolved forecasts on <b>this device only</b> — not a claim about future performance.</p>
       <div class="grid g4 mt">
@@ -154,6 +157,7 @@ export async function render(el) {
     const runCfg = { ...cfg, interval: state.interval };
 
     let processed = 0, failed = [];
+    const forecastInputs = [];
     for (const sym of cfg.universe) {
       if (st.disposed) return;
       const coin = all.find((c) => c.symbol === sym);
@@ -163,9 +167,11 @@ export async function render(el) {
         // only fully closed candles drive decisions
         const candles = r.candles.slice(0, -1);
         processed += replaySymbol(state, runCfg, sym, candles).processed;
+        forecastInputs.push({ sym, candles });
       } catch { failed.push(sym); }
     }
     save(STATE_KEY, state);
+    st.lastRun = Date.now();
     st.running = false;
     if (st.disposed) return;
     btn.disabled = false;
@@ -173,6 +179,53 @@ export async function render(el) {
     if (failed.length) toast(`No data for ${failed.join(', ')} — skipped.`, 'info');
     draw();
     if (processed) toast(`Processed ${processed} new candles.`, 'up');
+    learnFrom(forecastInputs, runCfg.interval);
+  }
+
+  // Self-improvement: score the forecasts whose horizon has passed, then log a
+  // fresh one per watched coin before its outcome is known. Runs in the worker
+  // after the account is drawn, so the page never waits on it.
+  async function learnFrom(inputs, interval) {
+    if (st.learning || !inputs.length) return;
+    st.learning = true;
+    try {
+      let ledger = loadLedger();
+      for (const { sym, candles } of inputs) {
+        if (st.disposed) return;
+        ledger = resolveDueLedger(ledger, candles, { symbol: sym, interval });
+        const fc = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12 }).catch(() => null);
+        if (fc?.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
+          ledger = recordForecast(ledger, {
+            symbol: sym, interval, price: fc.lastPrice, probUp: fc.probUp,
+            horizonBars: fc.horizon, horizonAt: fc.path[fc.path.length - 1]?.t,
+          });
+        }
+      }
+      saveLedger(ledger);
+      if (!st.disposed && $('#learnCard', el)) $('#learnCard', el).outerHTML = learningCard();
+    } finally { st.learning = false; }
+  }
+
+  // What the AI did, newest first: every entry and exit it made, with the
+  // reading that triggered it. Built from the account itself, so it is always
+  // in step with the trade log.
+  function activityCard() {
+    const ev = [];
+    for (const [sym, p] of Object.entries(state.open)) ev.push({ t: p.openedAt, sym, kind: 'buy', p });
+    for (const p of state.closed) {
+      ev.push({ t: p.openedAt, sym: p.symbol, kind: 'buy', p });
+      ev.push({ t: p.exitAt, sym: p.symbol, kind: 'sell', p });
+    }
+    ev.sort((a, b) => b.t - a.t);
+    const why = { target: 'hit its target', 'stop-loss': 'hit its stop-loss', 'signal reversal': 'the signal turned against it' };
+    const line = (e) => e.kind === 'buy'
+      ? `<b>Bought ${esc(e.sym)}</b> at ${money(e.p.entry)}${Number.isFinite(e.p.openScore) ? ` — score ${e.p.openScore > 0 ? '+' : ''}${Math.round(e.p.openScore)} cleared the +${cfg.entryScore} entry bar` : ''}`
+      : `<b>Sold ${esc(e.sym)}</b> at ${money(e.p.exit)} — ${esc(why[e.p.reason] || e.p.reason)} · <span class="${e.p.pnl >= 0 ? 'up' : 'down'}">${e.p.pnl >= 0 ? '+' : '−'}${money(Math.abs(e.p.pnl))} (${pct(e.p.pnlPct)})</span>`;
+    return `<div class="card mt">
+      <div class="card-h"><h3>${icon('ai', 16)} AI activity</h3><span class="fine">${autoOn ? 'running · checks every 5 minutes' : session.status === 'stopped' ? 'stopped · press Resume to continue' : 'idle'}${st.lastRun ? ` · last check ${ago(st.lastRun)}` : ''}</span></div>
+      ${ev.length ? `<ul class="fine" style="list-style:none;padding:0;margin:0">${ev.slice(0, 20).map((e) => `<li style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(e.t)}</span>${line(e)}</li>`).join('')}</ul>`
+        : '<p class="muted">No trades yet — the AI is watching for a setup that meets its rules.</p>'}
+    </div>`;
   }
 
   // ---------------------------------------------------------------- view
@@ -490,6 +543,8 @@ export async function render(el) {
         </tbody></table></div>` : '<p class="muted">No position open right now — the AI is waiting for a setup that meets its rules.</p>'}
       </div>
 
+      ${activityCard()}
+
       ${state.equityCurve.length > 2 ? `<div class="card mt"><div class="card-h"><h3>Balance over time</h3><span class="fine">simulated</span></div><div id="eqChart"></div></div>` : ''}
 
       <div class="card mt">
@@ -583,6 +638,8 @@ export async function render(el) {
     const stopB = $('#stopBtn', el);
     const startB = $('#startBtn', el);
     if (stopB) stopB.hidden = !(state && autoOn);
+    const resetB = $('#resetBtn', el);
+    if (resetB) resetB.hidden = !state;
     if (startB) {
       startB.innerHTML = !state ? `${icon('bolt', 16)} Start the trader`
         : autoOn ? `${icon('refresh', 16)} Catch up now`
@@ -632,6 +689,14 @@ export async function render(el) {
   syncRunButtons();
   syncSessionChip();
   if (state && autoOn) catchUp();
+  // First visit: run the play-money account once on its own, so the page opens
+  // on a replayed record instead of an empty start card. Only ever automatic
+  // once per device — after a Stop or a Reset it waits for the user again.
+  else if (!state && session.status === 'idle' && !load(AUTO_KEY, false)) {
+    save(AUTO_KEY, true);
+    applySession('START');
+    catchUp();
+  }
   void compact; void amount; void bindSeg; void LEARN_KEY;
 
   return () => {
