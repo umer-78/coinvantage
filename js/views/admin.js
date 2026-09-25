@@ -3,7 +3,6 @@
 import { $, $$, bindTabs, toast, skeleton, modal, icon } from '../ui.js';
 import { esc, dateTime, compact } from '../format.js';
 import { auth, sb, isAdmin, callFn, getPosts, savePost, deletePost } from '../api/backend.js';
-import { assuranceLevel, hasTwoFactor } from '../api/security.js';
 import { CONFIG } from '../config.js';
 
 export const title = 'Admin';
@@ -15,21 +14,8 @@ export async function render(el) {
     return;
   }
 
-  // This account can grant premium, read every user and rotate API keys. If it
-  // has an authenticator, the panel is closed until the second step is done.
-  const aal = await assuranceLevel();
-  if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
-    el.innerHTML = `<div class="card empty"><h3>Second step required</h3>
-      <p>Your admin account has two-factor turned on. Sign out and back in, entering the code from your authenticator, to open the admin panel.</p>
-      <a class="btn primary" href="#/account">Go to account</a></div>`;
-    return;
-  }
-
-  const twoFactorOn = await hasTwoFactor().catch(() => true);
-
   el.innerHTML = `
     <div class="page-head"><div><h1>Admin</h1><p>Signed in as ${esc(auth.user.email)}</p></div></div>
-    ${twoFactorOn ? '' : `<div class="banner" style="margin:0 0 14px">${icon('info', 16)} This account controls the whole site but has no second factor. <a href="#/account"><b>Turn on two-factor</b></a> — a leaked password would otherwise be enough to take over everything.</div>`}
     <div class="tabs" id="tabs">
       <button data-tab="stats" class="on">Overview</button>
       <button data-tab="growth">Analytics</button>

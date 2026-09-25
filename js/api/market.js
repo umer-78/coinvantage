@@ -276,7 +276,8 @@ async function geckoCandles(coin, interval, total) {
       404,
     );
   }
-  const days = grain === 'daily' ? Math.min(3650, Math.max(365, Math.ceil((total * want) / 864e5) + 5)) : 90;
+  // CoinGecko's free API refuses (401) any history longer than 365 days.
+  const days = grain === 'daily' ? 365 : 90;
   const j = await stale(getJson(
     `${CONFIG.COINGECKO}/coins/${encodeURIComponent(coin.id)}/market_chart?vs_currency=usd&days=${days}`,
     { ttl: 5 * 60e3, key: `cg:mc:${coin.id}:${days}` },
