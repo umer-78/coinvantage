@@ -3,7 +3,7 @@ import { $, $$, icon, toast, modal } from '../ui.js';
 import { esc, money } from '../format.js';
 import { load } from '../store.js';
 import { myActivity, myForecasts, forecastScore, resolveDueForecasts, clearMyActivity } from '../api/activity.js';
-import { listFactors, startEnrollment, confirmEnrollment, disableTwoFactor, changePassword, signOutEverywhere, assuranceLevel } from '../api/security.js';
+import { changePassword, signOutEverywhere } from '../api/security.js';
 import { getCandles, findCoin } from '../api/market.js';
 import { dateTime, pct, ago } from '../format.js';
 import { auth, sb, isPremium, isAdmin, callFn, updateProfile, refreshProfile, signOut } from '../api/backend.js';
@@ -76,7 +76,7 @@ export async function render(el, [flag]) {
       </div>
 
       <div class="card" style="grid-column:1/-1">
-        <div class="card-h"><h3>Security</h3><span class="fine" id="aalChip"></span></div>
+        <div class="card-h"><h3>Security</h3></div>
         <div id="secBox">Loading…</div>
       </div>
 
@@ -186,25 +186,8 @@ export async function render(el, [flag]) {
   const paintSecurity = async () => {
     const box = $('#secBox', el);
     try {
-      const [factors, aal] = await Promise.all([listFactors(), assuranceLevel()]);
-      const verified = factors.find((f) => f.status === 'verified');
-      $('#aalChip', el).innerHTML = verified
-        ? '<span class="chip up">Two-factor on</span>'
-        : `<span class="chip ${isAdmin() ? 'down' : 'warn'}">Two-factor off</span>`;
       box.innerHTML = `
-        <div class="grid g2">
-          <div>
-            <h4 class="fine">Two-factor authentication</h4>
-            ${verified
-              ? `<p class="fine up">On. Signing in needs your password <b>and</b> a code from your authenticator app, so a stolen password is not enough on its own.</p>
-                 <p class="fine">Added ${dateTime(new Date(verified.created_at).getTime(), false)}. Session level: <b>${esc(aal?.currentLevel || '—')}</b>.</p>
-                 <button class="btn sm ghost" id="mfaOff">Turn off two-factor</button>`
-              : `<p class="fine">${isAdmin()
-                   ? '<b class="down">You own this site.</b> Your account can grant premium, read every user and change API keys — a password alone is thin protection for that. Turn on two-factor.'
-                   : 'Add a second step at sign-in using any authenticator app (Google Authenticator, Authy, 1Password).'}</p>
-                 <button class="btn ${isAdmin() ? 'primary' : ''} sm" id="mfaOn">Set up two-factor</button>`}
-            <div id="mfaFlow" class="mt"></div>
-          </div>
+        <div>
           <div>
             <h4 class="fine">Password &amp; sessions</h4>
             <form class="stack" style="gap:8px" id="pwForm">
@@ -217,42 +200,6 @@ export async function render(el, [flag]) {
           </div>
         </div>
         <p class="fine mt">This site never asks for exchange API keys, private keys or seed phrases — not on this page, not anywhere. Anyone who does is not us.</p>`;
-
-      $('#mfaOn', el)?.addEventListener('click', async () => {
-        const flow = $('#mfaFlow', el);
-        flow.innerHTML = '<span class="spinner"></span> Preparing…';
-        try {
-          const en = await startEnrollment();
-          flow.innerHTML = `
-            <div style="padding:12px;border-radius:10px;background:var(--surface-2)">
-              <p class="fine">1. Scan this with your authenticator app:</p>
-              <img src="${esc(en.qr)}" alt="Two-factor QR code" width="170" height="170" style="background:#fff;border-radius:8px;padding:6px">
-              <p class="fine">Can't scan? Enter this key by hand: <code>${esc(en.secret)}</code></p>
-              <p class="fine">2. Type the 6-digit code it shows:</p>
-              <div class="row" style="gap:8px"><input class="inp" id="mfaCode" inputmode="numeric" maxlength="6" placeholder="000000" style="max-width:120px"><button class="btn sm primary" id="mfaVerify">Turn on</button></div>
-              <p class="fine" id="mfaMsg"></p>
-            </div>`;
-          $('#mfaVerify', el).addEventListener('click', async () => {
-            const msg = $('#mfaMsg', el);
-            msg.textContent = 'Checking…';
-            try {
-              await confirmEnrollment(en.factorId, $('#mfaCode', el).value);
-              toast('Two-factor is on. Keep a backup of the key somewhere safe.', 'up', 8000);
-              paintSecurity();
-            } catch (e2) { msg.innerHTML = `<span class="down">${esc(e2.message)}</span>`; }
-          });
-        } catch (e) { flow.innerHTML = `<span class="fine down">${esc(e.message)}</span>`; }
-      });
-
-      $('#mfaOff', el)?.addEventListener('click', () => {
-        const m = modal(`<h3>Turn off two-factor?</h3><p>Your account will be protected by its password alone${isAdmin() ? ' — and this account controls the whole site' : ''}.</p>
-          <div class="row mt" style="gap:8px"><button class="btn" id="keep">Keep it on</button><button class="btn primary" id="drop" style="background:var(--down);color:#fff">Turn off</button></div>`);
-        $('#keep', m.el).addEventListener('click', m.close);
-        $('#drop', m.el).addEventListener('click', async () => {
-          try { await disableTwoFactor(verified.id); m.close(); toast('Two-factor turned off.', 'info'); paintSecurity(); }
-          catch (e) { toast(e.message, 'down'); }
-        });
-      });
 
       $('#pwForm', el).addEventListener('submit', async (e) => {
         e.preventDefault();

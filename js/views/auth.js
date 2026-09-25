@@ -2,37 +2,12 @@
 import { $, icon, modal, toast } from '../ui.js';
 import { esc } from '../format.js';
 import { signIn, signUp, callFn, sendResetLink } from '../api/backend.js';
-import { assuranceLevel, completeChallenge } from '../api/security.js';
 
 const FORMS = {
   in: { title: 'Welcome back', cta: 'Sign in' },
   up: { title: 'Create your account', cta: 'Create account' },
   reset: { title: 'Reset your password', cta: 'Set new password' },
 };
-
-// Second step for accounts with an authenticator app. Resolves only when the
-// code is accepted, so the caller can treat sign-in as complete afterwards.
-function askForCode(m) {
-  return new Promise((resolve, reject) => {
-    const body = m.el.querySelector('#authBody');
-    body.innerHTML = `
-      <h3>Two-factor code</h3>
-      <p class="fine">This account is protected by an authenticator app. Enter the 6-digit code it is showing.</p>
-      <form class="stack mt" style="gap:10px" id="mf">
-        <label class="fld">Code<input class="inp" name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required autofocus></label>
-        <button class="btn primary">Verify</button>
-        <p class="fine down" id="merr" hidden></p>
-      </form>`;
-    const f = body.querySelector('#mf'), err = body.querySelector('#merr');
-    f.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      err.hidden = true;
-      try { await completeChallenge(f.code.value); resolve(true); }
-      catch (e2) { err.textContent = e2.message; err.hidden = false; }
-    });
-    m.el.querySelector('.modal-x')?.addEventListener('click', () => reject(new Error('Two-factor cancelled — you are not fully signed in.')));
-  });
-}
 
 export function openAuth(mode = 'in') {
   const m = modal('<div id="authBody"></div>');
@@ -123,12 +98,6 @@ export function openAuth(mode = 'in') {
         const email = form.email.value.trim(), password = form.password.value;
         if (cur === 'in') {
           await signIn(email, password);
-          // Supabase signs you in at password-only level even when 2FA is on —
-          // the app is what must insist on the second step.
-          const aal = await assuranceLevel();
-          if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
-            await askForCode(m);
-          }
         }
         else if (cur === 'up') await signUp(email, password, form.name.value.trim());
         else {
