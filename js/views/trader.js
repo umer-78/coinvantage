@@ -74,19 +74,20 @@ export async function render(el) {
   // never seen it did not beat simply owning the coins, on any timeframe. A
   // feature that cannot beat buying and holding should say so on its own page.
   function verdictCard() {
-    const t = AUTOTRADER_TESTED[cfg.interval];
+    const iv = state?.interval || cfg.interval;
+    const t = AUTOTRADER_TESTED[iv];
     // Only 1h, 4h and 1d were measured. Showing the 1h numbers under another
     // label would present a test that was never run.
     if (!t) {
       return `<div class="card" style="border-color:var(--warn)">
-      <div class="card-h"><h3>${icon('info', 16)} Not tested on the ${esc(cfg.interval)} chart</h3></div>
+      <div class="card-h"><h3>${icon('info', 16)} Not tested on the ${esc(iv)} chart</h3></div>
       <p class="fine">This strategy was only measured on 1h, 4h and 1d charts, and on none of them did it beat simply holding the coins. Pick one of those in Settings to see its measured result.</p>
     </div>`;
     }
     const beatTotal = ['1h', '4h', '1d'].reduce((s, k) => s + (AUTOTRADER_TESTED[k]?.beatBuyHold || 0), 0);
     return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured, not estimated</span></div>
-      <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(cfg.interval)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
+      <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(iv)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
       <p class="fine">Out of ${t.configs} settings tested on that timeframe, <b>${t.beatBuyHold}</b> beat buy-and-hold. Fees alone consumed ${t.feeDragPct}% of the balance across ${t.trades} trades. Across 1h, 4h and 1d — ${AUTOTRADER_TESTED.configs || 324} settings in total — ${beatTotal === 0 ? 'nothing beat holding the coins' : `only ${beatTotal} beat holding the coins, too few to call an edge`}.</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a way to make money, and CoinVantage will not tell you it is. It places no real orders and holds no keys.</p>
     </div>`;
@@ -146,6 +147,11 @@ export async function render(el) {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Working…';
     if (!state) state = newState(cfg);
+    // Replaying daily candles into an account that was started on hourly ones
+    // would mix two strategies in one balance, so the account keeps its own
+    // timeframe. Older saved accounts adopt the current setting once.
+    if (!state.interval) state.interval = cfg.interval;
+    const runCfg = { ...cfg, interval: state.interval };
 
     let processed = 0, failed = [];
     for (const sym of cfg.universe) {
@@ -153,10 +159,10 @@ export async function render(el) {
       const coin = all.find((c) => c.symbol === sym);
       if (!coin) { failed.push(sym); continue; }
       try {
-        const r = await getCandles(coin, cfg.interval, 500);
+        const r = await getCandles(coin, runCfg.interval, 500);
         // only fully closed candles drive decisions
         const candles = r.candles.slice(0, -1);
-        processed += replaySymbol(state, cfg, sym, candles).processed;
+        processed += replaySymbol(state, runCfg, sym, candles).processed;
       } catch { failed.push(sym); }
     }
     save(STATE_KEY, state);
@@ -551,7 +557,9 @@ export async function render(el) {
       });
       save(CFG_KEY, cfg);
       m.close();
-      toast('Settings saved.', 'up');
+      toast(state?.interval && state.interval !== cfg.interval
+        ? `Settings saved. The running account stays on ${state.interval}; reset it to trade on ${cfg.interval}.`
+        : 'Settings saved.', state?.interval && state.interval !== cfg.interval ? 'info' : 'up');
       draw();
     });
   });

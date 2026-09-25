@@ -219,7 +219,7 @@ function marketBlock(m) {
       const lines = [`${i + 1}. **${b.coin}** (${b.name}) — ${b.verdict}, conviction ${b.conviction}/100, now ${fmtNum(b.price)}`];
       if (b.buyBetween) lines.push(`   - Buy between ${fmtNum(b.buyBetween[0])} and ${fmtNum(b.buyBetween[1])}; stop-loss ${fmtNum(b.stopLoss)} (risk ${b.riskPct}%)`);
       if (b.sellTargets) lines.push(`   - Sell targets: ${b.sellTargets.map(fmtNum).join(' → ')}`);
-      if (b.holdForBars) lines.push(`   - Expected to keep rising for about ${b.holdForBars} candle${b.holdForBars === 1 ? '' : 's'}, topping near ${fmtNum(b.expectedPeakPrice)}${b.turnsDownAfterBars ? `, turning down around candle ${b.turnsDownAfterBars}` : ''}`);
+      if (b.holdForBars) lines.push(`   - Similar past setups kept rising for about ${b.holdForBars} candle${b.holdForBars === 1 ? '' : 's'}, topping near ${fmtNum(b.expectedPeakPrice)}${b.turnsDownAfterBars ? `, turning down around candle ${b.turnsDownAfterBars}` : ''}`);
       if (!b.buyBetween && b.waitFor) lines.push(`   - No entry trigger yet: ${b.waitFor}`);
       if (b.topReason) lines.push(`   - ${b.topReason}`);
       out.push(lines.join('\n'));

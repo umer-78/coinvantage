@@ -68,6 +68,7 @@ export const DEFAULT_CONFIG = {
 export function newState(cfg = DEFAULT_CONFIG) {
   return {
     version: 1,
+    interval: cfg.interval,  // an account keeps the timeframe it was started on
     startedAt: Date.now(),
     balance: cfg.startingBalance,
     startingBalance: cfg.startingBalance,

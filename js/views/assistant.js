@@ -18,7 +18,7 @@ export async function render(el, [symParam]) {
   const s = settings.get();
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built from live prices, signals, backtests and the forecast — and run on your device. No account, no API key, nothing sent to a server.</p></div></div>
+    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built from live prices, signals, backtests and the forecast — and run on your device. No account, no API key, nothing sent to a server.</p></div><div class="row"><button class="btn sm" type="button" id="assistantStop" disabled>Stop</button><button class="btn sm ghost" type="button" id="assistantClear">Clear chat</button></div></div>
     <div class="chat">
       <div class="card chat-box">
         <div class="chat-log" id="log" aria-live="polite"></div>
@@ -160,6 +160,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
     if (!question || st.busy) return;
     st.busy = true;
     $('#send', el).disabled = true;
+    $('#assistantClear', el).disabled = true;
     history.push({ role: 'user', content: question });
     addMsg('user', esc(question));
     const bot = addMsg('bot', '<span class="typing"><i></i><i></i><i></i></span> <span class="fine" data-step>Thinking…</span>');
@@ -196,6 +197,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
       if (localReady() || customReady()) {
         step('Writing answer…');
         const ac = new AbortController(); st.abort = ac;
+        $('#assistantStop', el).disabled = false;
         try {
           const data = analysis ? llmData(analysis) : {};
           if (compare) data.comparison = compare;
@@ -205,8 +207,11 @@ Every answer is built from live prices, signals across four timeframes, a backte
           const r = await askLLM({ history: history.slice(0, -1), question, facts, data, signal: ac.signal, onText: (t) => { bot.innerHTML = markdown(t); log.scrollTop = log.scrollHeight; } });
           if (r.text.trim().length > 20) { finalText = r.text; source = `${r.source} · built-in AI`; }
         } catch (err) {
-          console.warn('LLM failed, using analyst', err);
-          source = 'Rule-based analyst (AI model unavailable)';
+          if (ac.signal.aborted) source = 'Rule-based analyst (stopped)';
+          else {
+            console.warn('LLM failed, using analyst', err);
+            source = 'Rule-based analyst (AI model unavailable)';
+          }
         }
       }
       history.push({ role: 'assistant', content: finalText, meta: meta(source) });
@@ -217,11 +222,19 @@ Every answer is built from live prices, signals across four timeframes, a backte
       history.push({ role: 'assistant', content: `Sorry — ${err.message}` });
     } finally {
       st.busy = false; st.abort = null;
-      if (!st.disposed) $('#send', el).disabled = false;
+      if (!st.disposed) {
+        $('#send', el).disabled = false;
+        $('#assistantStop', el).disabled = true;
+        $('#assistantClear', el).disabled = false;
+      }
       log.scrollTop = log.scrollHeight;
     }
   }
 
+  // Stop ends the language model's write-up; the instant analyst answer, built
+  // from the same verified numbers, is shown instead.
+  $('#assistantStop', el).addEventListener('click', () => st.abort?.abort());
+  $('#assistantClear', el).addEventListener('click', () => { if (st.busy) return; history.length = 0; drawHistory(); });
   $('#form', el).addEventListener('submit', (e) => { e.preventDefault(); const q = $('#q', el); ask(q.value); q.value = ''; });
   $('#q', el).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#form', el).requestSubmit(); } });
   $('#coinSel', el).addEventListener('change', (e) => { st.symbol = e.target.value; history.lastSymbol = st.symbol; drawFocus(); });

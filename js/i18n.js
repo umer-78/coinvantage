@@ -5,6 +5,15 @@ import { settings } from './store.js';
 const UR = {
   // navigation & shell
   'Markets': 'مارکیٹس',
+  'Market scan': 'مارکیٹ اسکین',
+  'Scan': 'اسکین',
+  'Ask': 'پوچھیں',
+  'Assistant': 'اسسٹنٹ',
+  'Trading': 'ٹریڈنگ',
+  'Scanner': 'اسکینر',
+  'Record': 'ریکارڈ',
+  'Tools': 'ٹولز',
+  'Alerts': 'الرٹس',
   'AI Assistant': 'اے آئی اسسٹنٹ',
   'Signal Scanner': 'سگنل اسکینر',
   'Compare': 'موازنہ',

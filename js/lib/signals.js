@@ -199,7 +199,7 @@ export function scoreAt(candles, ind, i) {
     let pts = 0, label = `RSI ${r.toFixed(0)} — neutral`;
     const rising = rp !== null && rp !== undefined && r > rp;
     const up = e50 !== null && c.c > e50;
-    if (r < 25) { pts = 1.5; label = `RSI ${r.toFixed(0)} — deeply oversold, bounce likely`; }
+    if (r < 25) { pts = 1.5; label = `RSI ${r.toFixed(0)} — deeply oversold`; }
     else if (r < 30) { pts = 1; label = `RSI ${r.toFixed(0)} — oversold`; }
     else if (r < 45) { pts = rising ? 0.5 : -0.3; label = `RSI ${r.toFixed(0)} — weak${rising ? ' but turning up' : ''}`; }
     else if (r <= 55) { pts = 0; }
