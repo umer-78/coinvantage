@@ -31,6 +31,9 @@ export async function render(el, [coinParam]) {
     $('#body', el).innerHTML = `<div class="card empty"><h3>No headlines stored yet</h3><p>The collector runs every 20 minutes${coinParam ? `, and nothing recent mentions ${esc(coinParam.toUpperCase())}` : ''}. Check back shortly.</p></div>`;
     return;
   }
+  // When the newest headline was published, so a stalled collector is visible
+  // instead of old news passing for current news.
+  const newest = rows.reduce((max, r) => Math.max(max, Date.parse(r.published_at) || 0), 0);
   const sources = [...new Set(rows.map((r) => r.source))].sort();
   const coins = [...new Set(rows.flatMap((r) => r.coins || []))].sort();
   let source = 'all', coin = coinParam ? coinParam.toUpperCase() : 'all', q = '';
@@ -55,7 +58,7 @@ export async function render(el, [coinParam]) {
     <div class="card">
       <div class="card-h">
         <div class="seg" id="src"><button data-v="all" class="on">All sources</button>${sources.map((s) => `<button data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-        <span class="fine">${rows.length} most recent headlines</span>
+        <span class="fine">${rows.length} most recent headlines${newest ? ` · newest ${ago(newest)}` : ''}</span>
       </div>
       ${coins.length ? `<div class="seg" id="cn" style="margin-bottom:10px"><button data-v="all" class="${coin === 'all' ? 'on' : ''}">Any coin</button>${coins.slice(0, 14).map((c) => `<button data-v="${esc(c)}" class="${coin === c ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>` : ''}
       <div class="news-list" id="list"></div>

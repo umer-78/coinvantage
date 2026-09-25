@@ -7,6 +7,23 @@ import {
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,24}$/i;
 
+// Stripe sends the buyer back to this address after paying, so it has to be the
+// site itself (or a local copy while developing), never an address the caller
+// picked. Extra hosts, e.g. a custom domain, go in SITE_ORIGINS, comma-separated.
+const SITE_ORIGINS = (Deno.env.get('SITE_ORIGINS') || 'https://umer-78.github.io')
+  .split(',').map((o) => o.trim()).filter(Boolean);
+
+function siteReturnUrl(raw: unknown): string {
+  try {
+    const u = new URL(String(raw || '').split('#')[0]);
+    const local = u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1');
+    if (!local && !(u.protocol === 'https:' && SITE_ORIGINS.includes(u.origin))) return '';
+    return u.origin + u.pathname + u.search;
+  } catch {
+    return '';
+  }
+}
+
 async function codeHash(email: string, code: string) {
   return sha256Hex(`${email.toLowerCase()}:${code}:${(await secret('cron_secret')) || ''}`);
 }
@@ -113,8 +130,8 @@ export async function account(req: Request): Promise<Response> {
       const premium = await setting<{ price: number; currency: string; period_days: number; stripe_enabled: boolean }>('premium');
       const key = await secret('stripe_secret_key');
       if (!premium?.stripe_enabled || !key) throw new HttpError('Online card payments are not enabled. Use the manual payment option.', 503);
-      const origin = String(body.return_url || '').startsWith('http') ? String(body.return_url).split('#')[0] : '';
-      if (!origin) throw new HttpError('Missing return URL');
+      const origin = siteReturnUrl(body.return_url);
+      if (!origin) throw new HttpError('The return address must be this site.');
       const form = new URLSearchParams({
         mode: 'payment',
         'line_items[0][quantity]': '1',

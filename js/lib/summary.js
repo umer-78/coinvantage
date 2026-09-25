@@ -320,7 +320,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
       label: 'How long',
       text: timing.rising
         ? `Strength has typically lasted about ${horizonText || `${timing.bars} candles`} in similar past setups, topping near ${fmt(timing.targetPrice)}${timing.turnBars ? ', then turning down' : ''}. Timing is the least reliable part of any forecast — use it to plan an exit, never to skip the stop.`
-        : `Weakness has typically run about ${horizonText || `${timing.bars} candles`} in similar setups, so waiting is likely to get a better price than buying now.`,
+        : `Weakness has typically run about ${horizonText || `${timing.bars} candles`} in similar setups; waiting may get a better price, but that is a pattern, not a forecast.`,
     });
   }
 

@@ -142,6 +142,8 @@ The site degrades gracefully without it — every backend call fails soft.
    - *Resend* API key + from-address → enables verification codes, password resets and e-mail alerts.
    - *Telegram* bot token from @BotFather → saving it registers the webhook automatically and the bot answers `/price`, `/signal`, `/alerts`.
    - *Stripe* secret key + webhook secret → card checkout for Premium. Point the Stripe webhook at the URL shown on that page.
+     Checkout only returns buyers to `https://umer-78.github.io` (or localhost); for another domain, set the
+     `SITE_ORIGINS` secret on the edge function, e.g. `https://example.com,https://www.example.com`.
 5. **Admin → Jobs**: press *Run now* on each job once to confirm it works.
 
 Without any of those keys the site still runs: alerts show in the browser, Premium can be

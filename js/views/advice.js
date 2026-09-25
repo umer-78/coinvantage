@@ -52,8 +52,8 @@ export async function render(el) {
         </div>` : `<p class="fine mt">No entry yet. ${esc(a.waitFor?.[0] || 'Waiting for a trigger.')}</p>`}
 
         ${t ? `<p class="fine mt">${t.rising
-          ? `Expected to keep rising for about <b>${esc(horizonText(st.interval, t.bars))}</b>, topping near <b>${money(t.targetPrice)}</b>${t.turnBars ? `, then turning down around ${esc(horizonText(st.interval, t.turnBars))}` : ''}.`
-          : `Expected to keep falling for about <b>${esc(horizonText(st.interval, t.bars))}</b> — waiting is likely to get a better price.`}</p>` : ''}
+          ? `Similar past setups kept rising for about <b>${esc(horizonText(st.interval, t.bars))}</b>, topping near <b>${money(t.targetPrice)}</b>${t.turnBars ? `, then turning down around ${esc(horizonText(st.interval, t.turnBars))}` : ''}.`
+          : `Similar past setups kept falling for about <b>${esc(horizonText(st.interval, t.bars))}</b> — waiting may get a better price, but that is a pattern, not a forecast.`}</p>` : ''}
 
         <ul class="reasons mt">${a.reasons.map((x) => `<li class="${x.tone === 'good' ? 'b' : x.tone === 'bad' ? 's' : ''}">${esc(x.text)}</li>`).join('')}</ul>
         <div class="row mt" style="gap:8px">
@@ -126,13 +126,21 @@ export async function render(el) {
           const { candles } = await getCandles(coin, iv, 500);
           if (run !== st.run || st.disposed) return;
           const signal = generateSignal(candles, { interval: iv });
-          st.rows.push({ coin, signal, candles });
+          // Show the chart reading straight away; the forecast pass below only
+          // refines it, so the page is never a blank skeleton while it runs.
+          st.rows.push({ coin, signal, candles, advice: adviseCoin({ signal, forecast: null, timing: null, interval: iv }) });
+          draw();
         } catch { /* skip coin */ }
         done++; setProg();
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
     if (run !== st.run || st.disposed) return;
+    if (!st.rows.length) {
+      $('#body', el).innerHTML = '<div class="card empty"><h3>No chart data came back</h3><p>None of the coins returned candles on this timeframe, so there is nothing to read. Press Rescan to try again.</p></div>';
+      $('#meter i', el).style.width = '100%';
+      return;
+    }
 
     // Forecast + timing pass, strongest technical signals first so the top of
     // the page fills in early.
