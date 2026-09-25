@@ -60,9 +60,12 @@ export function downloadText(filename, text, mime = 'text/csv;charset=utf-8') {
  * it invites a conclusion the data cannot support.
  */
 export function reportHtml({ title, accountName, stats: s, closed = [], fmtMoney = (v) => String(v), generatedAt = Date.now(), notes = [] }) {
+  // Coin symbols can come from a typed-in or imported trade, so text is escaped;
+  // `notes` are the app's own fixed strings and may carry <b>.
+  const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const row = (k, v) => `<tr><th>${k}</th><td>${v}</td></tr>`;
   const small = s && s.trades < 30;
-  return `<!doctype html><meta charset="utf-8"><title>${title}</title>
+  return `<!doctype html><meta charset="utf-8"><title>${escHtml(title)}</title>
 <style>
   body { font: 14px/1.5 -apple-system, system-ui, sans-serif; color: #111; margin: 32px auto; max-width: 760px; }
   h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 24px 0 8px; }
@@ -74,8 +77,8 @@ export function reportHtml({ title, accountName, stats: s, closed = [], fmtMoney
   .warn { background: #fff8e6; border: 1px solid #f0d48a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; font-size: 13px; }
   @media print { body { margin: 0; } }
 </style>
-<h1>${title}</h1>
-<p class="muted">${accountName} · generated ${new Date(generatedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
+<h1>${escHtml(title)}</h1>
+<p class="muted">${escHtml(accountName)} · generated ${new Date(generatedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
 ${s ? `<h2>Result</h2><table>
   ${row('Starting balance', fmtMoney(s.startingBalance))}
   ${row('Balance now', fmtMoney(s.equity))}
@@ -89,7 +92,7 @@ ${s ? `<h2>Result</h2><table>
 ${small ? `<div class="warn"><b>Small sample.</b> ${s.trades} closed trade${s.trades === 1 ? '' : 's'} is too few to judge a strategy on. A win rate from this many trades can swing by twenty points on luck alone.</div>` : ''}
 ${notes.map((n) => `<div class="warn">${n}</div>`).join('')}
 ${closed.length ? `<h2>Trades</h2><table class="grid"><tr><th>Coin</th><th>Closed</th><th>In</th><th>Out</th><th>Result</th></tr>
-${closed.slice(0, 200).map((t) => `<tr><td>${t.symbol}</td><td>${iso(t.exitAt).slice(0, 10)}</td><td>${fmtMoney(t.entry)}</td><td>${fmtMoney(t.exit)}</td><td class="${t.pnl >= 0 ? 'pos' : 'neg'}">${t.pnl >= 0 ? '+' : ''}${fmtMoney(t.pnl)} (${t.pnlPct}%)</td></tr>`).join('')}
+${closed.slice(0, 200).map((t) => `<tr><td>${escHtml(t.symbol)}</td><td>${iso(t.exitAt).slice(0, 10)}</td><td>${fmtMoney(t.entry)}</td><td>${fmtMoney(t.exit)}</td><td class="${t.pnl >= 0 ? 'pos' : 'neg'}">${t.pnl >= 0 ? '+' : ''}${fmtMoney(t.pnl)} (${t.pnlPct}%)</td></tr>`).join('')}
 </table>` : ''}
 <div class="warn">Past results do not predict future ones. Signals and forecasts in this app are estimates from public market data, not financial advice, and the app never places trades.</div>`;
 }

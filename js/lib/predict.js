@@ -9,6 +9,8 @@
 //   3. Logistic model    – regularised logistic regression on the same features
 //   4. Nearest neighbours– most similar past market states (feature space)
 //   5. Trend model       – Holt double-exponential smoothing with volatility cone
+//   6. Boosted trees     – gradient-boosted decision trees on the same features
+//   7. Similar moves     – how moves like the latest one played out on this coin
 //
 // Crypto prices are noisy; the engine reports its measured accuracy so users
 // can judge how much to trust a forecast. Not financial advice.
@@ -771,12 +773,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   };
 }
 
-// Measured out-of-sample accuracy of this engine (tools/evaluate-engine.mjs, Sept 2026):
-// 672 forecasts on BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT.
-// Measured, not claimed. 672 walk-forward forecasts across 12 coins and 4
-// timeframes, each made only from data available at that moment, re-run on
-// 2026-09-12 with `tools/evaluate-engine.mjs` against fresh Binance candles.
-// Update these numbers only by re-running that tool — never by estimating.
+// Update the numbers below only by re-running tools/evaluate-engine.mjs — never by estimating.
 /**
  * Walk-forward accuracy, re-measured after the 1m and 5m models were trained
  * and every pooled model refitted. 240 forecasts per timeframe, 1,440 in total,

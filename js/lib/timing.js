@@ -175,13 +175,8 @@ export function summarizeTiming(t) {
   };
 }
 
-// Measured timing accuracy — tools/evaluate-timing.mjs, 245 walk-forward tests on
-// 12 coins of real Binance data. "Hit" means the real high or low landed within
-// ±25% of the horizon of the predicted bar; `baselinePct` is what a random guess
-// scores on the same tests, so the edge is the gap between them.
-//
-// It works on 4h and daily charts and does NOT work on 15m, where it scores
-// below chance. The UI must say so rather than quietly showing a number.
+// Measured timing accuracy — tools/evaluate-timing.mjs (current figures and how
+// they were measured are in the comment inside TESTED_TIMING below).
 export const TESTED_TIMING = {
   // Re-measured across all six timeframes: 931 walk-forward tests, 12 coins,
   // each prediction made only from candles that existed at that moment. A hit
