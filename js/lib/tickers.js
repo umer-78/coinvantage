@@ -11,7 +11,7 @@ const TRADE_WORD = /^(buy|buying|sell|selling|price|prices|coin|coins|token|toke
 /**
  * True when `word`, found at `index` in `text`, should be read as a coin.
  * Unambiguous tickers always are; ambiguous ones need capitals, a $, or a
- * trading word within two words before or three after.
+ * trading word within three words either side.
  */
 export function isTickerMention(word, text, index) {
   const lower = word.replace(/^\$/, '').toLowerCase();

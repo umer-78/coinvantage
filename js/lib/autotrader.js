@@ -241,7 +241,7 @@ export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry,
     symbol, side, real: true, note,
     entry: round(e), exit: round(x), qty: round(q, 10), notional: round(notional, 2),
     openedAt, exitAt: closedAt || Date.now(), reason: 'recorded by you',
-    pnl: round(pnl, 2), pnlPct: round((side === 'long' ? (x / e - 1) : (e / x - 1)) * 100, 3),
+    pnl: round(pnl, 2), pnlPct: round((side === 'long' ? (x / e - 1) : (1 - x / e)) * 100, 3), // same formula as closePosition
     feePaid: round(feePaid, 4),
   });
   markEquity(state, closedAt || Date.now());
