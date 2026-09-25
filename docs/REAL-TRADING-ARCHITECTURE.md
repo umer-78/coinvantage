@@ -83,8 +83,8 @@ server, because the answer changes what the server has to log and retain.
 The strategy currently does not justify automation. Measured on this repo's own
 tooling:
 
-- direction accuracy 54.0% overall, and 47% on the daily chart — worse than a
-  coin flip;
+- direction accuracy 49.6% overall against a 51.0% baseline — no edge overall, and
+  below its own baseline on the 1m, 1h and 4h charts;
 - the 15m and 4h trade geometry has negative expectancy at every configuration
   tested;
 - a higher signal score does not reliably mean a better trade.

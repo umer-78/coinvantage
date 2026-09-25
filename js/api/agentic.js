@@ -154,7 +154,7 @@ class MarketScannerAgent extends BaseAgent {
       return {
         symbol,
         price: parseFloat(data.lastPrice),
-        change24h: parseFloat(price.changePercent),
+        change24h: parseFloat(data.priceChangePercent),
         high24h: parseFloat(data.highPrice),
         low24h: parseFloat(data.lowPrice),
         volume24h: parseFloat(data.volume),

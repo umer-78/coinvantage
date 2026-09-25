@@ -49,7 +49,7 @@ Then re-run the Supabase security + performance advisors and confirm zero errors
       Drawings are stored in time/price, per coin and timeframe, in the `drawings` sync key.
       Pure maths lives in `js/lib/geometry.js` so it is testable without a browser.
 - [x] Final full recheck: all 18 routes walked on the live site, zero JavaScript
-      errors, 25 unit tests green, Supabase advisors clean of real issues.
+      errors, 25 unit tests green at the time, Supabase advisors clean of real issues.
       Last run 2026-09-13.
 
 ## Open work (as of 2026-09-13 evening)
@@ -134,9 +134,9 @@ A short-side test has not been run.
   CSV import. Keep it that way.
 
 ## Measured numbers currently published (do not change without re-measuring)
-- Forecast direction accuracy: 54.0% overall — 15m 57.1%, 1h 53.0%, 4h 58.9%, 1d 47.0%
-  (672 tests, 12 coins, naive baseline 51.3%). Confident subset: 56.9% over 38% of forecasts.
-  Brier 0.248. Re-measured 2026-09-12 with tools/evaluate-engine.mjs on fresh candles.
+- Forecast direction accuracy: 49.6% overall against a 51.0% baseline (no edge) — 1m 44.6% (baseline 53.8%),
+  5m 55.0% (52.5%), 15m 52.5% (51.2%), 1h 48.8% (64.2%), 4h 43.8% (75.4%), 1d 52.9% (52.1%).
+  1,440 tests, 12 coins, 240 per timeframe. No edge on 1m, 1h, 4h. Source of truth: TESTED_ACCURACY in js/lib/predict.js.
 - Tried and REJECTED (all measured worse, do not re-add without new evidence):
   stacked logistic regression over the model votes (51.6%), and Platt calibration
   WITH an intercept (52.4% — the intercept moves the 50% crossing and flips
@@ -144,8 +144,8 @@ A short-side test has not been run.
   54.0%, Brier 0.2529 to 0.2483, confident-subset accuracy 53.0% to 56.9%.
   Also rejected: a pooled cross-coin model (53.7%), and more validation points
   with below-chance models zeroed out (51.5%). Four variants tested, one shipped.
-- Timing peak-hit: 61.2% vs 53.6% random — 15m 45% (worse than chance, flagged as such in the UI),
-  1h 51.6%, 4h 67.9%, 1d 66.3%.
+- Timing peak-hit: 58.0% vs 54.1% random (931 tests, 12 coins) — 5m 52.6% vs 48.7%, 15m 48.6% vs 49.0% (no edge),
+  1h 52.5% vs 46.8%, 4h 68.7% vs 61.8%, 1d 56.1% vs 55.0%. Source of truth: TESTED_TIMING in js/lib/timing.js.
 
 ### Assistant and advice fixes (2026-09-25)
 - `adviseCoin` scales the score by the evidence behind it (divides by `max(total weight, 1)`), so one barely-trusted reading can no longer produce "BUY, conviction 100/100".

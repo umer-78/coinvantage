@@ -74,11 +74,20 @@ export async function render(el) {
   // never seen it did not beat simply owning the coins, on any timeframe. A
   // feature that cannot beat buying and holding should say so on its own page.
   function verdictCard() {
-    const t = AUTOTRADER_TESTED[cfg.interval] || AUTOTRADER_TESTED['1h'];
+    const t = AUTOTRADER_TESTED[cfg.interval];
+    // Only 1h, 4h and 1d were measured. Showing the 1h numbers under another
+    // label would present a test that was never run.
+    if (!t) {
+      return `<div class="card" style="border-color:var(--warn)">
+      <div class="card-h"><h3>${icon('info', 16)} Not tested on the ${esc(cfg.interval)} chart</h3></div>
+      <p class="fine">This strategy was only measured on 1h, 4h and 1d charts, and on none of them did it beat simply holding the coins. Pick one of those in Settings to see its measured result.</p>
+    </div>`;
+    }
+    const beatTotal = ['1h', '4h', '1d'].reduce((s, k) => s + (AUTOTRADER_TESTED[k]?.beatBuyHold || 0), 0);
     return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured, not estimated</span></div>
       <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(cfg.interval)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
-      <p class="fine">Out of ${t.configs} settings tested on that timeframe, <b>${t.beatBuyHold}</b> beat buy-and-hold. Fees alone consumed ${t.feeDragPct}% of the balance across ${t.trades} trades. Across 1h, 4h and 1d — ${AUTOTRADER_TESTED.configs || 324} settings in total — nothing beat holding the coins.</p>
+      <p class="fine">Out of ${t.configs} settings tested on that timeframe, <b>${t.beatBuyHold}</b> beat buy-and-hold. Fees alone consumed ${t.feeDragPct}% of the balance across ${t.trades} trades. Across 1h, 4h and 1d — ${AUTOTRADER_TESTED.configs || 324} settings in total — ${beatTotal === 0 ? 'nothing beat holding the coins' : `only ${beatTotal} beat holding the coins, too few to call an edge`}.</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a way to make money, and CoinVantage will not tell you it is. It places no real orders and holds no keys.</p>
     </div>`;
   }
@@ -523,7 +532,7 @@ export async function render(el) {
           <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="10" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
           <label class="fld">Max open<input class="inp" name="maxPositions" type="number" min="1" max="10" value="${cfg.maxPositions}" style="width:90px"></label>
         </div>
-        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => `<option ${i === cfg.interval ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+        <label class="fld">Chart<select class="inp" name="interval">${['1h', '4h', '1d'].map((i) => `<option ${i === cfg.interval ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
         <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
         <p class="fine">Available: ${esc(tradable.slice(0, 24).map((c) => c.symbol).join(', '))}…</p>
         <button class="btn primary">Save settings</button>
