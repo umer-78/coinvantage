@@ -29,7 +29,7 @@ computers alike.
 | **Exchanges** | Same coin on 10 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Gate.io, Bitget, HTX, Gemini, Crypto.com): price, spread, volume, best buy/sell venue |
 | **Signal scanner** | Ranks the top 20/30/50 coins by signal score and fast AI forecast; filters for buy, sell, oversold and overbought |
 | **Compare** | Up to 6 coins: normalised performance, volatility, max drawdown, return/risk, correlation matrix |
-| **Tools** | Coin ↔ currency converter (PKR and 16 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
+| **Tools** | Coin ↔ currency converter (PKR and 15 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
 | **Price alerts** | Browser notifications while the site is open, plus server-side alerts by e-mail and Telegram while it is closed |
 | **Track record** | Public page scoring every signal the server logged *before* the outcome was known |
@@ -38,7 +38,7 @@ computers alike.
 | **Accounts** | Optional sign-in syncs watchlist, holdings, wallet addresses and settings across devices |
 | **Premium** | One-off payment for server-side alerts, VIP trade ideas and the full track record (Stripe or manual activation) |
 | **Admin panel** | Traffic, users, premium grants, trade-idea publishing, site settings, API keys and manual job runs |
-| **16 currencies · English/اردو** | Prices convert to USD, PKR, EUR, GBP, AED, SAR, INR, TRY, NGN, IDR, BRL, JPY, CNY, RUB, ZAR, BDT; Urdu UI with right-to-left layout |
+| **16 currencies** | Prices convert to USD, PKR, EUR, GBP, AED, SAR, INR, TRY, NGN, IDR, BRL, JPY, CNY, RUB, ZAR, BDT |
 | **Installable (PWA)** | Add to home screen, works offline for the shell, app icon and shortcuts |
 
 ## The built-in AI (no API key)
@@ -68,18 +68,20 @@ computers alike.
 
 ### Measured accuracy (honest numbers)
 
-`tools/evaluate-engine.mjs` ran **672 forecasts on 12 major coins** (BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT). Each forecast used only data available at that moment, on real Binance candles.
+`tools/evaluate-engine.mjs` ran **1,440 forecasts on 12 major coins** (BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT), 240 on each of six timeframes. Each forecast used only data available at that moment, on real Binance candles, and is scored against the baseline of always naming whichever direction was more common in that window.
 
-| Timeframe | Horizon | Direction accuracy |
+| Timeframe | Direction accuracy | Baseline |
 |---|---|---|
-| 15m | 2 hours | **60.1%** |
-| 1h | 12 hours | **55.4%** |
-| 4h | 1 day | **56.0%** |
-| 1d | 1 week | 49.4% |
-| **All** | | **55.2%** (up-moves were 51.3% of cases) |
+| 1m | 44.6% | 53.8% (no edge) |
+| 5m | 55.0% | 52.5% |
+| 15m | 52.5% | 51.2% |
+| 1h | 48.8% | 64.2% (no edge) |
+| 4h | 43.8% | 75.4% (no edge) |
+| 1d | 52.9% | 52.1% |
+| **All** | **49.6%** | 51.0% (no edge overall) |
 
 - Predicted ranges were calibrated on the same test: σ is scaled by 0.75 so the 50% and 80% bands match reality.
-- Daily/weekly forecasts showed no edge. The UI says so, and suggests 15m–4h charts for timing.
+- Overall the forecast does not beat its baseline, and it is below it on the 1m, 1h and 4h charts. The UI says so wherever a forecast is shown, and the assistant gives it little weight.
 - The **History & cycles** tab scores itself separately, per coin, and prints that number next to its verdict — on most coins it lands in the 45–62% range, which is context, not a trading edge.
 - No model can predict crypto reliably. Treat forecasts as probabilities and always use stop-losses.
 
