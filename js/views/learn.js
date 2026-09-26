@@ -7,7 +7,7 @@ import { learningPass, loadLearn } from '../lib/learnpass.js';
 import { DEFAULT_CONFIG, AUTOTRADER_TESTED } from '../lib/autotrader.js';
 import { activeLessons, reviewTrades } from '../lib/tradelearn.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
-import { learningStatus, loadLedger } from '../lib/selfimprove.js';
+import { learningStatus, loadLedger, learnedTrust, MIN_GRADED_FOR_TRUST } from '../lib/selfimprove.js';
 
 export const title = 'AI learning';
 
@@ -51,7 +51,8 @@ export async function render(el) {
     const champion = L.champion || 'forecast';
     const cfg = { ...DEFAULT_CONFIG, ...(load('traderCfg', {}) || {}) };
     const lessons = load('traderLessons', []) || [];
-    const fl = learningStatus(loadLedger());
+    const ledger = loadLedger();
+    const fl = learningStatus(ledger);
     const tested = LEARN_TESTED.byInterval[st.interval];
     const changes = [
       ...(L.changes || []).map((c) => ({ at: c.at, text: c.text, tag: c.kind === 'champion' ? 'call maker' : `indicators · ${c.interval}` })),
@@ -86,6 +87,14 @@ export async function render(el) {
             <dt>90% range held</dt><dd>${TESTED_ACCURACY.bandsAll.band90}% <span class="fine">(target 90%)</span></dd>
             <dt>This device (last 50)</dt><dd>${fl.windows[50].pct === null ? '<span class="muted">not enough yet</span>' : `${fl.windows[50].pct}% <span class="fine">(${fl.windows[50].hits}/${fl.windows[50].total})</span>`}</dd>
           </dl>
+          <h4 class="mt" style="margin-bottom:6px">How far its direction is trusted</h4>
+          <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Release test</th><th>Graded here</th><th>Used now</th></tr></thead><tbody>
+            ${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => {
+              const t = learnedTrust(ledger, iv);
+              return `<tr><td class="l">${iv}</td><td>${t.prior.toFixed(2)}</td><td>${t.local === null ? `<span class="muted">${t.graded} of ${MIN_GRADED_FOR_TRUST}</span>` : `${t.local.toFixed(2)} <span class="fine">(${t.graded})</span>`}</td><td><b>${t.trust.toFixed(2)}</b></td></tr>`;
+            }).join('')}
+          </tbody></table></div>
+          <p class="fine">The chance of rise on each chart is the models' raw lean shrunk by this number: 1 keeps it as is, 0 means the lean carried no information in testing, so no chance is shown there. Once a chart has ${MIN_GRADED_FOR_TRUST} forecasts graded on this device, their record adjusts the number, weighted against the release test's ${TESTED_ACCURACY.testsPerInterval} forecasts per chart. A chart the release test found nothing on stays at 0.</p>
           <p class="fine mt">The forecast retrains all seven models on each coin's newest candles every time it runs. Once a device has enough scored calls, a weak recent record pulls its displayed confidence toward 50/50 by itself.</p>
         </div>
       </div>

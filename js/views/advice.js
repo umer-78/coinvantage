@@ -7,6 +7,7 @@ import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
 import { adviseCoin, rankAdvice, ADVICE_DISCLAIMER } from '../lib/advice.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
+import { directionTrustFor } from '../lib/selfimprove.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { $, $$, icon, coinLogo, skeleton, bindSeg, modal } from '../ui.js';
@@ -155,7 +156,7 @@ export async function render(el) {
         fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], intervalMs: INTERVAL_MS[iv] });
         tm = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
       } catch { /* the advice still works without it */ }
-      row.advice = adviseCoin({ signal: row.signal, forecast: fc, timing: tm, interval: iv });
+      row.advice = adviseCoin({ signal: row.signal, forecast: fc, timing: tm, interval: iv, trust: directionTrustFor(iv).trust });
       row.candles = null;
       draw();
     }

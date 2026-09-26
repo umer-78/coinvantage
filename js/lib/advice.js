@@ -21,7 +21,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const edgeWeight = (accuracy, floor = 0.5) =>
   accuracy === null || accuracy === undefined ? 0.15 : clamp((accuracy - floor) / 0.1, 0, 1);
 
-export function adviseCoin({ signal, forecast, timing, history, holding = null, interval = '4h' } = {}) {
+export function adviseCoin({ signal, forecast, timing, history, holding = null, interval = '4h', trust = undefined } = {}) {
   if (!signal?.ok) return { ok: false, reason: signal?.reason || 'No signal for this coin.' };
 
   const parts = [];
@@ -62,8 +62,8 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
 
   // 2. Model ensemble, weighted by its own out-of-sample accuracy on this coin.
   if (forecast?.ok) {
-    const shown = shownProbUp(forecast.probUp, interval);
-    const reliable = directionReliable(interval);
+    const shown = shownProbUp(forecast.probUp, interval, trust);
+    const reliable = directionReliable(interval, trust);
     const edge = (shown - 0.5) * 2;
     // Accuracy only counts above what always naming the more common direction
     // would have scored on the same rows, not above 50%: 62% in a window that

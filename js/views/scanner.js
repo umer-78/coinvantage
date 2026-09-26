@@ -1,5 +1,6 @@
 import { markets, getCandles, isStable, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { TESTED_ACCURACY, shownProbUp, directionReliable } from '../lib/predict.js';
+import { directionTrustFor } from '../lib/selfimprove.js';
 import { generateSignal } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
@@ -49,8 +50,9 @@ export async function render(el) {
     const f = st.filter;
     // The same shown probability as the coin page: shrunk by its measured trust
     // on this chart, and no direction at all where the test found none.
-    const reliable = directionReliable(st.interval);
-    const shown = (r) => (r.fc?.ok ? shownProbUp(r.fc.probUp, st.interval) : null);
+    const trust = directionTrustFor(st.interval).trust;
+    const reliable = directionReliable(st.interval, trust);
+    const shown = (r) => (r.fc?.ok ? shownProbUp(r.fc.probUp, st.interval, trust) : null);
     if (f === 'buy') rows = rows.filter((r) => r.signal.score >= 18);
     if (f === 'sell') rows = rows.filter((r) => r.signal.score <= -18);
     if (f === 'aiup') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) >= 0.54);

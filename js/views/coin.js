@@ -20,7 +20,7 @@ import { tradeSummary } from '../lib/summary.js';
 import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
 import { fx } from '../api/fx.js';
 import {
-  loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger,
+  loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger, directionTrustFor, MIN_GRADED_FOR_TRUST,
   rollingAccuracy, learningStatus, accuracySparkline, adaptiveWeights,
   dampenConfidence, threeModelEnsemble, signalMeter, riskWarnings, anomalyFlags,
   sparklineSvg,
@@ -487,6 +487,7 @@ export async function render(el, [symParam]) {
     const meterTone = meter.tone === 'up' ? 'up' : meter.tone === 'down' ? 'down' : 'flat';
     const warnings = riskWarnings({
       signal: sig, forecast: st.forecast, backtest: st.backtest, interval: st.interval,
+      trust: directionTrustFor(st.interval, st.ledger || loadLedger()).trust,
       anomalies: st.anomalies || [],
       noEdgeTimeframe: (TESTED_ACCURACY.noEdge || []).includes(st.interval) || (['1s', '5s', '10s', '1m', '5m', '1w'].includes(st.interval)),
       // Say which kind of "no edge": tested and lost to the baseline, or never tested.
@@ -529,7 +530,7 @@ export async function render(el, [symParam]) {
   function summaryHtml(sig) {
     const sum = tradeSummary({
       signal: { ...sig, coinSymbol: coin.symbol },
-      forecast: st.forecast ? summarizeForecast(st.forecast, st.interval) : null,
+      forecast: st.forecast ? summarizeForecast(st.forecast, st.interval, directionTrustFor(st.interval, st.ledger || loadLedger()).trust) : null,
       timing: st.timing || null,
       interval: st.interval,
       horizonText: st.forecast ? horizonText(st.interval, st.forecast.horizon) : null,
@@ -625,6 +626,13 @@ export async function render(el, [symParam]) {
     return `Raw model lean: ${(fc.probUp * 100).toFixed(1)}% up. Not shown as a chance, because ${why}.`;
   }
 
+  // Where the shrink on this chart comes from, so the self-adjustment is visible.
+  function trustNote(t) {
+    const base = `Chance shrunk toward 50% by its measured trust on ${esc(st.interval)}: ${t.prior.toFixed(2)} in the release test`;
+    if (t.local === null) return `${base}. After ${MIN_GRADED_FOR_TRUST} graded forecasts on this device it starts adjusting (${t.graded} so far).`;
+    return `${base}, ${t.trust.toFixed(2)} after ${t.graded} forecasts graded on this device (they alone fit ${t.local.toFixed(2)}).`;
+  }
+
   function ring(prob) {
     const r = 50, c = 2 * Math.PI * r, up = prob >= 0.5;
     if (prob === null) {
@@ -639,8 +647,9 @@ export async function render(el, [symParam]) {
   function drawForecastCard(fc) {
     // What is shown is the probability shrunk by its measured trust on this
     // chart; the raw one stays in the ledger, which grades the models.
-    const shown = shownProbUp(fc.probUp, st.interval);
-    const reliable = directionReliable(st.interval);
+    const trust = directionTrustFor(st.interval, st.ledger || loadLedger());
+    const shown = shownProbUp(fc.probUp, st.interval, trust.trust);
+    const reliable = directionReliable(st.interval, trust.trust);
     const dirTxt = !reliable ? '<b class="flat">No reliable direction on this chart</b>'
       : shown >= 0.54 ? '<b class="up">Likely higher</b>' : shown <= 0.46 ? '<b class="down">Likely lower</b>' : '<b class="flat">Sideways / uncertain</b>';
     const e = fc.ensemble;
@@ -674,7 +683,7 @@ export async function render(el, [symParam]) {
           <div>Next <b>${horizonText(st.interval, fc.horizon)}</b>: ${dirTxt}</div>
           <div class="fine">Target ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)})</div>
           <div class="fine">Tested accuracy: <b>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'}</b> on ${e.samples} unseen cases</div>
-          ${reliable ? '' : `<div class="fine">${rawLeanNote(fc)}</div>`}
+          ${reliable ? `<div class="fine">${trustNote(trust)}</div>` : `<div class="fine">${rawLeanNote(fc)}</div>`}
         </div>
       </div>
       <div class="learning-box mt">
@@ -845,7 +854,8 @@ export async function render(el, [symParam]) {
       if (!fc) { body.innerHTML = `<div class="row"><span class="spinner"></span> Training models…</div>`; return; }
       if (!fc.ok) { body.innerHTML = `<p class="muted">${esc(fc.reason)}</p>`; return; }
       const e = fc.ensemble;
-      const shown = shownProbUp(fc.probUp, st.interval), reliable = directionReliable(st.interval);
+      const trust = directionTrustFor(st.interval, st.ledger || loadLedger());
+      const shown = shownProbUp(fc.probUp, st.interval, trust.trust), reliable = directionReliable(st.interval, trust.trust);
       body.innerHTML = `
         <div class="grid fc-grid">
           <div>

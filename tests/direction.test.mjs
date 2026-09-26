@@ -111,3 +111,43 @@ test('candles that stopped days ago are not passed off as live', async () => {
     assert.equal(await exchangeCandles({ symbol: 'STALETEST', price: 10 }, '1m', 60), null);
   });
 });
+
+// ------------------------------------------------ trust learned on the device
+import { learnedTrust, directionTrustFor, MIN_GRADED_FOR_TRUST } from '../js/lib/selfimprove.js';
+
+// Graded forecasts where the model leaned `p` up and the price rose when `rose(i)` says so.
+const graded = (interval, n, p, rose) => ({
+  entries: Array.from({ length: n }, (_, i) => ({ resolved: true, interval, probUp: i % 2 ? p : 1 - p, actualUp: rose(i) })),
+});
+
+test('a device with too few graded forecasts uses the release test as it is', () => {
+  const t = learnedTrust(graded('15m', MIN_GRADED_FOR_TRUST - 1, 0.7, () => true), '15m');
+  assert.deepEqual(t, { trust: TESTED_ACCURACY.directionTrust['15m'], prior: TESTED_ACCURACY.directionTrust['15m'], local: null, graded: MIN_GRADED_FOR_TRUST - 1 });
+});
+
+test('leans that keep coming true raise the trust, leans that do not lower it, both only partly', () => {
+  const prior = TESTED_ACCURACY.directionTrust['15m'];
+  // the price rose exactly when the model leaned up
+  const right = learnedTrust(graded('15m', 120, 0.7, (i) => i % 2 === 1), '15m');
+  assert.equal(right.local, 1);
+  assert.ok(right.trust > prior && right.trust < 1, `${right.trust}`);
+  // the price rose half the time whatever the model said
+  const noise = learnedTrust(graded('15m', 120, 0.7, (i) => Math.floor(i / 2) % 2 === 0), '15m');
+  assert.equal(noise.local, 0);
+  assert.ok(noise.trust < prior && noise.trust > 0, `${noise.trust}`);
+  // 240 release-test forecasts against 120 of this device's: the blend sits a third of the way
+  assert.ok(Math.abs(right.trust - (prior * 240 + 1 * 120) / 360) < 1e-12);
+});
+
+test('a timeframe the release test found no direction on stays at zero, whatever the device saw', () => {
+  const t = learnedTrust(graded('4h', 500, 0.8, (i) => i % 2 === 1), '4h');
+  assert.equal(t.local, 1);
+  assert.equal(t.trust, 0);
+  assert.equal(directionTrustFor('4h', graded('4h', 500, 0.8, (i) => i % 2 === 1)).trust, 0);
+});
+
+test('the pages pass the learned trust through to what they show', () => {
+  const fc = forecast(demoCandles('bitcoin', '4h', 600), { horizon: 6, fast: true });
+  const trust = learnedTrust(graded('15m', 120, 0.7, (i) => i % 2 === 1), '15m').trust;
+  assert.equal(summarizeForecast(fc, '15m', trust).probUpPct, +(shownProbUp(fc.probUp, '15m', trust) * 100).toFixed(1));
+});
