@@ -188,10 +188,17 @@ export async function deletePost(id) {
 export async function getNews({ coin = null, limit = 40 } = {}) {
   const client = await sb();
   if (!client) return [];
-  let q = client.from('news').select('*').order('published_at', { ascending: false }).limit(limit);
+  // Ask for extra rows: the feed can hold the same story twice (one outlet
+  // posting it under two links), and repeats are dropped before returning.
+  let q = client.from('news').select('*').order('published_at', { ascending: false }).limit(limit * 2);
   if (coin) q = q.contains('coins', [coin]);
   const { data } = await q;
-  return data || [];
+  const seen = new Set();
+  return (data || []).filter((r) => {
+    const k = String(r.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!k || seen.has(k)) return false;
+    seen.add(k); return true;
+  }).slice(0, limit);
 }
 
 export async function getTrackRecord({ symbol = null, limit = 300 } = {}) {

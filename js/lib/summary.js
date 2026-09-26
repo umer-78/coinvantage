@@ -41,6 +41,8 @@ const NEUTRAL_BAND = 20;
 const dirOf = (score) => (score >= NEUTRAL_BAND ? 1 : score <= -NEUTRAL_BAND ? -1 : 0);
 const noEdgeOn = (iv) => (TESTED_ACCURACY.noEdge || []).includes(iv);
 const accuracyOn = (iv) => (typeof TESTED_ACCURACY[iv] === 'number' ? TESTED_ACCURACY[iv] : null);
+// What the model had to beat on a timeframe: always naming the more common direction.
+const baselineOn = (iv) => (typeof TESTED_ACCURACY.baseline?.[iv] === 'number' ? TESTED_ACCURACY.baseline[iv] : null);
 
 /** e.g. "1m 44.6% · 5m 55% · 15m 52.5% · 1h 48.8% · 4h 43.8% · 1d 52.9%" */
 function accuracyList() {
@@ -149,7 +151,7 @@ export function reconcileSteps(rec, interval) {
     follow += ` The forecast model is not equally good on all of them — measured direction accuracy on unseen data was ${accs} across ${TESTED_ACCURACY.coins} coins.`;
   }
   if (noEdge.length) {
-    follow += ` ${noEdge.join(' and ')} ${noEdge.length > 1 ? 'are' : 'is'} at or below a coin flip, so a probability shown there is not evidence — on that chart read the trend structure and ignore the percentage.`;
+    follow += ` On ${noEdge.join(', ')} it scored at or below its baseline (always naming whichever direction was more common), so a probability shown there is not evidence — on those charts read the trend structure and ignore the percentage.`;
   }
   steps.push({ label: 'Which timeframe to follow', text: follow });
 
@@ -331,7 +333,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     if (acc !== null) text += `, from a model that called direction right ${acc}% of the time on recent data it had never seen`;
     text += '.';
     if (noEdgeOn(interval)) {
-      text += ` Read that number with suspicion here: across ${TESTED_ACCURACY.coins} coins the model scored ${tfAcc !== null ? tfAcc.toFixed(1) : '—'}% on the ${interval} timeframe, which is worse than guessing, so it is shown for completeness and is not part of the verdict above.`;
+      text += ` Read that number with suspicion here: across ${TESTED_ACCURACY.coins} coins the model scored ${tfAcc !== null ? tfAcc.toFixed(1) : '—'}% on the ${interval} timeframe, below the ${baselineOn(interval) ?? '—'}% it would have scored by always naming the more common direction, so it is shown for completeness and is not part of the verdict above.`;
     }
     steps.push({ label: 'What the model adds', text });
   }
@@ -368,7 +370,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   }
 
   if (noEdgeOn(interval)) {
-    caveats.push(`On the ${interval} chart the forecast model scored ${accuracyOn(interval).toFixed(1)}% on unseen data across ${TESTED_ACCURACY.coins} coins — below a coin flip. Nothing shown on this timeframe is presented as a confident call, whatever the score says.`);
+    caveats.push(`On the ${interval} chart the forecast model scored ${accuracyOn(interval).toFixed(1)}% on unseen data across ${TESTED_ACCURACY.coins} coins — not above the ${baselineOn(interval) ?? '—'}% of always naming the more common direction, so it has no edge there. Nothing shown on this timeframe is presented as a confident call, whatever the score says.`);
   }
   if (acc !== null && acc < 52) caveats.push(`The forecast has no measured edge on this coin and timeframe (${acc}%), so weight the chart signal more heavily here.`);
   if (strength < 25 && !conflict) caveats.push('This is a weak reading. A small score means the indicators barely agree, which is a reason to size down or skip it.');

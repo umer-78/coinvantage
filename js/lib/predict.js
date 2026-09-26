@@ -762,13 +762,23 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   const end = path[path.length - 1];
   const ensembleAcc = eN ? eHit / eN : null;
   const strength = Math.abs(probUp - 0.5);
-  const va = ensembleAcc ?? 0.5;
-  const confidence = strength >= 0.1 && va >= 0.55 ? 'High' : strength >= 0.05 && va >= 0.5 ? 'Moderate' : 'Low';
+  // 95% (Wilson) range of the recent hit rate. A few dozen unseen cases cannot
+  // tell 57% apart from the baseline, so "High" needs the whole range above it
+  // (it used to need only 55%, which 75 cases clear by luck easily).
+  const accRange = eN ? wilsonRange(eHit, eN) : null;
+  const provenEdge = eN >= 50 && accRange[0] > Math.max(0.5, baseline);
+  const confidence = strength >= 0.1 && provenEdge ? 'High'
+    : strength >= 0.05 && ensembleAcc !== null && ensembleAcc > Math.max(0.5, baseline) ? 'Moderate' : 'Low';
   const direction = probUp >= 0.54 ? 'UP' : probUp <= 0.46 ? 'DOWN' : 'SIDEWAYS';
 
   const notes = [];
-  if (ensembleAcc !== null && ensembleAcc < 0.52) notes.push('Recently the models have had little edge over a coin flip on this coin and timeframe — treat this forecast as weak and rely on stop-losses.');
-  if (ensembleAcc !== null && ensembleAcc >= 0.55) notes.push(`The ensemble called the direction right ${(ensembleAcc * 100).toFixed(0)}% of the time on recent unseen data — a meaningful edge for crypto.`);
+  if (ensembleAcc !== null) {
+    const accP = (ensembleAcc * 100).toFixed(0), baseP = (baseline * 100).toFixed(0);
+    const lo = (accRange[0] * 100).toFixed(0), hi = (accRange[1] * 100).toFixed(0);
+    if (provenEdge) notes.push(`The ensemble called the direction right ${accP}% of the time on ${eN} recent unseen cases; even the low end of its 95% range (${lo}%) is above the ${baseP}% it had to beat.`);
+    else if (ensembleAcc > baseline) notes.push(`The ensemble called the direction right ${accP}% of the time on ${eN} recent unseen cases, against ${baseP}% for always naming the more common direction. With this few cases the true rate could be anywhere from ${lo}% to ${hi}%, so this is not a proven edge.`);
+    else notes.push(`On ${eN} recent unseen cases the ensemble was right ${accP}% of the time, no better than the ${baseP}% of always naming the more common direction — treat this forecast as weak and rely on stop-losses.`);
+  }
   const mv = feats[last] ? moveStatsModel(idx.map((i) => ({ z: zAt(i), rsi: ind.rsi[i], up: label(i) })))(zAt(last), ind.rsi[last]) : null;
   const zNow = zAt(last);
   if (mv && Math.abs(zNow) > 1 && mv.n >= 15) notes.push(`Price just moved ${zNow > 0 ? 'up' : 'down'} unusually fast (${Math.abs(zNow).toFixed(1)}σ). In ${mv.n} similar past cases it rose afterwards ${(mv.prob * 100).toFixed(0)}% of the time.`);
@@ -785,7 +795,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
     range: { p05: end.p05, p10: end.p10, p25: end.p25, p50: end.p50, p75: end.p75, p90: end.p90, p95: end.p95 },
     path, models,
     ensemble: {
-      accuracy: ensembleAcc, samples: eN, baseline,
+      accuracy: ensembleAcc, samples: eN, baseline, accuracyRange: accRange, provenEdge,
       confidentAccuracy: cN >= 12 ? cHit / cN : null, confidentCoverage: eN ? cN / eN : 0,
       validationFrom: candles[idx[valStart]]?.t, validationTo: candles[idx[idx.length - 1]]?.t,
       method: stacking ? 'stacked' : 'weighted', brier: brierScore, labelMode,
@@ -836,6 +846,13 @@ export const TESTED_ACCURACY = {
   beatsBaselineOverall: false,
   caveat: 'Twelve coins over one market window: crypto moves together, so 240 forecasts on a timeframe are nowhere near 240 independent tests.',
 };
+
+/** 95% Wilson interval for a hit rate, as fractions. */
+function wilsonRange(hits, n) {
+  const z = 1.96, p = hits / n, d = 1 + (z * z) / n;
+  const mid = (p + (z * z) / (2 * n)) / d, half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+  return [Math.max(0, mid - half), Math.min(1, mid + half)];
+}
 
 /** Accuracy and the number it had to beat, for one timeframe. */
 export function accuracyFor(interval) {

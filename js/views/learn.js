@@ -25,7 +25,16 @@ export async function render(el) {
     <p class="fine" id="status" style="margin-top:-6px"></p>
     <div id="body"></div>`;
 
-  const pctTxt = (s) => (s && s.rate !== null ? `<b>${s.rate}%</b> <span class="fine">(${s.hits}/${s.n} · 95% range ${s.lo}–${s.hi}%)</span>` : '<span class="muted">no calls yet</span>');
+  // A call is only scored once its horizon has passed, so right after the first
+  // pass there are logged calls but nothing scored — say that, not "no calls".
+  const soon = (at) => { const m = Math.max(1, Math.round((at - Date.now()) / 60e3)); return m < 90 ? `${m} min` : `${Math.round(m / 60)} h`; };
+  const pctTxt = (s, rows = [], key = '') => {
+    if (s && s.rate !== null) return `<b>${s.rate}%</b> <span class="fine">(${s.hits}/${s.n} · 95% range ${s.lo}–${s.hi}%)</span>`;
+    const waiting = rows.filter((r) => !r.resolved && Number.isFinite(r[key]));
+    if (!waiting.length) return '<span class="muted">no calls logged yet</span>';
+    const next = Math.min(...waiting.map((r) => r.horizonAt || Infinity));
+    return `<span class="muted">none scored yet · ${waiting.length} waiting${Number.isFinite(next) ? ` · first result ${next > Date.now() ? `in about ${soon(next)}` : 'at the next pass'}` : ''}</span>`;
+  };
   const chip = (s) => {
     if (!s || !s.n) return '<span class="chip">no data</span>';
     if (s.weight > 0) return '<span class="chip up">earns a vote</span>';
@@ -63,8 +72,8 @@ export async function render(el) {
           <div class="card-h"><h3>${icon('ai', 16)} Who makes the call right now</h3><span class="chip ${champion === 'blend' ? 'up' : ''}">${champion === 'blend' ? 'Learned blend' : 'Forecast engine'}</span></div>
           <p class="fine" style="margin-top:0">Two methods compete. The <b>forecast engine</b> (seven models) makes the call by default. The <b>learned blend</b> adds the indicators that have earned a vote. The blend only takes over after at least ${SWITCH_MIN} scored live calls each, and only if it leads by ${SWITCH_GAP}+ points with its whole 95% range above the forecast's rate. It hands the call back as soon as it falls behind.</p>
           <dl class="kv">
-            <dt>Forecast, live</dt><dd>${pctTxt(liveAll.forecast)}</dd>
-            <dt>Blend, live</dt><dd>${pctTxt(liveAll.blend)}</dd>
+            <dt>Forecast, live</dt><dd>${pctTxt(liveAll.forecast, L.rows, 'forecastProb')}</dd>
+            <dt>Blend, live</dt><dd>${pctTxt(liveAll.blend, L.rows, 'blendProb')}</dd>
             <dt>Release test</dt><dd>forecast ${LEARN_TESTED.forecast}% · blend ${LEARN_TESTED.blend}% <span class="fine">(${LEARN_TESTED.tests.toLocaleString()} calls${tested ? `; ${esc(st.interval)}: ${tested[0]}% vs ${tested[1]}%` : ''})</span></dd>
           </dl>
           <p class="fine mt">In the release test the blend <b>tied</b> the forecast overall. It did better on 1h, 4h and 1d and worse on 1m, 5m and 15m. A tie is not a reason to switch, so it starts as the challenger and has to prove itself on this device first.</p>

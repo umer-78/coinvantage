@@ -282,7 +282,7 @@ export async function render(el) {
       <div class="card-h"><h3>${icon('ai', 16)} AI activity</h3><span class="fine">${autoOn ? 'running · checks every 5 minutes' : session.status === 'stopped' ? 'stopped · press Resume to continue' : 'idle'}${st.lastRun ? ` · last check ${ago(st.lastRun)}` : ''}</span></div>
       ${replayed ? `<p class="fine" style="margin-top:0">Entries marked <span class="chip">replayed</span> happened on candles from before this account went live on ${dateTime(liveSince)} — the same rules run over past prices so the record does not start empty. Everything after that was decided live.</p>` : ''}
       ${ev.length ? `<ul class="fine" style="list-style:none;padding:0;margin:0">${ev.slice(0, 30).map((e) => `<li style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(e.t)}</span>${e.kind !== 'check' && e.kind !== 'review' && e.t < liveSince ? '<span class="chip" style="margin-right:6px">replayed</span>' : ''}${line(e)}</li>`).join('')}</ul>`
-        : '<p class="muted">No trades yet — the AI is watching for a setup that meets its rules.</p>'}
+        : `<p class="muted">${autoOn ? 'No trades yet — the AI is watching for a setup that meets its rules.' : `No trades yet. The AI is ${session.status === 'stopped' ? 'stopped' : 'not running'}, so it is not looking for setups — press ${session.status === 'stopped' ? 'Resume the AI' : 'Start the trader'} to let it trade.`}</p>`}
     </div>`;
   }
 
@@ -664,7 +664,7 @@ export async function render(el) {
               <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b><br><small>${pct((px / p.entry - 1) * 100)}</small></td>
               <td class="l fine">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}<br><small>${ago(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</small></td></tr>`;
           }).join('')}
-        </tbody></table></div>` : '<p class="muted">No position open right now — the AI is waiting for a setup that meets its rules.</p>'}
+        </tbody></table></div>` : `<p class="muted">${autoOn ? 'No position open right now — the AI is waiting for a setup that meets its rules.' : 'No position open. The AI is not running, so none will open until you start it.'}</p>`}
       </div>
 
       ${activityCard()}
@@ -712,7 +712,7 @@ export async function render(el) {
   // ---------------------------------------------------------------- settings
   $('#cfgBtn', el).addEventListener('click', () => {
     const m = modal(`<h3>Trader settings</h3>
-      <p class="fine">Changing these does not rewrite past trades.</p>
+      <p class="fine">Changing these does not rewrite past trades. Risk, max open and coins apply to the next trade. A new starting balance or chart applies straight away while the account has no trades, and after a Reset once it has some.</p>
       <form class="stack mt" style="gap:10px" id="cf">
         <div class="row" style="gap:8px">
           <label class="fld">Starting balance<input class="inp" name="startingBalance" type="number" min="100" step="100" value="${cfg.startingBalance}" style="width:130px"></label>
@@ -738,25 +738,41 @@ export async function render(el) {
       });
       save(CFG_KEY, cfg);
       m.close();
-      toast(state?.interval && state.interval !== cfg.interval
-        ? `Settings saved. The running account stays on ${state.interval}; reset it to trade on ${cfg.interval}.`
-        : 'Settings saved.', state?.interval && state.interval !== cfg.interval ? 'info' : 'up');
+      // An account with no trades yet has nothing to protect, so a new starting
+      // balance or chart applies to it at once (it used to keep showing the old
+      // balance until a Reset, which looked like the setting was ignored).
+      const untouched = state && !Object.keys(state.open || {}).length && !(state.closed || []).length;
+      if (untouched && (state.startingBalance !== cfg.startingBalance || state.interval !== cfg.interval)) {
+        state = state.interval === cfg.interval
+          ? { ...state, balance: cfg.startingBalance, startingBalance: cfg.startingBalance, equityCurve: [] }
+          : { ...newState(cfg, { liveFrom: state.liveFrom }), log: state.log || [] };
+        save(STATE_KEY, state);
+        toast(`Settings saved. The AI's account now starts at ${money(cfg.startingBalance)} on ${cfg.interval}.`, 'up');
+      } else if (state && (state.startingBalance !== cfg.startingBalance || state.interval !== cfg.interval)) {
+        toast(`Settings saved. This account already has trades, so it keeps ${money(state.startingBalance)} on ${state.interval}; press Reset to start again with ${money(cfg.startingBalance)} on ${cfg.interval}.`, 'info');
+      } else toast('Settings saved.', 'up');
       draw();
+      if (untouched && autoOn) catchUp();
     });
   });
 
   $('#resetBtn', el)?.addEventListener('click', () => {
-    const m = modal(`<h3>Reset the AI session?</h3><p>This stops the AI, wipes the simulated balance and the whole trade log, and starts again from ${money(cfg.startingBalance)}. After a reset it only trades candles that open from now on — nothing from before the reset is replayed. It cannot be undone.</p>
+    const m = modal(`<h3>Reset the AI's account?</h3><p>This wipes the simulated balance and the whole trade log and starts again from ${money(cfg.startingBalance)} on ${cfg.interval}. ${autoOn ? 'The AI keeps running' : 'The AI stays stopped until you start it'}, and from now on it only trades candles that open after the reset — nothing from before is replayed. It cannot be undone.</p>
       <div class="row mt" style="gap:8px"><button class="btn" id="no">Keep it</button><button class="btn primary" id="yes">Reset</button></div>`);
     $('#no', m.el).addEventListener('click', m.close);
     $('#yes', m.el).addEventListener('click', () => {
       // Start clean from now: no candle that opened before this moment is ever
       // traded, so the old trades cannot come back on the next Start.
+      const wasRunning = autoOn;
       state = newState(cfg, { liveFrom: Date.now() }); save(STATE_KEY, state);
       st.prices = {}; st.priceFrom = {};
       applySession('RESET');
       saveLedger(newLedger());
-      m.close(); draw(); toast('Trader reset. Session is idle — press Start when you want it running.', 'info');
+      // A reset clears the account, not the user's choice to run the AI.
+      if (wasRunning) applySession('START');
+      m.close(); draw();
+      toast(wasRunning ? `Account reset to ${money(cfg.startingBalance)}. The AI is still running and trades new ${cfg.interval} candles from now on.` : `Account reset to ${money(cfg.startingBalance)}. Press Start the trader when you want it running.`, 'info');
+      if (wasRunning) catchUp();
     });
   });
 
@@ -778,6 +794,7 @@ export async function render(el) {
 
   $('#stopBtn', el)?.addEventListener('click', () => {
     applySession('STOP');
+    draw(); // the account cards say whether the AI is looking for trades
     const openCount = Object.keys(state?.open || {}).length;
     toast(openCount ? `AI stopped. ${openCount} open position${openCount > 1 ? 's stay' : ' stays'} open — close them from the table, or resume.` : 'AI stopped. It will not open any new trades.', 'info');
   });

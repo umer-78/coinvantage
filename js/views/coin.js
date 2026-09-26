@@ -34,7 +34,8 @@ const SERIES = ['--series-1', '--series-2', '--series-3', '--series-5', '--serie
 const INTERVALS = ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'];
 // Timeframes the forecast engine was never measured on — say so rather than
 // letting a number imply an accuracy nobody checked.
-const UNMEASURED = ['1s', '5s', '10s', '1m', '5m'];
+// Charts the forecast engine was never tested on (1m and 5m were, and scored below their baseline).
+const UNMEASURED = ['1s', '5s', '10s'];
 
 export async function render(el, [symParam]) {
   const sym = (symParam || 'BTC').toUpperCase();
@@ -70,7 +71,7 @@ export async function render(el, [symParam]) {
       <div class="card stat"><span class="k">All-time high</span><span class="v">${usd(coin.ath)}</span><span class="s muted">${coin.ath ? `${pct((coin.price / coin.ath - 1) * 100, 1)} from ATH` : ''}</span></div>
     </div>
     <div class="coin-layout">
-      <div class="stack">
+      <div class="stack c-chart">
         <div class="card chart-card">
           <div class="chart-tools">
             <div class="seg scroll-x" id="ivSeg">${INTERVALS.map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}" title="${esc(INTERVAL_LABEL[iv] || iv)} candles">${iv}</button>`).join('')}</div>
@@ -92,14 +93,14 @@ export async function render(el, [symParam]) {
           <div class="chart-box" id="chart"></div>
           <p class="fine" style="margin:6px 4px 0">Scroll or pinch to zoom · drag to pan · double-click to reset. Yellow cone = AI forecast.</p>
         </div>
+        <div class="card" id="summaryCard" hidden></div>
       </div>
-      <div class="stack">
+      <div class="stack c-side">
         <div class="card" id="signalCard">${skeleton(6)}</div>
         <div class="card" id="fcCard">${skeleton(5)}</div>
         <div class="card" id="newsCard" hidden></div>
       </div>
-    </div>
-    <div class="card mt">
+      <div class="card c-tabs">
       <div class="tabs" role="tablist" id="tabs">
         <button data-tab="forecast" class="on">${icon('forecast', 16)} AI forecast</button>
         <button data-tab="patterns">${icon('compare', 16)} Pattern comparison</button>
@@ -112,6 +113,7 @@ export async function render(el, [symParam]) {
         <button data-tab="about">About</button>
       </div>
       <div id="tabBody"></div>
+      </div>
     </div>`;
 
   // Headlines beside the chart, not buried in a tab — the newest few, with the
@@ -455,6 +457,14 @@ export async function render(el, [symParam]) {
 
   function drawSignal(sig, conf) {
     const card = $('#signalCard', el);
+    // The plain-English summary is a long read, so it sits under the chart at
+    // full width instead of stretching the 360px sidebar far below everything else.
+    const sumCard = $('#summaryCard', el);
+    if (sumCard) {
+      const html = sig.ok ? summaryHtml(sig) : '';
+      sumCard.innerHTML = html ? `<div class="card-h"><h3>${icon('ai', 16)} In plain words · ${esc(st.interval)}</h3></div>${html.replace('<div class="summary mt">', '<div class="summary">')}` : '';
+      sumCard.hidden = !html;
+    }
     if (!sig.ok) { card.innerHTML = `<h3>Signal</h3><p class="muted">${esc(sig.reason)}</p>`; return; }
     const pos = (sig.score + 100) / 2;
     const plan = sig.plan;
@@ -464,6 +474,10 @@ export async function render(el, [symParam]) {
       signal: sig, forecast: st.forecast, backtest: st.backtest, interval: st.interval,
       anomalies: st.anomalies || [],
       noEdgeTimeframe: (TESTED_ACCURACY.noEdge || []).includes(st.interval) || (['1s', '5s', '10s', '1m', '5m', '1w'].includes(st.interval)),
+      // Say which kind of "no edge": tested and lost to the baseline, or never tested.
+      noEdgeText: typeof TESTED_ACCURACY[st.interval] === 'number'
+        ? `In the release test (${TESTED_ACCURACY.testsPerInterval} forecasts on ${st.interval}) the forecast engine was right ${TESTED_ACCURACY[st.interval]}% of the time against a ${TESTED_ACCURACY.baseline[st.interval]}% baseline, so it has no measured edge on this chart. A probability shown here is background, not a reason to act.`
+        : `The forecast engine has never been tested on the ${st.interval} chart, so it has no measured accuracy here. A probability shown here is background, not a reason to act.`,
     });
     card.innerHTML = `
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
@@ -474,13 +488,12 @@ export async function render(el, [symParam]) {
       <div class="signal-meter mt">
         <div class="row spread"><b>Signal strength</b><span class="chip ${meterTone}">${esc(meter.label)}</span></div>
         <div class="meter-track" style="margin-top:8px"><i class="meter-needle" style="left:${meter.pos}%"></i></div>
-        <div class="row spread fine" style="margin-top:4px"><span>Strong sell</span><span>Sell</span><span>Neutral</span><span>Buy</span><span>Strong buy</span></div>
-        <p class="fine" style="margin:6px 0 0">Conventional strength meter for how far the indicators are extended. The measured record is separate: on ${esc(st.interval)}, readings like this were followed by a higher price <b>${(() => { const b = upRateFor(st.interval, sig.score); return b ? b.upRatePct + '%' : 'unmeasured here'; })()}</b> of the time — a high score means the move is extended, not that it will continue.</p>
+        <div class="meter-labels fine" style="margin-top:4px"><span>Strong sell</span><span>Sell</span><span>Neutral</span><span>Buy</span><span>Strong buy</span></div>
+        <p class="fine" style="margin:6px 0 0">Conventional strength meter for how far the indicators are extended. The measured record is separate: ${(() => { const b = upRateFor(st.interval, sig.score); return b ? `on ${esc(st.interval)}, readings like this were followed by a higher price <b>${b.upRatePct}%</b> of the time` : `how often readings like this were followed by a higher price has not been measured on ${esc(st.interval)} (it was measured on 15m, 1h, 4h and 1d)`; })()} — a high score means the move is extended, not that it will continue.</p>
       </div>
       ${warnings.length ? `<div class="risk-list mt">${warnings.map((w) => `<div class="risk-item ${w.level}">${icon('info', 14)}<span>${esc(w.text)}</span></div>`).join('')}</div>` : ''}
       ${conf ? `<p class="combined mt">Standing view across all timeframes: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). The panel below reads the ${st.interval} chart only.</p>` : ''}
       <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
-      ${summaryHtml(sig)}
       ${plan ? `
         <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
         <div class="plan">
@@ -599,6 +612,11 @@ export async function render(el, [symParam]) {
     const band80 = typeof TESTED_ACCURACY.band80?.[st.interval] === 'number' ? TESTED_ACCURACY.band80[st.interval] : null;
     const brier = typeof TESTED_ACCURACY.brier?.[st.interval] === 'number' ? TESTED_ACCURACY.brier[st.interval] : (typeof e.brier === 'number' ? e.brier : null);
     const trendCls = ls.trend === 'improving' ? 'up' : ls.trend === 'declining' ? 'down' : '';
+    // The release test found no edge on this timeframe, so this chart cannot be
+    // labelled high-confidence however strongly the models lean right now.
+    const tfNoEdge = (TESTED_ACCURACY.noEdge || []).includes(st.interval) || !(st.interval in (TESTED_ACCURACY.baseline || {}));
+    const conf = fc.confidence === 'High' && tfNoEdge ? 'Moderate' : fc.confidence;
+    const confWhy = (tfNoEdge ? `Capped: the release test found no edge on ${st.interval}. ` : '') + (e.provenEdge ? 'Recent unseen cases beat the baseline by more than luck would explain.' : 'Recent unseen cases have not beaten the baseline by more than luck would explain.');
     const winHtml = (w) => {
       const r = ls.windows[w];
       if (r.pct === null) return '<span class="muted">—</span>';
@@ -606,7 +624,7 @@ export async function render(el, [symParam]) {
       return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
     };
     $('#fcCard', el).innerHTML = `
-      <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${fc.confidence === 'High' ? 'up' : fc.confidence === 'Moderate' ? 'warn' : ''}">${fc.confidence} confidence</span></div>
+      <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${conf === 'High' ? 'up' : conf === 'Moderate' ? 'warn' : ''}" title="${esc(confWhy)}">${conf} confidence</span></div>
       <div class="prob">${ring(fc.probUp)}
         <div class="stack" style="gap:4px">
           <div>Next <b>${horizonText(st.interval, fc.horizon)}</b>: ${dirTxt}</div>
@@ -617,7 +635,7 @@ export async function render(el, [symParam]) {
       </div>
       <div class="learning-box mt">
         <div class="row spread"><b>Self-improving model</b><span class="chip ${trendCls}">${esc(ls.trend.replace('-', ' '))}</span></div>
-        <div class="grid g4" style="margin-top:8px">
+        <div class="grid g2" style="margin-top:8px">
           <div class="stat"><span class="k">Last 20</span><span class="v" style="font-size:16px">${winHtml(20)}</span></div>
           <div class="stat"><span class="k">Last 50</span><span class="v" style="font-size:16px">${winHtml(50)}</span></div>
           <div class="stat"><span class="k">Last 100</span><span class="v" style="font-size:16px">${winHtml(100)}</span></div>
@@ -629,10 +647,10 @@ export async function render(el, [symParam]) {
       ${ens3?.ok ? `
       <div class="ensemble3 mt">
         <div class="row spread"><b>Three-family ensemble (experimental)</b><span class="chip">cross-check</span></div>
-        <div class="grid g3" style="margin-top:8px">
-          ${ens3.models.map((m) => `<div class="stat"><span class="k">${esc(m.name)}</span><span class="v ${m.probUp >= 0.5 ? 'up' : 'down'}" style="font-size:16px">${(m.probUp * 100).toFixed(1)}%</span><span class="s fine">weight ${m.weightPct}%</span></div>`).join('')}
-        </div>
-        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b> (${ens3.direction}). Weights adapt to your local rolling accuracy (source: ${esc(ens3.weights.source)}). Experimental cross-check — not part of the published walk-forward accuracy. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
+        <dl class="kv" style="margin-top:8px">
+          ${ens3.models.map((m) => `<dt>${esc(m.name)}</dt><dd><span class="${m.probUp >= 0.5 ? 'up' : 'down'}">${(m.probUp * 100).toFixed(1)}% up</span> <span class="fine">· weight ${m.weightPct}%</span></dd>`).join('')}
+        </dl>
+        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b> (${ens3.direction}).${(ens3.probUp >= 0.5) !== (fc.probUp >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(fc.probUp * 100).toFixed(1)}% up), which is what the page goes by.` : ''} Weights adapt to your local rolling accuracy (source: ${esc(ens3.weights.source)}). Experimental cross-check — not part of the published walk-forward accuracy. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
       </div>` : ''}
       <dl class="kv mt">
         <dt>Brier score (lower is better)</dt><dd>${brier !== null ? brier.toFixed(3) : '—'}</dd>
@@ -784,7 +802,7 @@ export async function render(el, [symParam]) {
       if (!fc.ok) { body.innerHTML = `<p class="muted">${esc(fc.reason)}</p>`; return; }
       const e = fc.ensemble;
       body.innerHTML = `
-        <div class="grid g2">
+        <div class="grid fc-grid">
           <div>
             <h3 style="margin-bottom:6px">Price path forecast · next ${horizonText(st.interval, fc.horizon)}</h3>
             <div id="fcChart"></div>
@@ -799,11 +817,16 @@ export async function render(el, [symParam]) {
             <div class="kv">
               <dt>80% range at horizon</dt><dd>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</dd>
               ${fc.range.p05 ? `<dt>90% range at horizon</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="muted">(in testing the price ended inside this range ${TESTED_ACCURACY.band90?.[st.interval] ?? TESTED_ACCURACY.bandsAll.band90}% of the time)</span></dd>` : ''}
-              ${st.learned ? `<dt>AI learning <a class="fine" href="#/learn">(how it learns)</a></dt><dd>learned blend ${(st.learned.blendProb * 100).toFixed(1)}% up · <span class="muted">${st.learned.champion === 'blend' ? 'the blend makes the call on this device' : 'the forecast still makes the call — the blend has not beaten it here yet'}</span></dd>` : ''}
-              <dt>Direction accuracy on unseen data</dt><dd>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${e.samples} tests)</span></dd>
+              ${st.learned ? `<dt>AI learning <a class="fine" href="#/learn">(how it learns)</a></dt><dd>learned blend ${(st.learned.blendProb * 100).toFixed(1)}% up · <span class="muted">${(() => {
+                const earned = Object.values(st.learned.weights || {}).filter(Boolean).length;
+                const speaking = Object.entries(st.learned.votes || {}).filter(([k, v]) => v && st.learned.weights?.[k]).length;
+                const same = !speaking ? (earned ? `the same as the forecast: the ${earned} indicator${earned > 1 ? 's' : ''} with a vote on ${esc(st.interval)} ${earned > 1 ? 'are' : 'is'} not signalling right now · ` : `the same as the forecast: no indicator has earned a vote on ${esc(st.interval)} yet · `) : '';
+                return same + (st.learned.champion === 'blend' ? 'the blend makes the call on this device' : 'the forecast still makes the call — the blend has not beaten it here yet');
+              })()}</span></dd>` : ''}
+              <dt>Direction accuracy on unseen data</dt><dd>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${e.samples} tests${e.accuracyRange ? ` · 95% range ${(e.accuracyRange[0] * 100).toFixed(0)}–${(e.accuracyRange[1] * 100).toFixed(0)}%` : ''})</span></dd>
               <dt>Accuracy when models strongly agree</dt><dd>${e.confidentAccuracy !== null ? (e.confidentAccuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${Math.round(e.confidentCoverage * 100)}% of the time)</span></dd>
               <dt>Naive baseline (always predict usual direction)</dt><dd>${(e.baseline * 100).toFixed(1)}%</dd>
-              <dt>Test period</dt><dd>${dateTime(e.validationFrom, false)} → ${dateTime(e.validationTo, false)}</dd>
+              <dt>Test period</dt><dd>${(() => { const sameDay = new Date(e.validationFrom).toDateString() === new Date(e.validationTo).toDateString(); return sameDay ? `${dateTime(e.validationFrom)} → ${new Date(e.validationTo).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `${dateTime(e.validationFrom, false)} → ${dateTime(e.validationTo, false)}`; })()}</dd>
               <dt>Candles analysed</dt><dd>${fc.candlesUsed.toLocaleString()} · ${fc.computeMs} ms</dd>
             </div>
             ${fc.notes.length ? `<ul class="reasons">${fc.notes.map((n) => `<li class="s">${esc(n)}</li>`).join('')}</ul>` : ''}
@@ -814,7 +837,7 @@ export async function render(el, [symParam]) {
           ${fc.models.map((m) => `<tr style="cursor:default"><td class="l"><b>${esc(m.name)}</b></td><td class="${m.probUp >= 0.5 ? 'up' : 'down'}">${m.probUp !== null ? (m.probUp * 100).toFixed(1) + '%' : '—'}</td>
             <td>${m.accuracy !== null ? (m.accuracy * 100).toFixed(1) + '%' : '—'}<span class="acc-bar"><i style="width:${Math.max(0, Math.min(100, ((m.accuracy ?? 0.5) - 0.3) / 0.4 * 100))}%"></i></span></td><td>${m.weightPct}%</td></tr>`).join('')}
         </tbody></table></div>
-        <p class="fine mt">How it works: each model is trained on this coin's own history, then tested on the most recent period it never saw. Models that predicted better get more weight. Crypto is noisy — 55% direction accuracy is already a real edge; nothing is certain.</p>
+        <p class="fine mt">How it works: each model is trained on this coin's own history, then tested on the most recent period it never saw. Models that predicted better get more weight. Crypto is noisy: a direction rate only counts as an edge when it beats the baseline over enough tests that luck cannot explain it, and nothing is certain.</p>
         <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time. It called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring it entirely and always naming whichever direction was more common in that window. By timeframe, accuracy against that same baseline: ${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => `${iv} ${TESTED_ACCURACY[iv]}% vs ${TESTED_ACCURACY.baseline[iv]}%`).join(' · ')}.${UNMEASURED.includes(st.interval) ? ` <b class="warn">This engine has never been tested on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart, so it has no measured accuracy here. Second charts are for watching price move — use the 5m chart or slower for a forecast you can judge.</b>` : (TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` <b class="warn">On the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart it scored ${TESTED_ACCURACY[st.interval]}% against a ${TESTED_ACCURACY.baseline[st.interval]}% baseline — no edge. Read this forecast as background, not as a reason to trade.</b>` : st.interval === '1w' ? ` <b class="warn">The weekly chart has too few candles to test, so nothing here has a measured accuracy.</b>` : ''}</p>
         <p class="fine">Overall the engine did <b>not</b> beat that baseline (${TESTED_ACCURACY.all}% against ${TESTED_ACCURACY.allBaseline}%), and it is listed as having no edge on ${(TESTED_ACCURACY.noEdge || []).join(', ')}. ${esc(TESTED_ACCURACY.caveat)} Treat the probability below as a description of what the indicators imply, not as a reason to act.</p>`;
       body.insertAdjacentHTML('beforeend', timingSection());
