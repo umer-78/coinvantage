@@ -11,7 +11,7 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 export class CandleChart {
   constructor(el, opts = {}) {
     this.el = el;
-    this.opts = { ema20: true, ema50: true, ema200: true, bb: false, vwap: false, ichimoku: false, volume: true, rsi: true, macd: false, levels: true, markers: true, projection: true, ...opts };
+    this.opts = { ema20: true, ema50: true, ema200: true, bb: false, vwap: false, ichimoku: false, supertrend: false, keltner: false, donchian: false, volume: true, rsi: true, macd: false, levels: true, markers: true, projection: true, ...opts };
     this.candles = [];
     this.ind = null;
     this.levels = [];
@@ -417,6 +417,9 @@ export class CandleChart {
     if (this.opts.bb) { inc(ind.bb.upper); inc(ind.bb.lower); }
     if (this.opts.vwap) inc(ind.vwap);
     if (this.opts.ichimoku) { inc(ind.ichimoku.senkouA); inc(ind.ichimoku.senkouB); inc(ind.ichimoku.tenkan); inc(ind.ichimoku.kijun); }
+    if (this.opts.supertrend && ind.supertrend) inc(ind.supertrend.line);
+    if (this.opts.keltner && ind.keltner) { inc(ind.keltner.upper); inc(ind.keltner.lower); }
+    if (this.opts.donchian && ind.donchian) { inc(ind.donchian.upper); inc(ind.donchian.lower); }
     const proj = this.opts.projection && this.projection?.length ? this.projection : null;
     if (proj && this.offset < proj.length + 2) for (const p of proj) { lo = Math.min(lo, p.p10); hi = Math.max(hi, p.p90); }
     const pad = (hi - lo) * 0.06 || hi * 0.01;
@@ -483,6 +486,27 @@ export class CandleChart {
     // not a line to read a level off.
     if (this.opts.ichimoku) this.drawCloud(ind.ichimoku, first, last, y, col);
     if (this.opts.vwap) this.line(ind.vwap, first, last, y, css('--series-4') || '#e0507a', 1.8);
+    if (this.opts.keltner && ind.keltner) {
+      const kc = css('--series-5') || '#e87ba4';
+      this.line(ind.keltner.upper, first, last, y, kc, 1.2, 0.8);
+      this.line(ind.keltner.mid, first, last, y, kc, 1, 0.4);
+      this.line(ind.keltner.lower, first, last, y, kc, 1.2, 0.8);
+    }
+    if (this.opts.donchian && ind.donchian) {
+      const dc = css('--text-muted') || '#8b92a5';
+      ctx.setLineDash([4, 3]);
+      this.line(ind.donchian.upper, first, last, y, dc, 1.2, 0.9);
+      this.line(ind.donchian.lower, first, last, y, dc, 1.2, 0.9);
+      ctx.setLineDash([]);
+    }
+    // Supertrend: green under price while the trend is up, red above it once it flips.
+    if (this.opts.supertrend && ind.supertrend) {
+      const { line: stl, dir } = ind.supertrend;
+      const upOnly = stl.map((v, i) => (dir[i] === 1 ? v : null));
+      const downOnly = stl.map((v, i) => (dir[i] === -1 ? v : null));
+      this.line(upOnly, first, last, y, col.up, 2);
+      this.line(downOnly, first, last, y, col.down, 2);
+    }
     if (this.opts.ema20) this.line(ind.ema20, first, last, y, col.ema20, 1.5);
     if (this.opts.ema50) this.line(ind.ema50, first, last, y, col.ema50, 1.5);
     if (this.opts.ema200) this.line(ind.ema200, first, last, y, col.ema200, 1.5);

@@ -275,6 +275,104 @@ export function ichimoku(candles, { conversion = 9, base = 26, spanB = 52, displ
   return { tenkan, kijun, senkouA, senkouB, chikou, displacement };
 }
 
+/**
+ * Supertrend (ATR 10, multiplier 3).
+ *
+ * A trailing line that sits under price in an uptrend and flips above it when
+ * a close breaks through. `dir` is +1 (up) or -1 (down) per bar. It answers
+ * one question clearly: which side of the trend are we on, and where does it
+ * break? The line itself is the classic trailing stop level.
+ */
+export function supertrend(candles, period = 10, mult = 3) {
+  const n = candles.length;
+  const a = atr(candles, period);
+  const line = new Array(n).fill(null);
+  const dir = new Array(n).fill(null);
+  let upper = null, lower = null, d = 1;
+  for (let i = 0; i < n; i++) {
+    if (a[i] === null) continue;
+    const c = candles[i];
+    const mid = (c.h + c.l) / 2;
+    const bu = mid + mult * a[i], bl = mid - mult * a[i];
+    const prevClose = i > 0 ? candles[i - 1].c : c.c;
+    // Bands only tighten while price stays on their side of them.
+    upper = upper === null || bu < upper || prevClose > upper ? bu : upper;
+    lower = lower === null || bl > lower || prevClose < lower ? bl : lower;
+    if (line[i - 1] === null || line[i - 1] === undefined) d = c.c >= mid ? 1 : -1;
+    else if (d === 1 && c.c < lower) d = -1;
+    else if (d === -1 && c.c > upper) d = 1;
+    dir[i] = d;
+    line[i] = d === 1 ? lower : upper;
+  }
+  return { line, dir };
+}
+
+/** Keltner Channel: EMA(20) ± 2 × ATR(10). Volatility band that ignores single spikes better than Bollinger. */
+export function keltner(candles, period = 20, mult = 2, atrPeriod = 10) {
+  const mid = ema(candles.map((c) => c.c), period);
+  const a = atr(candles, atrPeriod);
+  const upper = mid.map((m, i) => (m === null || a[i] === null ? null : m + mult * a[i]));
+  const lower = mid.map((m, i) => (m === null || a[i] === null ? null : m - mult * a[i]));
+  return { mid, upper, lower };
+}
+
+/** Donchian Channel: highest high and lowest low of the last `period` bars — the classic breakout levels. */
+export function donchian(candles, period = 20) {
+  const n = candles.length;
+  const upper = new Array(n).fill(null), lower = new Array(n).fill(null), mid = new Array(n).fill(null);
+  for (let i = period - 1; i < n; i++) {
+    let hi = -Infinity, lo = Infinity;
+    for (let k = i - period + 1; k <= i; k++) { hi = Math.max(hi, candles[k].h); lo = Math.min(lo, candles[k].l); }
+    upper[i] = hi; lower[i] = lo; mid[i] = (hi + lo) / 2;
+  }
+  return { upper, lower, mid };
+}
+
+/** Money Flow Index (14): RSI weighted by volume. Above 80 is heavy buying, below 20 heavy selling. */
+export function mfi(candles, period = 14) {
+  const n = candles.length;
+  const out = new Array(n).fill(null);
+  const tp = candles.map((c) => (c.h + c.l + c.c) / 3);
+  for (let i = period; i < n; i++) {
+    let pos = 0, neg = 0;
+    for (let k = i - period + 1; k <= i; k++) {
+      const flow = tp[k] * (candles[k].v > 0 ? candles[k].v : 0);
+      if (tp[k] > tp[k - 1]) pos += flow; else if (tp[k] < tp[k - 1]) neg += flow;
+    }
+    out[i] = pos + neg === 0 ? 50 : neg === 0 ? 100 : 100 - 100 / (1 + pos / neg);
+  }
+  return out;
+}
+
+/** Commodity Channel Index (20): how far price sits from its average, in units of mean deviation. ±100 are the usual extremes. */
+export function cci(candles, period = 20) {
+  const n = candles.length;
+  const out = new Array(n).fill(null);
+  const tp = candles.map((c) => (c.h + c.l + c.c) / 3);
+  for (let i = period - 1; i < n; i++) {
+    let m = 0;
+    for (let k = i - period + 1; k <= i; k++) m += tp[k];
+    m /= period;
+    let md = 0;
+    for (let k = i - period + 1; k <= i; k++) md += Math.abs(tp[k] - m);
+    md /= period;
+    out[i] = md === 0 ? 0 : (tp[i] - m) / (0.015 * md);
+  }
+  return out;
+}
+
+/** Williams %R (14): where the close sits in the recent range, 0 (top) to -100 (bottom). */
+export function williamsR(candles, period = 14) {
+  const n = candles.length;
+  const out = new Array(n).fill(null);
+  for (let i = period - 1; i < n; i++) {
+    let hi = -Infinity, lo = Infinity;
+    for (let k = i - period + 1; k <= i; k++) { hi = Math.max(hi, candles[k].h); lo = Math.min(lo, candles[k].l); }
+    out[i] = hi === lo ? -50 : ((hi - candles[i].c) / (hi - lo)) * -100;
+  }
+  return out;
+}
+
 export function computeAll(candles) {
   const closes = candles.map((c) => c.c);
   const vols = candles.map((c) => c.v);
@@ -291,5 +389,11 @@ export function computeAll(candles) {
     volSma: sma(vols, 20),
     vwap: vwap(candles),
     ichimoku: ichimoku(candles),
+    supertrend: supertrend(candles),
+    keltner: keltner(candles),
+    donchian: donchian(candles),
+    mfi: mfi(candles),
+    cci: cci(candles),
+    willr: williamsR(candles),
   };
 }

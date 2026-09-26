@@ -365,6 +365,9 @@ export function generateSignal(candles, { interval = '' } = {}) {
       macdHist: num(last(ind.macd.hist)), ema20: num(ind.ema20[i]), ema50: num(ind.ema50[i]), ema200: num(ind.ema200[i]),
       bbUpper: num(ind.bb.upper[i]), bbLower: num(ind.bb.lower[i]), atr: num(atrV), atrPct: +((atrV / price) * 100).toFixed(2),
       adx: num(ind.adx.adx[i]), stochK: num(ind.stoch.k[i]), volumeRatio: ind.volSma[i] ? +(candles[i].v / ind.volSma[i]).toFixed(2) : null,
+      mfi: num(ind.mfi?.[i]), cci: num(ind.cci?.[i]), willR: num(ind.willr?.[i]),
+      supertrend: num(ind.supertrend?.line[i]), supertrendDir: ind.supertrend?.dir[i] ?? null,
+      donchianHigh: num(ind.donchian?.upper[i]), donchianLow: num(ind.donchian?.lower[i]),
     },
   };
 }

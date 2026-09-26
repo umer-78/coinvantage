@@ -19,24 +19,33 @@ import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
 /**
  * What this ruleset actually did on real candles.
  *
- * Measured with tools/evaluate-autotrader.mjs: 12 coins, 4,000 Binance candles
- * each, 108 settings per timeframe. The first half of history was used to pick
- * settings and the second half — never seen during tuning — is what these
- * numbers report. The benchmark is equal-weight buy-and-hold of the same 12
- * coins over the same window, because a long-only strategy in a rising market
- * makes money without any skill at all.
+ * Measured 2026-09-26 with tools/evaluate-trader-live.mjs: 12 coins, Binance
+ * candles (4,000 each on 15m and 1h, 3,500 on 4h, 2,200 on 1d), first half of
+ * history used to choose settings, second half — never seen while choosing —
+ * is what these numbers report. The simulation now advances all coins together
+ * one candle at a time, exactly like the live account; the older harness ran
+ * one coin's whole history before the next, which let a single open trade
+ * block every other coin and gave different numbers.
  *
- * The result is the reason this feature is labelled a demonstration rather than
- * a trading system: at NO setting, on ANY timeframe, did it beat simply owning
- * the coins on data it had not been tuned on. It is published here so the page
- * has to state it.
+ * The settings (3 ATR stop, 3R target, trend filter on) were picked ONCE, as
+ * the best average rank on the training halves of all four timeframes, then
+ * scored on the test halves. Against the previous settings (2 ATR, no trend
+ * filter) they did better on 15m, 4h and 1d and worse on 1h, with half the
+ * fees and a smaller worst drawdown on three of four. The benchmark is still
+ * equal-weight buy-and-hold of the same coins over the same window: the new
+ * rules beat it on 4h (a falling market) and not on the other three.
  */
 export const AUTOTRADER_TESTED = {
-  '1h': { pickedReturn: 9.8, buyHold: 25.8, beatBuyHold: 0, configs: 108, trades: 100, feeDragPct: 5.2, profitFactor: 1.43 },
-  '4h': { pickedReturn: -19.3, buyHold: -24.7, beatBuyHold: 0, configs: 108, trades: 75, feeDragPct: 3.2, profitFactor: 0.44 },
-  '1d': { pickedReturn: 6.2, buyHold: 119.6, beatBuyHold: 1, configs: 108, trades: 299, feeDragPct: 16.5, profitFactor: 1.05 },
-  coins: 12, candlesPerCoin: 4000,
+  '15m': { pickedReturn: 18.0, buyHold: 19.6, beatBuyHold: 7, configs: 48, trades: 109, feeDragPct: 5.8, profitFactor: 1.73, maxDrawdownPct: 9.9, previousReturn: 9.3, previousDrawdownPct: 12.0 },
+  '1h': { pickedReturn: 24.8, buyHold: 40.7, beatBuyHold: 2, configs: 48, trades: 107, feeDragPct: 5.5, profitFactor: 1.56, maxDrawdownPct: 15.6, previousReturn: 31.8, previousDrawdownPct: 14.2 },
+  '4h': { pickedReturn: 11.2, buyHold: -16.0, beatBuyHold: 33, configs: 48, trades: 82, feeDragPct: 3.3, profitFactor: 1.25, maxDrawdownPct: 30.5, previousReturn: -10.9, previousDrawdownPct: 36.8 },
+  '1d': { pickedReturn: 70.7, buyHold: 143.4, beatBuyHold: 0, configs: 48, trades: 67, feeDragPct: 2.2, profitFactor: 1.79, maxDrawdownPct: 37.5, previousReturn: 65.6, previousDrawdownPct: 52.5 },
+  coins: 12, candlesPerCoin: 4000, measuredOn: '2026-09-26',
   beatsBuyAndHold: false,
+  // The self-review (js/lib/tradelearn.js) run inside the same test: it acted
+  // in 1 of 8 runs (4h, old settings: -10.9% → -7.2%) and left the rest
+  // unchanged. Too few cases to call an edge — it is a safety net, not a boost.
+  selfReview: { runs: 8, acted: 1, note: 'Changed its rules in 1 of 8 held-out runs (4h: −10.9% → −7.2%); no change in the other 7.' },
 };
 
 export const DEFAULT_CONFIG = {
@@ -51,7 +60,7 @@ export const DEFAULT_CONFIG = {
   // published rule does, which is the only thing this account is for.
   entryScore: THRESHOLDS.normal,
   exitScore: -THRESHOLDS.normal,
-  atrStop: 2,
+  atrStop: 3,            // was 2; see AUTOTRADER_TESTED for the held-out comparison
   rMultiple: 3,
   feePct: 0.1,
   // Two behaviours that were hardcoded and therefore never measured. Moving the
@@ -61,15 +70,30 @@ export const DEFAULT_CONFIG = {
   // tools/evaluate-autotrader.mjs tests them.
   breakEvenAtR: null,    // measured: moving the stop to entry cost money, so it is off
   signalExitBars: 2,     // close after this many consecutive reversal bars; null = never
+  // Two risk rules added 2026-09-26 and measured with tools/evaluate-autotrader.mjs
+  // before being switched on or left off (see AUTOTRADER_TESTED):
+  trendFilter: true,     // only buy while price is above the 200-bar EMA and the 50 is above the 200
+  trailAtr: null,        // e.g. 3 = trail the stop 3 ATR under the highest high since entry
+  // Filters the self-review (js/lib/tradelearn.js) can switch on after reading the trade log.
+  minAdx: null,          // skip entries while ADX is below this (a ranging market)
+  maxEntryRsi: null,     // skip entries while RSI is above this (already stretched)
+  excluded: [],          // coins the review stopped trading after a run of losses
   interval: '1h',
   universe: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'AVAX', 'LINK'],
 };
 
-export function newState(cfg = DEFAULT_CONFIG) {
+export function newState(cfg = DEFAULT_CONFIG, { liveFrom = null } = {}) {
   return {
     version: 1,
     interval: cfg.interval,  // an account keeps the timeframe it was started on
     startedAt: Date.now(),
+    // After a Reset the account starts clean from that moment: candles that
+    // opened before it are never traded. (Reset used to wipe the account and the
+    // next Start replayed the last 500 candles, so the same past trades came
+    // straight back, dated days before the reset.)
+    liveFrom,
+    firstBarAt: null,        // first candle the account actually traded on
+    log: [],                 // what each check did, newest last (see logCheck)
     balance: cfg.startingBalance,
     startingBalance: cfg.startingBalance,
     open: {},          // symbol -> position
@@ -85,30 +109,41 @@ const round = (v, dp = 6) => (Number.isFinite(v) ? +v.toFixed(dp) : v);
  * Replay one symbol's candles from where we left off, mutating `state`.
  * `candles` must be closed candles, oldest first.
  */
-export function replaySymbol(state, cfg, symbol, candles) {
+export function replaySymbol(state, cfg, symbol, candles, pre = null) {
   if (!candles || candles.length < 220) return { processed: 0 };
-  const ind = computeAll(candles);
-  const atrArr = atr(candles, 14);
+  // `pre` lets the evaluation harness reuse indicators and scores across settings.
+  const ind = pre?.ind || computeAll(candles);
+  const atrArr = pre?.atr || atr(candles, 14);
   const from = state.cursor[symbol] ?? 0;
   let processed = 0;
   let consecutiveExit = 0;
+  let lastScore = null;
 
   for (let i = 210; i < candles.length; i++) {
     const c = candles[i];
     if (c.t <= from) continue;
-    processed++;
     state.cursor[symbol] = c.t;
+    if (state.liveFrom && c.t < state.liveFrom) continue;
+    processed++;
+    if (!state.firstBarAt || c.t < state.firstBarAt) state.firstBarAt = c.t;
 
     const pos = state.open[symbol];
-    const { score } = scoreAt(candles, ind, i);
+    const score = pre?.scores ? pre.scores[i] : scoreAt(candles, ind, i).score;
+    lastScore = score;
 
     // ---- manage an open position first, on this bar's high/low
     if (pos) {
       // Conservative: if both the stop and the target are inside one candle,
       // assume the stop hit first. Never flatter than reality.
-      if (c.l <= pos.stop) { closePosition(state, cfg, symbol, pos.stop, c.t, 'stop-loss'); }
-      else if (c.h >= pos.tp) { closePosition(state, cfg, symbol, pos.tp, c.t, 'target'); }
+      if (c.l <= pos.stop) { closePosition(state, cfg, symbol, Math.min(pos.stop, c.o), c.t, pos.stop > pos.initialStop ? 'trailing stop' : 'stop-loss'); }
+      else if (pos.tp !== null && c.h >= pos.tp) { closePosition(state, cfg, symbol, pos.tp, c.t, 'target'); }
       else {
+        // trailing stop: ratchet up under the highest high since entry, never down
+        if (cfg.trailAtr && atrArr[i]) {
+          pos.high = Math.max(pos.high ?? pos.entry, c.h);
+          const trail = pos.high - cfg.trailAtr * atrArr[i];
+          if (trail > pos.stop) pos.stop = round(trail);
+        }
         // break-even stop once the trade is +1R in profit
         const r = pos.entry - pos.initialStop;
         const beR = cfg.breakEvenAtR;
@@ -129,6 +164,10 @@ export function replaySymbol(state, cfg, symbol, candles) {
     // ---- look for an entry
     if (score < cfg.entryScore) continue;
     if (Object.keys(state.open).length >= cfg.maxPositions) continue;
+    if (cfg.trendFilter && !(ind.ema200[i] && c.c > ind.ema200[i] && ind.ema50[i] > ind.ema200[i])) continue;
+    if (cfg.minAdx && !(ind.adx.adx[i] >= cfg.minAdx)) continue;
+    if (cfg.maxEntryRsi && ind.rsi[i] !== null && ind.rsi[i] > cfg.maxEntryRsi) continue;
+    if (cfg.excluded?.includes(symbol)) continue;
     const a = atrArr[i];
     if (!a) continue;
 
@@ -148,13 +187,21 @@ export function replaySymbol(state, cfg, symbol, candles) {
     state.open[symbol] = {
       symbol, side: 'long',
       entry: round(entry), initialStop: round(stop), stop: round(stop),
-      tp: round(entry + cfg.rMultiple * riskPerUnit),
+      tp: cfg.trailAtr ? null : round(entry + cfg.rMultiple * riskPerUnit),
       qty: round(qty, 10), notional: round(notional, 2),
-      openedAt: c.t, openScore: score, movedToBreakEven: false, feePaid: round(fee, 4),
+      openedAt: c.t, openScore: score, entryBar: cfg.entryScore, movedToBreakEven: false, feePaid: round(fee, 4),
+      // What the market looked like at entry, so the self-review can learn from the log.
+      riskCash: round(riskCash, 2),
+      ctx: {
+        trendUp: !!(ind.ema200[i] && c.c > ind.ema200[i]),
+        adx: ind.adx.adx[i] === null ? null : round(ind.adx.adx[i], 1),
+        rsi: ind.rsi[i] === null ? null : round(ind.rsi[i], 1),
+        atrPct: round((a / entry) * 100, 3),
+      },
     };
     markEquity(state, c.t);
   }
-  return { processed };
+  return { processed, lastScore };
 }
 
 function closePosition(state, cfg, symbol, exitPrice, t, reason) {
@@ -306,8 +353,18 @@ export function stats(state, pricesBySymbol = {}) {
     profitFactor: grossLoss > 0 ? round(grossWin / grossLoss, 2) : null,
     maxDrawdownPct: round(maxDd * 100, 2),
     feesPaid: round(closed.reduce((s, t) => s + (t.feePaid || 0), 0), 2),
-    since: state.startedAt,
+    since: Math.min(state.startedAt, state.firstBarAt ?? state.startedAt),
+    liveSince: state.startedAt,
   };
 }
 
 export const PAPER_NOTICE = 'Simulated money only. This trader places no orders, connects to no exchange and holds no keys — it shows what the strategy would have done, fees included.';
+
+/**
+ * Record what one check of the market did, so the activity feed can show every
+ * check with its real time — not only the trades. Kept short (last 40).
+ */
+export function logCheck(state, entry) {
+  if (!state) return;
+  state.log = [...(state.log || []), { t: Date.now(), ...entry }].slice(-40);
+}

@@ -68,22 +68,22 @@ computers alike.
 
 ### Measured accuracy (honest numbers)
 
-`tools/evaluate-engine.mjs` ran **1,440 forecasts on 12 major coins** (BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT), 240 on each of six timeframes. Each forecast used only data available at that moment, on real Binance candles, and is scored against the baseline of always naming whichever direction was more common in that window.
+`tools/evaluate-engine.mjs` ran **1,440 forecasts on 12 major coins** (BTC, ETH, SOL, BNB, XRP, DOGE, ADA, AVAX, LINK, LTC, TRX, DOT), 240 on each of six timeframes, re-measured on 2026-09-26. Each forecast used only data available at that moment, on real Binance candles, and is scored against the baseline of always naming whichever direction was more common in that window (a hindsight bar — nobody knows that in advance).
 
-| Timeframe | Direction accuracy | Baseline |
-|---|---|---|
-| 1m | 44.6% | 53.8% (no edge) |
-| 5m | 55.0% | 52.5% |
-| 15m | 52.5% | 51.2% |
-| 1h | 48.8% | 64.2% (no edge) |
-| 4h | 43.8% | 75.4% (no edge) |
-| 1d | 52.9% | 52.1% |
-| **All** | **49.6%** | 51.0% (no edge overall) |
+| Timeframe | Direction accuracy | Baseline | 50% range held | 80% range held |
+|---|---|---|---|---|
+| 1m | 59.6% | 63.3% (no edge) | 51.7% | 82.1% |
+| 5m | 56.7% | 58.3% (no edge) | 46.3% | 72.9% |
+| 15m | 55.0% | 60.4% (no edge) | 43.8% | 73.8% |
+| 1h | 52.1% | 55.0% (no edge) | 56.7% | 84.2% |
+| 4h | 47.5% | 59.2% (no edge) | 50.8% | 78.3% |
+| 1d | 52.5% | 54.6% (no edge) | 41.3% | 79.6% |
+| **All** | **53.9%** | 58.5% | **48.4%** | **78.5%** |
 
-- Predicted ranges were calibrated on the same test: σ is scaled by 0.75 so the 50% and 80% bands match reality.
-- Overall the forecast does not beat its baseline, and it is below it on the 1m, 1h and 4h charts. The UI says so wherever a forecast is shown, and the assistant gives it little weight.
-- The **History & cycles** tab scores itself separately, per coin, and prints that number next to its verdict — on most coins it lands in the 45–62% range, which is context, not a trading edge.
-- No model can predict crypto reliably. Treat forecasts as probabilities and always use stop-losses.
+- **Direction is close to a coin flip.** "Always say up" — a bar you *can* know in advance — scored 52.2% on the same tests. The calls where the models lean hardest were right 50.7% of the time (227 tests), no better. No model can predict crypto direction 90% of the time; any site that claims it is not measuring honestly.
+- **The price range is now calibrated.** It is built from each coin's own past moves (in units of the volatility at the time) instead of a normal curve × 0.75, which drew the 80% band too narrow for crypto's fat tails. Same 1,440 tests: the 80% band now holds 78.5% of outcomes (was 71.7%) and the 50% band 48.4% (was 45.1%).
+- The **History & cycles** tab scores itself separately, per coin, and prints that number next to its verdict.
+- Treat forecasts as probabilities and always use stop-losses.
 
 Re-run it yourself: `node tools/fetch-klines.mjs klines.json` then `node tools/evaluate-engine.mjs klines.json 0 1 out.json`.
 

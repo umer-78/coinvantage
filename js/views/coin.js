@@ -250,7 +250,7 @@ export async function render(el, [symParam]) {
 
   // ------------------------------------------------------------ chart
   const chart = new CandleChart($('#chart', el), {});
-  const TOGGLES = [['ema20', 'EMA 20', '--series-1'], ['ema50', 'EMA 50', '--series-2'], ['ema200', 'EMA 200', '--series-7'], ['bb', 'Bollinger'], ['vwap', 'VWAP', '--series-4'], ['ichimoku', 'Ichimoku'], ['volume', 'Volume'], ['rsi', 'RSI'], ['macd', 'MACD'], ['levels', 'Levels'], ['markers', 'Signals'], ['projection', 'Forecast', '--accent']];
+  const TOGGLES = [['ema20', 'EMA 20', '--series-1'], ['ema50', 'EMA 50', '--series-2'], ['ema200', 'EMA 200', '--series-7'], ['bb', 'Bollinger'], ['vwap', 'VWAP', '--series-4'], ['ichimoku', 'Ichimoku'], ['supertrend', 'Supertrend', '--up'], ['keltner', 'Keltner', '--series-5'], ['donchian', 'Donchian', '--text-muted'], ['volume', 'Volume'], ['rsi', 'RSI'], ['macd', 'MACD'], ['levels', 'Levels'], ['markers', 'Signals'], ['projection', 'Forecast', '--accent']];
   $('#toggles', el).innerHTML = TOGGLES.map(([k, label, c]) => `<button class="toggle ${chart.opts[k] ? 'on' : ''}" data-k="${k}">${c ? `<i style="background:var(${c})"></i>` : ''}${label}</button>`).join('');
   $$('#toggles .toggle', el).forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.k; chart.setOptions({ [k]: !chart.opts[k] }); b.classList.toggle('on', chart.opts[k]);

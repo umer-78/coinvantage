@@ -134,6 +134,18 @@ A short-side test has not been run.
   CSV import. Keep it that way.
 
 ## Measured numbers currently published (do not change without re-measuring)
+- **2026-09-26 re-measure (supersedes the forecast line below):** direction 53.9% vs 58.5% hindsight
+  baseline, 52.2% for "always up"; confident subset 50.7% (227). No edge on any timeframe. Ranges now
+  come from each coin's own standardized past moves: 80% band holds 78.5% (was 71.7%), 50% band 48.4%
+  (was 45.1%). Source: TESTED_ACCURACY. Tool: tools/evaluate-engine.mjs.
+- **AI trader, 2026-09-26:** `tools/evaluate-trader-live.mjs` simulates all coins candle by candle (the old
+  harness replayed one coin at a time, which let one open trade block every other coin). One setting chosen
+  on the training halves of 15m/1h/4h/1d — 3 ATR stop, 3R target, trend filter on — now ships. Held-out:
+  15m +18.0% (prev +9.3%), 1h +24.8% (prev +31.8%), 4h +11.2% (prev −10.9%), 1d +70.7% (prev +65.6%),
+  smaller drawdowns on 3 of 4, half the fees. Beats buy-and-hold only on 4h. Source: AUTOTRADER_TESTED.
+- **Trader self-review** (`js/lib/tradelearn.js`): reads the trade log, switches a filter on when one entry
+  condition keeps losing (≥10 trades, ≥0.25R worse), off again if results got worse, never re-learns an
+  unlearned lesson. Coin benching is off by default (measured as noise). In 8 held-out runs it acted once.
 - Forecast direction accuracy: 49.6% overall against a 51.0% baseline (no edge) — 1m 44.6% (baseline 53.8%),
   5m 55.0% (52.5%), 15m 52.5% (51.2%), 1h 48.8% (64.2%), 4h 43.8% (75.4%), 1d 52.9% (52.1%).
   1,440 tests, 12 coins, 240 per timeframe. No edge on 1m, 1h, 4h. Source of truth: TESTED_ACCURACY in js/lib/predict.js.

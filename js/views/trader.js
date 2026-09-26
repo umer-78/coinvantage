@@ -1,6 +1,7 @@
 // The automatic AI trader, running on simulated money.
-import { markets, getCandles, isStable, findCoin } from '../api/market.js';
-import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, REAL_NOTICE } from '../lib/autotrader.js';
+import { markets, getCandles, isStable, findCoin, INTERVAL_MS } from '../api/market.js';
+import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { reviewTrades, decideChanges, activeLessons, MIN_TRADES } from '../lib/tradelearn.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
 import { LineChart } from '../charts/line.js';
@@ -19,9 +20,13 @@ const STATE_KEY = 'traderState';
 const RUN_KEY = 'traderRunning';
 const SESSION_KEY = 'aiSession';
 const AUTO_KEY = 'traderAutoStarted';
+const LESSONS_KEY = 'traderLessons';   // the self-review's changelog
+const AUTOLEARN_KEY = 'traderAutoLearn';
 
 export async function render(el) {
-  const st = { disposed: false, charts: [], prices: {}, running: false };
+  // prices: newest known price per coin. priceFrom says where it came from
+  // (a live tick, or the latest candle when no tick has arrived yet).
+  const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false };
   // Formal session machine: idle → running → stopped → running, RESET from any
   // state. autoOn mirrors status === 'running' so the periodic catch-up timer
   // and RUN_KEY keep working exactly as before.
@@ -32,7 +37,13 @@ export async function render(el) {
     save(SESSION_KEY, session);
   }
   let autoOn = session.status === 'running';
-  const cfg = { ...DEFAULT_CONFIG, ...load(CFG_KEY, {}) };
+  // Saved settings used to include the strategy's own numbers (stop, target…),
+  // so a strategy update never reached anyone who had once pressed Save. Only
+  // the user's own choices — and, from v2, what the self-review learned — carry over.
+  const savedCfg = load(CFG_KEY, {}) || {};
+  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe'];
+  const LEARNED_KEYS = ['minAdx', 'maxEntryRsi', 'excluded', 'trendFilter'];
+  const cfg = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(savedCfg).filter(([k]) => USER_KEYS.includes(k) || (savedCfg.v === 2 && LEARNED_KEYS.includes(k)))), v: 2 };
   let state = load(STATE_KEY, null);
 
   const applySession = (event) => {
@@ -79,20 +90,25 @@ export async function render(el) {
   function verdictCard() {
     const iv = state?.interval || cfg.interval;
     const t = AUTOTRADER_TESTED[iv];
-    // Only 1h, 4h and 1d were measured. Showing the 1h numbers under another
-    // label would present a test that was never run.
+    const TFS = ['15m', '1h', '4h', '1d'];
+    // Showing one timeframe's numbers under another label would present a test
+    // that was never run.
     if (!t) {
       return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} Not tested on the ${esc(iv)} chart</h3></div>
-      <p class="fine">This strategy was only measured on 1h, 4h and 1d charts, and on none of them did it beat simply holding the coins. Pick one of those in Settings to see its measured result.</p>
+      <p class="fine">This strategy was measured on ${TFS.join(', ')} charts. Pick one of those in Settings to see its measured result.</p>
     </div>`;
     }
-    const beatTotal = ['1h', '4h', '1d'].reduce((s, k) => s + (AUTOTRADER_TESTED[k]?.beatBuyHold || 0), 0);
+    const sign = (v) => `${v >= 0 ? '+' : ''}${v}%`;
+    const beat = t.pickedReturn > t.buyHold;
     return `<div class="card" style="border-color:var(--warn)">
-      <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured, not estimated</span></div>
-      <p>Replayed over ${AUTOTRADER_TESTED.coins} coins and ${AUTOTRADER_TESTED.candlesPerCoin.toLocaleString()} candles each, tuned on the first half of history and scored on the second half it had never seen, the ${esc(iv)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${t.pickedReturn >= 0 ? '+' : ''}${t.pickedReturn}%</b> — while simply buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${t.buyHold >= 0 ? '+' : ''}${t.buyHold}%</b> over the identical window.</p>
-      <p class="fine">Out of ${t.configs} settings tested on that timeframe, <b>${t.beatBuyHold}</b> beat buy-and-hold. Fees alone consumed ${t.feeDragPct}% of the balance across ${t.trades} trades. Across 1h, 4h and 1d — ${AUTOTRADER_TESTED.configs || 324} settings in total — ${beatTotal === 0 ? 'nothing beat holding the coins' : `only ${beatTotal} beat holding the coins, too few to call an edge`}.</p>
-      <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a way to make money, and CoinVantage will not tell you it is. It places no real orders and holds no keys.</p>
+      <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(AUTOTRADER_TESTED.measuredOn || '')}, not estimated</span></div>
+      <p>Run candle by candle over ${AUTOTRADER_TESTED.coins} coins, with settings chosen on the first half of history and scored on the second half it had never seen, the ${esc(iv)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${sign(t.pickedReturn)}</b> with a worst drawdown of ${t.maxDrawdownPct}% — while buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${sign(t.buyHold)}</b> over the identical window. ${beat ? 'On this timeframe it did better than holding.' : 'On this timeframe holding did better.'}</p>
+      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>These rules</th><th>Worst drawdown</th><th>Previous rules</th><th>Buy &amp; hold</th><th>Trades</th></tr></thead><tbody>
+        ${TFS.map((k) => { const x = AUTOTRADER_TESTED[k]; return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="${x.pickedReturn >= 0 ? 'up' : 'down'}">${sign(x.pickedReturn)}</td><td class="down">−${x.maxDrawdownPct}%</td><td class="${x.previousReturn >= 0 ? 'up' : 'down'}">${sign(x.previousReturn)} <small class="fine">(−${x.previousDrawdownPct}%)</small></td><td class="${x.buyHold >= 0 ? 'up' : 'down'}">${sign(x.buyHold)}</td><td>${x.trades}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      <p class="fine mt">Current rules: stop 3 ATR below entry, target 3× the risk, and only buy while price is above its 200-bar average. Compared with the previous rules they did better on 15m, 4h and 1d and worse on 1h, with about half the fees. Fees on ${esc(iv)} came to ${t.feeDragPct}% of the balance across ${t.trades} trades.</p>
+      <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
     </div>`;
   }
 
@@ -158,6 +174,9 @@ export async function render(el) {
 
     let processed = 0, failed = [];
     const forecastInputs = [];
+    const scores = [];
+    const tradesBefore = state.closed.length;
+    const openKeysBefore = new Set(Object.values(state.open).map((p) => `${p.symbol}:${p.openedAt}`));
     for (const sym of cfg.universe) {
       if (st.disposed) return;
       const coin = all.find((c) => c.symbol === sym);
@@ -166,10 +185,26 @@ export async function render(el) {
         const r = await getCandles(coin, runCfg.interval, 500);
         // only fully closed candles drive decisions
         const candles = r.candles.slice(0, -1);
-        processed += replaySymbol(state, runCfg, sym, candles).processed;
+        // Open positions used to be marked at their ENTRY price until a live
+        // tick arrived, so every one showed +$0.00 (0.00%). The newest candle's
+        // close is a real, recent price — use it until a tick replaces it.
+        const lastPx = r.candles[r.candles.length - 1]?.c;
+        if (Number.isFinite(lastPx) && st.priceFrom[sym] !== 'live') { st.prices[sym] = lastPx; st.priceFrom[sym] = 'candle'; }
+        const res = replaySymbol(state, runCfg, sym, candles);
+        processed += res.processed;
+        if (Number.isFinite(res.lastScore)) scores.push({ sym, score: res.lastScore });
         forecastInputs.push({ sym, candles });
       } catch { failed.push(sym); }
     }
+    // One line per check in the activity feed, with the real time of the check.
+    const best = scores.sort((a, b) => b.score - a.score)[0];
+    logCheck(state, {
+      kind: 'check', coins: cfg.universe.length - failed.length, candles: processed,
+      opened: [...Object.values(state.open), ...state.closed.slice(tradesBefore)].filter((p) => !openKeysBefore.has(`${p.symbol}:${p.openedAt}`)).length,
+      closed: state.closed.length - tradesBefore,
+      best: best ? { sym: best.sym, score: Math.round(best.score) } : null, bar: runCfg.entryScore,
+    });
+    selfReview({ auto: true });
     save(STATE_KEY, state);
     st.lastRun = Date.now();
     st.running = false;
@@ -210,22 +245,100 @@ export async function render(el) {
   // reading that triggered it. Built from the account itself, so it is always
   // in step with the trade log.
   function activityCard() {
+    // Times are when the AI actually decided: at the CLOSE of the candle it
+    // read (the old feed printed the candle's opening time, an interval early).
+    // Anything before the account went live was replayed from past candles and
+    // is labelled so, instead of reading as if the AI did it live.
+    const step = INTERVAL_MS[state.interval] || 0;
+    const liveSince = state.startedAt;
     const ev = [];
-    for (const [sym, p] of Object.entries(state.open)) ev.push({ t: p.openedAt, sym, kind: 'buy', p });
+    for (const p of Object.values(state.open)) ev.push({ t: p.openedAt + step, sym: p.symbol, kind: 'buy', p });
     for (const p of state.closed) {
-      ev.push({ t: p.openedAt, sym: p.symbol, kind: 'buy', p });
-      ev.push({ t: p.exitAt, sym: p.symbol, kind: 'sell', p });
+      ev.push({ t: p.openedAt + step, sym: p.symbol, kind: 'buy', p });
+      ev.push({ t: p.exitAt + step, sym: p.symbol, kind: 'sell', p });
     }
+    for (const c of state.log || []) ev.push({ t: c.t, kind: c.kind, c });
     ev.sort((a, b) => b.t - a.t);
-    const why = { target: 'hit its target', 'stop-loss': 'hit its stop-loss', 'signal reversal': 'the signal turned against it' };
-    const line = (e) => e.kind === 'buy'
-      ? `<b>Bought ${esc(e.sym)}</b> at ${money(e.p.entry)}${Number.isFinite(e.p.openScore) ? ` — score ${e.p.openScore > 0 ? '+' : ''}${Math.round(e.p.openScore)} cleared the +${cfg.entryScore} entry bar` : ''}`
-      : `<b>Sold ${esc(e.sym)}</b> at ${money(e.p.exit)} — ${esc(why[e.p.reason] || e.p.reason)} · <span class="${e.p.pnl >= 0 ? 'up' : 'down'}">${e.p.pnl >= 0 ? '+' : '−'}${money(Math.abs(e.p.pnl))} (${pct(e.p.pnlPct)})</span>`;
+    const why = { target: 'hit its target', 'stop-loss': 'hit its stop-loss', 'trailing stop': 'hit its trailing stop', 'signal reversal': 'the signal turned against it' };
+    const line = (e) => {
+      if (e.kind === 'check') {
+        const c = e.c;
+        const did = c.opened || c.closed ? `${c.opened ? `opened ${c.opened}` : ''}${c.opened && c.closed ? ', ' : ''}${c.closed ? `closed ${c.closed}` : ''}` : 'no trade';
+        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}`;
+      }
+      if (e.kind === 'review') return `<b>Self-review</b> — ${esc(e.c.text)}`;
+      if (e.kind === 'buy') {
+        const bar = e.p.entryBar;
+        return `<b>Bought ${esc(e.sym)}</b> at ${money(e.p.entry)}${Number.isFinite(e.p.openScore) ? ` — score ${e.p.openScore > 0 ? '+' : ''}${Math.round(e.p.openScore)}${Number.isFinite(bar) ? ` cleared the +${bar} entry bar` : ''}` : ''}`;
+      }
+      return `<b>Sold ${esc(e.sym)}</b> at ${money(e.p.exit)} — ${esc(why[e.p.reason] || e.p.reason)} · <span class="${e.p.pnl >= 0 ? 'up' : 'down'}">${e.p.pnl >= 0 ? '+' : '−'}${money(Math.abs(e.p.pnl))} (${pct(e.p.pnlPct)})</span>`;
+    };
+    const replayed = ev.filter((e) => e.kind !== 'check' && e.kind !== 'review' && e.t < liveSince).length;
     return `<div class="card mt">
       <div class="card-h"><h3>${icon('ai', 16)} AI activity</h3><span class="fine">${autoOn ? 'running · checks every 5 minutes' : session.status === 'stopped' ? 'stopped · press Resume to continue' : 'idle'}${st.lastRun ? ` · last check ${ago(st.lastRun)}` : ''}</span></div>
-      ${ev.length ? `<ul class="fine" style="list-style:none;padding:0;margin:0">${ev.slice(0, 20).map((e) => `<li style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(e.t)}</span>${line(e)}</li>`).join('')}</ul>`
+      ${replayed ? `<p class="fine" style="margin-top:0">Entries marked <span class="chip">replayed</span> happened on candles from before this account went live on ${dateTime(liveSince)} — the same rules run over past prices so the record does not start empty. Everything after that was decided live.</p>` : ''}
+      ${ev.length ? `<ul class="fine" style="list-style:none;padding:0;margin:0">${ev.slice(0, 30).map((e) => `<li style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(e.t)}</span>${e.kind !== 'check' && e.kind !== 'review' && e.t < liveSince ? '<span class="chip" style="margin-right:6px">replayed</span>' : ''}${line(e)}</li>`).join('')}</ul>`
         : '<p class="muted">No trades yet — the AI is watching for a setup that meets its rules.</p>'}
     </div>`;
+  }
+
+  // ---------------------------------------------------------------- self-review
+  // The trader reads its own trade log, finds conditions that keep losing and
+  // switches on the filter that avoids them (or off, if a filter made things
+  // worse). Runs by itself after every check; the button runs it on demand.
+  function selfReview({ auto = false } = {}) {
+    if (!state) return null;
+    const review = reviewTrades(state.closed);
+    if (auto && load(AUTOLEARN_KEY, true) === false) return { review, changes: [] };
+    const lessons = load(LESSONS_KEY, []);
+    const { cfgPatch, changes } = decideChanges(review, cfg, lessons, state.closed);
+    if (changes.length) {
+      Object.assign(cfg, cfgPatch);
+      save(CFG_KEY, cfg);
+      const now = Date.now();
+      for (const c of changes) {
+        lessons.push({ at: now, lens: c.lens || null, undo: !!c.undo, text: c.text });
+        if (c.undo) for (const h of lessons) if (h.lens === c.lens && !h.undo && h.at < now) h.undone = true;
+        logCheck(state, { kind: 'review', text: c.text });
+      }
+      save(LESSONS_KEY, lessons.slice(-50));
+      save(STATE_KEY, state);
+      if (!auto) toast(`Self-review changed ${changes.length} rule${changes.length > 1 ? 's' : ''}.`, 'up');
+    }
+    return { review, changes };
+  }
+
+  function reviewCard() {
+    if (!state) return '';
+    const review = reviewTrades(state.closed);
+    const lessons = load(LESSONS_KEY, []);
+    const active = activeLessons(cfg);
+    const autoLearn = load(AUTOLEARN_KEY, true) !== false;
+    const o = review.overall;
+    return `<div class="card mt" id="reviewCard">
+      <div class="card-h"><h3>${icon('ai', 16)} Self-review of the trade log</h3>
+        <div class="row" style="gap:8px"><label class="fine" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="autoLearn" ${autoLearn ? 'checked' : ''}> learn by itself</label>
+        <button class="btn sm" id="reviewNow">${icon('refresh', 14)} Review my trades now</button></div></div>
+      <p class="fine" style="margin-top:0">After every check the AI reads its own closed trades, groups them by what the market looked like when it bought, and switches on a filter when one condition keeps losing — or back off if a filter made results worse. It needs ${MIN_TRADES} closed trades before it changes anything, and every change is listed below with the numbers behind it.</p>
+      <div class="grid g4 mt">
+        <div class="stat"><span class="k">Trades read</span><span class="v">${o.n}</span></div>
+        <div class="stat"><span class="k">Won</span><span class="v">${o.winRate === null ? '—' : `${o.winRate}%`}</span></div>
+        <div class="stat"><span class="k">Average result</span><span class="v ${o.avgR > 0 ? 'up' : o.avgR < 0 ? 'down' : ''}">${o.avgR === null ? '—' : `${o.avgR > 0 ? '+' : ''}${o.avgR}R`}</span><span class="s fine">R = the amount risked per trade</span></div>
+        <div class="stat"><span class="k">Rules it changed</span><span class="v">${lessons.filter((l) => !l.undo && !l.undone).length}</span></div>
+      </div>
+      ${review.findings.length ? `<ul class="reasons mt">${review.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      <p class="fine mt"><b>Rules in force now:</b> ${active.length ? esc(active.join(' · ')) : 'none yet — the original strategy'}.</p>
+      ${lessons.length ? `<div class="mt"><div class="fine" style="margin-bottom:4px"><b>What it changed, and when</b></div><ul class="fine" style="list-style:none;padding:0;margin:0">${[...lessons].reverse().slice(0, 12).map((l) => `<li style="padding:4px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(l.at)}</span>${esc(l.text)}${l.undone ? ' <span class="chip">later undone</span>' : ''}</li>`).join('')}</ul></div>` : ''}
+    </div>`;
+  }
+
+  function wireReview() {
+    $('#reviewNow', el)?.addEventListener('click', () => {
+      const r = selfReview({ auto: false });
+      if (r && !r.changes.length) toast(r.review.overall.n < MIN_TRADES ? `Read ${r.review.overall.n} trades — needs ${MIN_TRADES} before it changes anything.` : 'Read the log — nothing clear enough to change yet.', 'info');
+      draw();
+    });
+    $('#autoLearn', el)?.addEventListener('change', (e) => { save(AUTOLEARN_KEY, e.target.checked); toast(e.target.checked ? 'The AI will adjust its rules by itself after each check.' : 'Self-adjusting is off — use the button to review on demand.', 'info'); });
   }
 
   // ---------------------------------------------------------------- view
@@ -519,31 +632,39 @@ export async function render(el) {
       ${verdictCard()}
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
-        <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}</span></div></div>
+        <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}${s.since < s.liveSince - 60e3 ? ` · replayed until ${dateTime(s.liveSince)}` : ''}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Win rate</span><span class="v">${s.winRate === null ? '—' : `${s.winRate}%`}</span><span class="s fine">${s.wins}W / ${s.losses}L${s.profitFactor ? ` · PF ${s.profitFactor}` : ''}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Max drawdown</span><span class="v down">${pct(-s.maxDrawdownPct, 1)}</span><span class="s fine">${s.openCount} open · ${s.trades} closed</span></div></div>
       </div>
 
       <div class="card mt">
-        <div class="card-h"><h3>Open positions</h3><span class="fine">marked against the live price</span></div>
+        <div class="card-h"><h3>Open positions</h3><span class="fine">marked against the live price (or the latest candle until a live price arrives)</span></div>
         ${open.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Entry</th><th>Now</th><th>Stop</th><th>Target</th><th>Size</th><th>Open P&amp;L</th><th class="l">Opened</th></tr></thead><tbody>
           ${open.map(([sym, p]) => {
-            const px = st.prices[sym] ?? p.entry;
+            const px = st.prices[sym];
+            if (!Number.isFinite(px)) {
+              const coin = all.find((c) => c.symbol === sym);
+              return `<tr data-sym="${esc(sym)}"><td class="l"><div class="coin-cell">${coinLogo(coin || { symbol: sym }, 22)}<b>${esc(sym)}</b></div></td>
+                <td>${money(p.entry)}</td><td class="muted">loading…</td>
+                <td class="down">${money(p.stop)}</td><td class="up">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
+                <td>${money(p.notional)}</td><td class="muted fine">waiting for a price</td><td class="l fine">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</td></tr>`;
+            }
             const pnl = (px - p.entry) * p.qty;
             const coin = all.find((c) => c.symbol === sym);
             return `<tr data-sym="${esc(sym)}">
               <td class="l"><div class="coin-cell">${coinLogo(coin || { symbol: sym }, 22)}<b>${esc(sym)}</b></div></td>
-              <td>${money(p.entry)}</td><td>${money(px)}</td>
+              <td>${money(p.entry)}</td><td>${money(px)}${st.priceFrom[sym] === 'candle' ? '<br><small class="fine">last candle</small>' : ''}</td>
               <td class="down">${money(p.stop)}${p.movedToBreakEven ? ' <span class="fine">(BE)</span>' : ''}</td>
-              <td class="up">${money(p.tp)}</td>
+              <td class="up">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
               <td>${money(p.notional)}</td>
               <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b><br><small>${pct((px / p.entry - 1) * 100)}</small></td>
-              <td class="l fine">${ago(p.openedAt)}</td></tr>`;
+              <td class="l fine">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}<br><small>${ago(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</small></td></tr>`;
           }).join('')}
         </tbody></table></div>` : '<p class="muted">No position open right now — the AI is waiting for a setup that meets its rules.</p>'}
       </div>
 
       ${activityCard()}
+      ${reviewCard()}
 
       ${state.equityCurve.length > 2 ? `<div class="card mt"><div class="card-h"><h3>Balance over time</h3><span class="fine">simulated</span></div><div id="eqChart"></div></div>` : ''}
 
@@ -552,7 +673,7 @@ export async function render(el) {
         ${closed.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Opened</th><th class="l">Closed</th><th>Entry</th><th>Exit</th><th>Result</th><th class="l">Why it closed</th></tr></thead><tbody>
           ${closed.slice(0, 60).map((t) => `<tr data-sym="${esc(t.symbol)}">
             <td class="l"><b>${esc(t.symbol)}</b></td>
-            <td class="l fine">${dateTime(t.openedAt)}</td><td class="l fine">${dateTime(t.exitAt)}</td>
+            <td class="l fine">${dateTime(t.openedAt + (INTERVAL_MS[state.interval] || 0))}</td><td class="l fine">${dateTime(t.exitAt + (INTERVAL_MS[state.interval] || 0))}</td>
             <td>${money(t.entry)}</td><td>${money(t.exit)}</td>
             <td class="${t.pnl >= 0 ? 'up' : 'down'}"><b>${t.pnl >= 0 ? '+' : '−'}${money(Math.abs(t.pnl))}</b> <small>${pct(t.pnlPct)}</small></td>
             <td class="l"><span class="chip ${t.reason === 'target' ? 'up' : t.reason === 'stop-loss' ? 'down' : ''}">${esc(t.reason)}</span></td></tr>`).join('')}
@@ -570,6 +691,7 @@ export async function render(el) {
     wireMyDemo();
     wireReal();
     wireExports();
+    wireReview();
     drawRealChart();
     syncRunButtons();
     syncSessionChip();
@@ -593,7 +715,7 @@ export async function render(el) {
           <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="10" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
           <label class="fld">Max open<input class="inp" name="maxPositions" type="number" min="1" max="10" value="${cfg.maxPositions}" style="width:90px"></label>
         </div>
-        <label class="fld">Chart<select class="inp" name="interval">${['1h', '4h', '1d'].map((i) => `<option ${i === cfg.interval ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => `<option ${i === cfg.interval ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
         <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
         <p class="fine">Available: ${esc(tradable.slice(0, 24).map((c) => c.symbol).join(', '))}…</p>
         <button class="btn primary">Save settings</button>
@@ -620,11 +742,14 @@ export async function render(el) {
   });
 
   $('#resetBtn', el)?.addEventListener('click', () => {
-    const m = modal(`<h3>Reset the AI session?</h3><p>This stops the AI, wipes the simulated balance and the whole trade log, and starts again from ${money(cfg.startingBalance)}. It cannot be undone.</p>
+    const m = modal(`<h3>Reset the AI session?</h3><p>This stops the AI, wipes the simulated balance and the whole trade log, and starts again from ${money(cfg.startingBalance)}. After a reset it only trades candles that open from now on — nothing from before the reset is replayed. It cannot be undone.</p>
       <div class="row mt" style="gap:8px"><button class="btn" id="no">Keep it</button><button class="btn primary" id="yes">Reset</button></div>`);
     $('#no', m.el).addEventListener('click', m.close);
     $('#yes', m.el).addEventListener('click', () => {
-      state = newState(cfg); save(STATE_KEY, state);
+      // Start clean from now: no candle that opened before this moment is ever
+      // traded, so the old trades cannot come back on the next Start.
+      state = newState(cfg, { liveFrom: Date.now() }); save(STATE_KEY, state);
+      st.prices = {}; st.priceFrom = {};
       applySession('RESET');
       saveLedger(newLedger());
       m.close(); draw(); toast('Trader reset. Session is idle — press Start when you want it running.', 'info');
@@ -672,7 +797,7 @@ export async function render(el) {
     let changed = false;
     for (const t of e.detail) {
       const sym = t.s.replace(/USDT$/, '');
-      if (wanted.has(sym)) { st.prices[sym] = +t.c; changed = true; }
+      if (wanted.has(sym)) { st.prices[sym] = +t.c; st.priceFrom[sym] = 'live'; changed = true; }
     }
     if (changed && !st.paintQueued) {
       st.paintQueued = true;
