@@ -22,16 +22,17 @@ const r2 = (v) => Math.round(v * 100) / 100;
 /** Result of one trade in R: profit or loss as a multiple of the cash it risked. */
 export function tradeR(t) {
   const risk = t.riskCash || (t.entry - t.initialStop) * t.qty;
-  return risk > 0 ? t.pnl / risk : 0;
+  // A trade recorded without a stop has no defined risk, so it has no R.
+  return risk > 0 && Number.isFinite(risk) ? t.pnl / risk : null;
 }
 
 function summarise(trades) {
   const n = trades.length;
   if (!n) return { n: 0, winRate: null, avgR: null, totalR: 0 };
-  const rs = trades.map(tradeR);
+  const rs = trades.map(tradeR).filter((r) => r !== null);
   const wins = trades.filter((t) => t.pnl > 0).length;
   const totalR = rs.reduce((a, b) => a + b, 0);
-  return { n, winRate: Math.round((wins / n) * 100), avgR: r2(totalR / n), totalR: r2(totalR) };
+  return { n, winRate: Math.round((wins / n) * 100), avgR: rs.length ? r2(totalR / rs.length) : null, totalR: r2(totalR) };
 }
 
 // The conditions a trade can be sorted by. Each one maps to the filter that
@@ -64,15 +65,15 @@ const LENSES = [
  * Read the trade log. Returns overall numbers, a per-condition breakdown, a
  * per-coin breakdown and plain-language findings.
  */
-export function reviewTrades(closed = []) {
-  const trades = closed.filter((t) => !t.manual);
+export function reviewTrades(closed = [], { includeManual = false } = {}) {
+  const trades = closed.filter((t) => includeManual || !t.manual);
   const overall = summarise(trades);
   const lenses = LENSES.map((L) => {
     const groups = {};
     for (const t of trades) { const s = L.side(t); if (s) (groups[s] ||= []).push(t); }
     const out = Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, summarise(v)]));
     const bad = out[L.bad], good = Object.entries(out).find(([k]) => k !== L.bad)?.[1];
-    const judged = bad && good && bad.n >= MIN_GROUP && good.n >= MIN_GROUP;
+    const judged = bad && good && bad.n >= MIN_GROUP && good.n >= MIN_GROUP && bad.avgR !== null && good.avgR !== null;
     const losing = judged && bad.avgR < 0 && bad.avgR <= good.avgR - GAP_R;
     return { key: L.key, title: L.title, groups: out, labels: L.labels, judged, losing, fixText: L.fixText };
   });
@@ -90,7 +91,7 @@ export function reviewTrades(closed = []) {
     const b = l.groups[bk], g = l.groups[gk];
     findings.push(`${l.labels[bk][0].toUpperCase()}${l.labels[bk].slice(1)}: ${b.n} trades, ${b.winRate}% won, average ${b.avgR >= 0 ? '+' : ''}${b.avgR}R — versus ${g.avgR >= 0 ? '+' : ''}${g.avgR}R when it ${l.labels[gk]} (${g.n} trades).${l.losing ? ' That gap is large enough to act on.' : ''}`);
   }
-  const worst = coins.find((c) => c.n >= MIN_GROUP && c.avgR <= -0.4);
+  const worst = coins.find((c) => c.n >= MIN_GROUP && c.avgR !== null && c.avgR <= -0.4);
   if (worst) findings.push(`${worst.symbol} has lost on average ${worst.avgR}R over ${worst.n} trades.`);
   return { overall, lenses, coins, exits: Object.fromEntries(Object.entries(exits).map(([k, v]) => [k, summarise(v)])), findings };
 }
