@@ -116,7 +116,9 @@ function forecastBlock(f, ctx) {
   const horizon = ctx.horizonText || `${f.horizonBars} candles`;
   const acc = f.validatedAccuracyPct !== null ? `${f.validatedAccuracyPct}% direction accuracy on recent unseen data (naive baseline ${f.baselineAccuracyPct}%)` : 'accuracy not measured';
   const lines = [
-    `**AI forecast (next ${horizon}):** ${f.probUpPct}% chance of going up → leans **${dirWord}** · confidence ${f.confidence}`,
+    f.directionReliable === false
+      ? `**AI forecast (next ${horizon}):** no reliable direction on this chart (raw model lean ${f.rawProbUpPct}% up, not a chance of anything) · the ranges below are the useful part`
+      : `**AI forecast (next ${horizon}):** ${f.probUpPct}% chance of going up → leans **${dirWord}** · confidence ${f.confidence}`,
     `- Expected move: ${pct(f.expectedMovePct)} → target ≈ ${fmtNum(f.targetPrice)}`,
     `- Likely range (50%): ${fmtNum(f.likelyRange[0])} – ${fmtNum(f.likelyRange[1])}; wide range (80%): ${fmtNum(f.wideRange[0])} – ${fmtNum(f.wideRange[1])}`,
     `- Track record: ${acc}${f.accuracyWhenConfidentPct !== null ? `; ${f.accuracyWhenConfidentPct}% when the models agreed strongly` : ''}`,
@@ -177,7 +179,8 @@ function frameLines(b, horizon) {
 
 function marketMultiBlock(m) {
   if (!m?.frames?.length) return '';
-  const out = [`**Whole-market scan — ${m.scanned} coins, read on ${m.frames.length} timeframes**\n`];
+  const skipped = Math.max(0, ...m.frames.map((f) => f.skipped || 0));
+  const out = [`**Whole-market scan — ${m.scanned} coins, read on ${m.frames.length} timeframes**${skipped ? ` (up to ${skipped} more skipped: no exchange candles)` : ''}\n`];
 
   for (const fr of m.frames) {
     out.push(`\n### ${fr.label} — ${fr.interval} chart (${fr.horizonText} ahead)`);
@@ -210,7 +213,7 @@ function marketMultiBlock(m) {
 // The whole-market answer: which coin, at what price, for how long, and where to sell.
 function marketBlock(m) {
   if (!m) return '';
-  const out = [`**Market scan — ${m.scanned} coins on the ${m.interval} chart**\n`];
+  const out = [`**Market scan — ${m.scanned} coins on the ${m.interval} chart**${m.skipped ? ` (${m.skipped} more skipped: no exchange candles)` : ''}\n`];
   if (!m.buys.length) {
     out.push(`Nothing currently clears the bar to buy. ${m.waitingCount} coins came back as "no edge — wait", which is the honest answer more often than not. Sitting out is a position.`);
   } else {
@@ -449,7 +452,11 @@ export function ruleBasedAnswer(question, ctx = {}) {
       }
       out.push(reasonsBlock(sig, 3));
       out.push(mtfBlock(ctx));
-      if (ctx.forecast) out.push(`**AI forecast:** ${ctx.forecast.probUpPct}% chance up over the next ${ctx.horizonText || ctx.forecast.horizonBars + ' candles'} (confidence ${ctx.forecast.confidence}).`);
+      if (ctx.forecast) {
+        out.push(ctx.forecast.directionReliable === false
+          ? `**AI forecast:** no reliable direction on this chart (raw lean ${ctx.forecast.rawProbUpPct}% up); its 80% range over the next ${ctx.horizonText || ctx.forecast.horizonBars + ' candles'} is ${fmtNum(ctx.forecast.wideRange[0])} – ${fmtNum(ctx.forecast.wideRange[1])}.`
+          : `**AI forecast:** ${ctx.forecast.probUpPct}% chance up over the next ${ctx.horizonText || ctx.forecast.horizonBars + ' candles'} (confidence ${ctx.forecast.confidence}).`);
+      }
       break;
     }
     case 'exit': {

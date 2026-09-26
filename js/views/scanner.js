@@ -1,4 +1,5 @@
-import { markets, getCandles, isStable, INTERVAL_MS } from '../api/market.js';
+import { markets, getCandles, isStable, isTestedSource, INTERVAL_MS } from '../api/market.js';
+import { TESTED_ACCURACY, shownProbUp, directionReliable } from '../lib/predict.js';
 import { generateSignal } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
@@ -9,7 +10,7 @@ import { esc, price, changeHtml, horizonText, money} from '../format.js';
 export const title = 'Scanner';
 
 export async function render(el) {
-  const st = { interval: '4h', filter: 'all', sort: 'score', rows: [], run: 0, disposed: false, count: 30 };
+  const st = { interval: '4h', filter: 'all', sort: 'score', rows: [], run: 0, disposed: false, count: 30, skipped: 0 };
   el.innerHTML = `
     <div class="page-head">
       <div><h1>Scanner</h1><p>Scans the top coins (Binance, or Gate.io, HTX or OKX for coins Binance does not list) and ranks them by how far the indicators lean and what the forecast says. Sorting by score is a way to find extended charts, not a ranking of what to buy.</p></div>
@@ -46,26 +47,40 @@ export async function render(el) {
   const draw = () => {
     let rows = st.rows.filter((r) => r.signal?.ok);
     const f = st.filter;
+    // The same shown probability as the coin page: shrunk by its measured trust
+    // on this chart, and no direction at all where the test found none.
+    const reliable = directionReliable(st.interval);
+    const shown = (r) => (r.fc?.ok ? shownProbUp(r.fc.probUp, st.interval) : null);
     if (f === 'buy') rows = rows.filter((r) => r.signal.score >= 18);
     if (f === 'sell') rows = rows.filter((r) => r.signal.score <= -18);
-    if (f === 'aiup') rows = rows.filter((r) => r.fc?.ok && r.fc.probUp >= 0.54);
-    if (f === 'aidown') rows = rows.filter((r) => r.fc?.ok && r.fc.probUp <= 0.46);
+    if (f === 'aiup') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) >= 0.54);
+    if (f === 'aidown') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) <= 0.46);
     // `null < 32` is true in JavaScript, so coins with no RSI yet were being
     // listed as oversold.
     const rsiOf = (r) => (Number.isFinite(r.signal.indicators.rsi) ? r.signal.indicators.rsi : null);
     if (f === 'oversold') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) < 32);
     if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 68);
-    const key = { score: (r) => r.signal.score, ai: (r) => r.fc?.probUp ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0 }[st.sort];
+    const key = { score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
     $('#hz', el).textContent = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);
-    if (!rows.length) { $('#tbl', el).innerHTML = st.rows.length ? '<div class="empty">No coins match this filter right now.</div>' : skeleton(10, 26); return; }
+    if (!rows.length) {
+      const noDirection = (f === 'aiup' || f === 'aidown') && !reliable;
+      const trusted = Object.keys(TESTED_ACCURACY.directionTrust).filter(directionReliable).join(', ');
+      $('#tbl', el).innerHTML = st.rows.length
+        ? `<div class="empty">${noDirection ? `The forecast has no reliable direction on ${esc(st.interval)} charts, so no coin is marked likely up or down. It has one on ${trusted}.` : 'No coins match this filter right now.'}</div>`
+        : skeleton(10, 26);
+      return;
+    }
     const th = (k, label) => `<th data-sort="${k}">${label}${st.sort === k ? ' ↓' : ''}</th>`;
     $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('score', 'Score')}${th('ai', 'AI up')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
       ${rows.map((r) => {
         const s = r.signal;
         const trend = s.indicators.ema200 ? (s.price > s.indicators.ema200 ? '<span class="up">Above 200 EMA</span>' : '<span class="down">Below 200 EMA</span>') : '—';
         const reason = (s.score >= 0 ? s.reasons.bullish[0] : s.reasons.bearish[0]) || '';
-        const ai = r.fc?.ok ? `<b class="${r.fc.probUp >= 0.54 ? 'up' : r.fc.probUp <= 0.46 ? 'down' : 'flat'}">${Math.round(r.fc.probUp * 100)}%</b>` : r.fc === undefined ? '<span class="spinner" style="width:12px;height:12px"></span>' : '—';
+        const p = shown(r);
+        const ai = !r.fc?.ok ? (r.fc === undefined ? '<span class="spinner" style="width:12px;height:12px"></span>' : '—')
+          : reliable ? `<b class="${p >= 0.54 ? 'up' : p <= 0.46 ? 'down' : 'flat'}">${Math.round(p * 100)}%</b>`
+          : `<span class="muted" title="No reliable direction on this chart (raw lean ${Math.round(r.fc.probUp * 100)}% up)">—</span>`;
         return `<tr data-sym="${esc(r.coin.symbol)}"><td class="l"><div class="coin-cell">${coinLogo(r.coin, 24)}<b>${esc(r.coin.symbol)}</b><small class="hide-m">${esc(r.coin.name)}</small></div></td>
           <td>${money(s.price)}</td><td>${changeHtml(r.coin.change24h)}</td>
           <td class="l"><span class="chip ${s.tone === 'flat' ? '' : s.tone}">${s.text}</span></td>
@@ -81,6 +96,7 @@ export async function render(el) {
   const scan = async () => {
     const run = ++st.run;
     st.rows = [];
+    st.skipped = 0;
     draw();
     let list;
     try {
@@ -96,23 +112,28 @@ export async function render(el) {
     if (!list.length) {
       $('#prog', el).textContent = 'No supported pairs';
       $('#meter i', el).style.width = '0%';
-      $('#tbl', el).innerHTML = '<div class="empty"><h3>No supported market pairs</h3><p>The market source returned no Binance-listed pairs for this scan.</p></div>';
+      $('#tbl', el).innerHTML = '<div class="empty"><h3>No coins to scan</h3><p>The market source returned no coins for this scan.</p></div>';
       return;
     }
     const iv = st.interval;
     let done = 0;
-    const setProg = () => { $('#prog', el).textContent = done < list.length ? `Scanning ${done}/${list.length}…` : `Scanned ${list.length} coins · ${new Date().toLocaleTimeString()}`; $('#meter i', el).style.width = `${(done / list.length) * 100}%`; };
+    const setProg = () => {
+      $('#prog', el).textContent = done < list.length ? `Scanning ${done}/${list.length}…`
+        : `Scanned ${st.rows.length} coins${st.skipped ? ` · skipped ${st.skipped} with no exchange candles on ${iv}` : ''} · ${new Date().toLocaleTimeString()}`;
+      $('#meter i', el).style.width = `${(done / list.length) * 100}%`;
+    };
     setProg();
     const queue = [...list];
     const worker = async () => {
       while (queue.length) {
         const coin = queue.shift();
         try {
-          const { candles } = await getCandles(coin, iv, 500);
+          // The coin page's 1,500 candles, so both pages read the same chart.
+          const res = await getCandles(coin, iv, 1500);
           if (run !== st.run || st.disposed) return;
-          const row = { coin, signal: generateSignal(candles, { interval: iv }), fc: undefined, candles };
-          st.rows.push(row);
-        } catch { /* skip coin */ }
+          if (isTestedSource(res)) st.rows.push({ coin, signal: generateSignal(res.candles, { interval: iv }), fc: undefined, candles: res.candles });
+          else st.skipped++;
+        } catch { st.skipped++; }
         done++; setProg(); draw();
       }
     };
@@ -121,7 +142,8 @@ export async function render(el) {
     for (const row of [...st.rows].sort((a, b) => Math.abs(b.signal.score) - Math.abs(a.signal.score))) {
       if (run !== st.run || st.disposed) return;
       try {
-        row.fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], fast: true, intervalMs: INTERVAL_MS[iv] });
+        // The full forecast the coin page runs; `fast` mode was never tested.
+        row.fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], intervalMs: INTERVAL_MS[iv] });
         row.tm = row.fc?.ok ? timingOutlook(row.fc, { intervalMs: INTERVAL_MS[iv] }) : null;
       } catch { row.fc = null; row.tm = null; }
       row.candles = null;

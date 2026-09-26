@@ -19,7 +19,7 @@ computers alike.
 | **Markets** | Top 250 coins (CoinGecko, CoinPaprika fallback), live prices via Binance WebSocket, 1h/24h/7d change, sparklines, global market cap, BTC/ETH dominance, Fear & Greed gauge, trending, top gainers/losers, heatmap, watchlist |
 | **Coin page** | Live candlestick chart (15m–1w) with zoom/pan/pinch, EMA 20/50/200, Bollinger, volume, RSI, MACD, support/resistance, backtest markers and the AI forecast cone |
 | **Trade signal** | Buy/Sell score (−100…+100) from 9 indicator groups, multi-timeframe confluence, entry zone, stop-loss, three take-profits, exit rules and reasons |
-| **AI forecast** | Chance of rise, expected move, target and 50%/80% ranges. An ensemble of 7 models trained in the browser on that coin's own history, each weighted by its accuracy on data it never saw |
+| **AI forecast** | Leads with the 80% and 90% price ranges and how often ranges like them held in testing, then the chance of rise, shrunk by how far its direction held up on that timeframe (none on 1h, 4h and 1d, where it says so). An ensemble of 7 models trained in the browser on that coin's own history, each weighted by its accuracy on data it never saw |
 | **History & cycles** | The long-range study: finds every past 45-day stretch whose *shape* matched today's, shows what price did 7/30/90 days later, overlays those charts on today's, adds year-by-year paths and monthly seasonality — and publishes how often that method was actually right on this coin |
 | **Pattern comparison** | Same idea on the trading timeframe: overlays today's chart on the most similar past charts and shows what happened next |
 | **History vs now** | Compares the latest 7/30/90/365 days with the previous period and the same dates 1 and 2 years ago |
@@ -27,7 +27,7 @@ computers alike.
 | **Futures** | Funding rate, annualised funding, basis, open interest and its 12h change, long/short account ratios, top-trader positioning, plus a live liquidation feed |
 | **Order book & trades** | Live Binance depth and recent trades |
 | **Exchanges** | Same coin on 10 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Gate.io, Bitget, HTX, Gemini, Crypto.com): price, spread, volume, best buy/sell venue |
-| **Signal scanner** | Ranks the top 20/30/50 coins by signal score and fast AI forecast; filters for buy, sell, oversold and overbought |
+| **Signal scanner** | Ranks the top 20/30/50 coins by signal score and the same full forecast as the coin page, on the same 1,500 candles; filters for rising, falling, oversold and overbought. Coins Binance does not list are read from Gate.io, HTX or OKX; coins with only CoinGecko or demo data are skipped and counted |
 | **Compare** | Up to 6 coins: normalised performance, volatility, max drawdown, return/risk, correlation matrix |
 | **Tools** | Coin ↔ currency converter (PKR and 15 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
