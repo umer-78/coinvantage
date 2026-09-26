@@ -1,7 +1,9 @@
 {
   "name": "coinvantage",
+  "description": "Live crypto markets web app: Binance-style charts, indicator signals, history and cycle analysis, futures data, paper trading and an AI price forecast that shows its measured accuracy. PWA + Supabase.",
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs"
-  }
+  },
+  "license": "MIT"
 }
