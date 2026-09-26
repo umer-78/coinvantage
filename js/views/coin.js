@@ -625,6 +625,7 @@ export async function render(el, [symParam]) {
         <dt>Calibration slope</dt><dd>${typeof e.calibrationSlope === 'number' ? e.calibrationSlope.toFixed(3) : '—'}</dd>
         <dt>Measured 50% band coverage</dt><dd>${band50 !== null ? band50 + '%' : '—'} <span class="muted">target ~50%</span></dd>
         <dt>Measured 80% band coverage</dt><dd>${band80 !== null ? band80 + '%' : '—'} <span class="muted">target ~80%</span></dd>
+        <dt>Measured 90% band coverage</dt><dd>${typeof TESTED_ACCURACY.band90?.[st.interval] === 'number' ? TESTED_ACCURACY.band90[st.interval] + '%' : '—'} <span class="muted">target ~90%</span></dd>
       </dl>
       ${timingCardBlock()}
       <div class="row mt"><span class="fine">Horizon</span><div class="seg" id="hSeg">${[Math.max(3, Math.round(st.horizon / 2)), DEFAULT_HORIZON[st.interval] || 12, (DEFAULT_HORIZON[st.interval] || 12) * 2].filter((v, i, a) => a.indexOf(v) === i).map((h) => `<button data-v="${h}" class="${h === st.horizon ? 'on' : ''}">${horizonText(st.interval, h)}</button>`).join('')}</div></div>
@@ -783,6 +784,7 @@ export async function render(el, [symParam]) {
             </div>
             <div class="kv">
               <dt>80% range at horizon</dt><dd>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</dd>
+              ${fc.range.p05 ? `<dt>90% range at horizon</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="muted">(in testing the price ended inside this range ${TESTED_ACCURACY.band90?.[st.interval] ?? TESTED_ACCURACY.bandsAll.band90}% of the time)</span></dd>` : ''}
               <dt>Direction accuracy on unseen data</dt><dd>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${e.samples} tests)</span></dd>
               <dt>Accuracy when models strongly agree</dt><dd>${e.confidentAccuracy !== null ? (e.confidentAccuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${Math.round(e.confidentCoverage * 100)}% of the time)</span></dd>
               <dt>Naive baseline (always predict usual direction)</dt><dd>${(e.baseline * 100).toFixed(1)}%</dd>
