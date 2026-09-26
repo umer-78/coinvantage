@@ -280,7 +280,7 @@ export function anomalyFlags(candles) {
  * Plain-language risk warnings assembled from what is already on the page.
  * Every line is tied to a number the reader can see; nothing is invented.
  */
-export function riskWarnings({ signal = null, forecast = null, backtest = null, anomalies = [], interval = null, noEdgeTimeframe = false } = {}) {
+export function riskWarnings({ signal = null, forecast = null, backtest = null, anomalies = [], interval = null, noEdgeTimeframe = false, noEdgeText = null } = {}) {
   const out = [];
   for (const a of anomalies) out.push({ key: `anomaly:${a.key}`, level: a.level || 'warn', text: a.text });
 
@@ -295,7 +295,7 @@ export function riskWarnings({ signal = null, forecast = null, backtest = null, 
     out.push({
       key: 'no-edge',
       level: 'down',
-      text: `The forecast engine has no measured edge on the ${interval} chart (at or below its baseline). A probability shown here is background, not a reason to act.`,
+      text: noEdgeText || `The forecast engine has no measured edge on the ${interval} chart (at or below its baseline). A probability shown here is background, not a reason to act.`,
     });
   }
   if (backtest?.ok && backtest.totalReturnPct < 0 && backtest.buyHoldPct > 0 && backtest.tradeCount >= 10) {

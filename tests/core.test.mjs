@@ -904,14 +904,14 @@ test('a timeframe with no measured edge can never be sold as a confident call', 
   assert.notEqual(s.confidence, 'high', 'the worst-measured timeframe cannot be the most confident one');
   assert.doesNotMatch(s.verdict, /\bBUY\b|\bSELL\b/i, 'the verdict must describe the reading, never instruct');
   assert.ok(s.confidenceWhy && s.confidenceWhy.includes(weak), 'and the label says what it is based on');
-  assert.ok(s.caveats.some((c) => /below a coin flip/i.test(c)), 'the reader is told the daily forecast has no edge');
+  assert.ok(s.caveats.some((c) => /no edge there/i.test(c)), 'the reader is told the daily forecast has no edge');
 
   // the same setup on a timeframe that does have a record is allowed to rate higher
   const measured = tradeSummary({
     signal: { ...strongDaily, text: 'Leaning up' }, forecast: { probUpPct: 62, validatedAccuracyPct: 58 },
     interval: strong, horizonText: '1 hour', fmt: String,
   });
-  assert.ok(!measured.caveats.some((c) => /below a coin flip/i.test(c)));
+  assert.ok(!measured.caveats.some((c) => /no edge there/i.test(c)));
 });
 
 test('the timeframes are reconciled into one standing view instead of three verdicts', async () => {

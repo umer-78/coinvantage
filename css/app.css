@@ -146,8 +146,8 @@ label.fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; co
 .stat .k { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 .stat .v { font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat .s { font-size: 12px; }
-.kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; font-size: 14px; }
-.kv dt { color: var(--text-muted); } .kv dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: fit-content(45%) minmax(0, 1fr); gap: 8px 16px; font-size: 14px; }
+.kv dt { color: var(--text-muted); } .kv dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: break-word; }
 
 .tbl-wrap { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
 table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -199,7 +199,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* ============================================================ coin */
 .coin-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
 .coin-head .price { font-size: 34px; font-weight: 700; letter-spacing: -.02em; }
-.coin-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+.coin-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: "chart side" "tabs side"; grid-template-rows: auto 1fr; gap: 14px; align-items: start; }
+.coin-layout > .c-chart { grid-area: chart; } .coin-layout > .c-side { grid-area: side; } .coin-layout > .c-tabs { grid-area: tabs; min-width: 0; }
+.fc-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+/* the sidebar is 360px: stack the verdict and keep the meter labels on one line */
+.c-side .verdict { flex-direction: column; align-items: stretch; gap: 10px; }
+.meter-labels { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; white-space: nowrap; font-size: 11px; }
+.meter-labels > span { text-align: center; } .meter-labels > span:first-child { text-align: left; } .meter-labels > span:last-child { text-align: right; }
 .chart-card { padding: 12px; }
 .chart-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .chart-box { height: 520px; }
@@ -288,6 +294,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* ============================================================ responsive */
 @media (max-width: 1180px) {
   .coin-layout, .chat { grid-template-columns: minmax(0, 1fr); }
+  .coin-layout { grid-template-areas: "chart" "side" "tabs"; grid-template-rows: auto; }
   .global-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -479,6 +486,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   .summary .steps { grid-template-columns: 1fr; gap: 2px; }
   .summary dd { margin-bottom: 8px; }
 }
+/* in the 360px coin sidebar a two-column list leaves the answers a few words wide */
+.c-side .summary .steps { grid-template-columns: 1fr; gap: 2px; }
+.c-side .summary dd { margin-bottom: 8px; }
 
 /* ============================================================ premium */
 :root { --ease: cubic-bezier(.16, 1, .3, 1); }
