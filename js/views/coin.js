@@ -3,6 +3,8 @@ import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { generateSignal, confluence, geometryFor, upRateFor } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
+import { learnFromChart } from '../lib/learnpass.js';
+import { computeAll } from '../lib/indicators.js';
 import { TESTED_ACCURACY, summarizeForecast } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
@@ -176,6 +178,15 @@ export async function render(el, [symParam]) {
   // judged on. Same simulated rules, same live prices, separate balance.
   const PAPER_CFG = 'traderCfg';
   const PAPER_STATE = 'myDemoState';
+  // What the chart looked like at the moment of a demo buy (trend, ADX, RSI),
+  // so the AI learning page can grade your own buys the same way as the AI's.
+  const buyContext = () => {
+    try {
+      const c = st.candles.slice(0, -1); if (c.length < 210) return null;
+      const ind = computeAll(c), i = c.length - 1;
+      return { trendUp: !!(ind.ema200[i] && c[i].c > ind.ema200[i]), adx: ind.adx.adx[i] === null ? null : +ind.adx.adx[i].toFixed(1), rsi: ind.rsi[i] === null ? null : +ind.rsi[i].toFixed(1) };
+    } catch { return null; }
+  };
   const paperCfg = () => ({ ...DEFAULT_CONFIG, ...load(PAPER_CFG, {}) });
   const paperState = () => load(PAPER_STATE, null) || newState(paperCfg());
 
@@ -228,6 +239,7 @@ export async function render(el, [symParam]) {
         notional: usdAmount,
         stopPrice: st.signal?.ok ? st.signal.plan?.stopLoss : undefined,
         targetPrice: st.signal?.ok ? st.signal.plan?.takeProfits?.[0] : undefined,
+        ctx: buyContext(),
       });
       if (!r.ok) { const m = msg(); if (m) { m.textContent = r.error; m.className = 'fine down'; } return; }
       save(PAPER_STATE, state);
@@ -549,6 +561,8 @@ export async function render(el, [symParam]) {
       st.ensemble3 = threeModelEnsemble(st.candles, { ledger, horizon: H });
       st.anomalies = anomalyFlags(st.candles);
     } catch { /* ledger is a convenience, never load-bearing */ }
+    // AI learning center: this chart's readings and forecast are logged for grading.
+    st.learned = learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null });
 
     if (fc.ok) {
       // Logged before the outcome is known, so "your hit rate" is honest.
@@ -785,6 +799,7 @@ export async function render(el, [symParam]) {
             <div class="kv">
               <dt>80% range at horizon</dt><dd>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</dd>
               ${fc.range.p05 ? `<dt>90% range at horizon</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="muted">(in testing the price ended inside this range ${TESTED_ACCURACY.band90?.[st.interval] ?? TESTED_ACCURACY.bandsAll.band90}% of the time)</span></dd>` : ''}
+              ${st.learned ? `<dt>AI learning <a class="fine" href="#/learn">(how it learns)</a></dt><dd>learned blend ${(st.learned.blendProb * 100).toFixed(1)}% up · <span class="muted">${st.learned.champion === 'blend' ? 'the blend makes the call on this device' : 'the forecast still makes the call — the blend has not beaten it here yet'}</span></dd>` : ''}
               <dt>Direction accuracy on unseen data</dt><dd>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${e.samples} tests)</span></dd>
               <dt>Accuracy when models strongly agree</dt><dd>${e.confidentAccuracy !== null ? (e.confidentAccuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${Math.round(e.confidentCoverage * 100)}% of the time)</span></dd>
               <dt>Naive baseline (always predict usual direction)</dt><dd>${(e.baseline * 100).toFixed(1)}%</dd>

@@ -134,6 +134,12 @@ A short-side test has not been run.
   CSV import. Keep it that way.
 
 ## Measured numbers currently published (do not change without re-measuring)
+- **AI learning center (#/learn, 2026-09-26):** `js/lib/learncenter.js` + `learnpass.js`. Grades 12 indicator
+  readings, the forecast and a learned blend on real outcomes (non-overlapping calls, Wilson 95% ranges, a
+  vote only with 30+ calls and a range clear of 50%). Walk-forward release test (`tools/evaluate-learning.mjs`):
+  blend 53.9% = forecast 53.9% overall, so the forecast is champion; the blend takes over only after 100+
+  live calls each with a 3-point lead and its 95% range above the forecast. Learns from every chart opened,
+  every trader check, and grades all three accounts' buys (demo buys now record trend/ADX/RSI at entry).
 - **2026-09-26 re-measure (supersedes the forecast line below):** direction 53.9% vs 58.5% hindsight
   baseline, 52.2% for "always up"; confident subset 50.7% (227). No edge on any timeframe. Ranges now
   come from each coin's own standardized past moves: 80% band holds 78.5% (was 71.7%), 50% band 48.4%

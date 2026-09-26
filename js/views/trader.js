@@ -2,6 +2,7 @@
 import { markets, getCandles, isStable, findCoin, INTERVAL_MS } from '../api/market.js';
 import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, MIN_TRADES } from '../lib/tradelearn.js';
+import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
 import { LineChart } from '../charts/line.js';
@@ -215,6 +216,9 @@ export async function render(el) {
     draw();
     if (processed) toast(`Processed ${processed} new candles.`, 'up');
     learnFrom(forecastInputs, runCfg.interval);
+    // The AI learning center grades every indicator and the forecast on the same
+    // candles, so the system keeps learning whenever the trader is open.
+    learningPass(runCfg.interval, { candlesBySymbol: Object.fromEntries(forecastInputs.map((x) => [x.sym, x.candles])) }).catch(() => {});
   }
 
   // Self-improvement: score the forecasts whose horizon has passed, then log a

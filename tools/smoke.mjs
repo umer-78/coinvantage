@@ -11,6 +11,7 @@ const ROUTES = [
   ['advice', '#/advice'],
   ['assistant', '#/ai'],
   ['trader', '#/trader'],
+  ['learn', '#/learn'],
   ['scanner', '#/scanner'],
   ['track record', '#/track'],
   ['futures', '#/futures'],

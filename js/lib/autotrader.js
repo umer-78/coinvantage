@@ -227,7 +227,7 @@ function closePosition(state, cfg, symbol, exitPrice, t, reason) {
  * Open a position by hand, in the same simulated account the AI trader uses.
  * Still no real order anywhere — this is practice, priced off the live market.
  */
-export function openManual(state, cfg, symbol, price, { notional, stopPrice, targetPrice, at = Date.now() } = {}) {
+export function openManual(state, cfg, symbol, price, { notional, stopPrice, targetPrice, at = Date.now(), ctx = null } = {}) {
   if (state.open[symbol]) return { ok: false, error: `You already have a practice position open on ${symbol}. Close it first.` };
   if (Object.keys(state.open).length >= cfg.maxPositions) return { ok: false, error: `You already have ${cfg.maxPositions} practice positions open — that is the limit in your settings.` };
   if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
@@ -245,6 +245,8 @@ export function openManual(state, cfg, symbol, price, { notional, stopPrice, tar
     entry: round(price), initialStop: round(stop), stop: round(stop), tp: round(tp),
     qty: round(qty, 10), notional: round(size, 2),
     openedAt: at, openScore: null, movedToBreakEven: false, feePaid: round(fee, 4),
+    // what the chart looked like when you bought, so the AI learning page can grade your buys too
+    ctx, riskCash: round((price - stop) * qty, 2),
   };
   markEquity(state, at);
   return { ok: true, position: state.open[symbol] };
