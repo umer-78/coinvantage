@@ -9,7 +9,7 @@
 // never invented, and a small sample is always labelled as one.
 
 import { computeAll } from './indicators.js';
-import { findPatterns } from './predict.js';
+import { findPatterns, shownProbUp } from './predict.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -313,8 +313,9 @@ export function riskWarnings({ signal = null, forecast = null, backtest = null, 
   }
   if (signal?.ok && Math.abs(signal.score) >= 45 && forecast?.ok) {
     const leanUp = signal.score > 0;
-    const fcLeanUp = forecast.probUp >= 0.54;
-    const fcLeanDown = forecast.probUp <= 0.46;
+    const shown = shownProbUp(forecast.probUp, interval);
+    const fcLeanUp = shown >= 0.54;
+    const fcLeanDown = shown <= 0.46;
     if ((leanUp && fcLeanDown) || (!leanUp && fcLeanUp)) {
       out.push({ key: 'conflict', level: 'warn', text: 'The chart reading and the forecast lean opposite ways — a conflict is a reason to wait, not to pick a side.' });
     }

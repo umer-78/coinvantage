@@ -11,7 +11,7 @@
 // Nothing here executes anything.
 
 import { upRateFor } from './signals.js';
-import { accuracyFor } from './predict.js';
+import { accuracyFor, shownProbUp, directionReliable } from './predict.js';
 import { TESTED_TIMING } from './timing.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -62,7 +62,9 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
 
   // 2. Model ensemble, weighted by its own out-of-sample accuracy on this coin.
   if (forecast?.ok) {
-    const edge = (forecast.probUp - 0.5) * 2;
+    const shown = shownProbUp(forecast.probUp, interval);
+    const reliable = directionReliable(interval);
+    const edge = (shown - 0.5) * 2;
     // Accuracy only counts above what always naming the more common direction
     // would have scored on the same rows, not above 50%: 62% in a window that
     // rose 60% of the time is no skill. And where the published walk-forward
@@ -71,14 +73,17 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
     const floor = Math.max(0.5, Number.isFinite(forecast.ensemble?.baseline) ? forecast.ensemble.baseline : 0.5);
     const tested = accuracyFor(interval);
     const noTestedEdge = Boolean(tested && !tested.beatsBaseline);
-    const w = edgeWeight(forecast.ensemble?.accuracy, floor) * 1.4 * (noTestedEdge ? 0.25 : 1);
+    const w = reliable ? edgeWeight(forecast.ensemble?.accuracy, floor) * 1.4 * (noTestedEdge ? 0.25 : 1) : 0;
     parts.push({ key: 'forecast', value: clamp(edge * 2.5, -1, 1), weight: w });
     const accTxt = forecast.ensemble?.accuracy !== null && forecast.ensemble?.accuracy !== undefined
       ? `${(forecast.ensemble.accuracy * 100).toFixed(0)}% accurate on unseen data`
       : 'accuracy not measured';
-    reasons.push({
-      tone: forecast.probUp >= 0.54 ? 'good' : forecast.probUp <= 0.46 ? 'bad' : 'flat',
-      text: `AI forecast: ${(forecast.probUp * 100).toFixed(0)}% chance of rising (${accTxt})${noTestedEdge
+    reasons.push(!reliable ? {
+      tone: 'flat',
+      text: `AI forecast: no reliable direction on ${interval} charts (raw lean ${(forecast.probUp * 100).toFixed(0)}% up), so it does not vote.`,
+    } : {
+      tone: shown >= 0.54 ? 'good' : shown <= 0.46 ? 'bad' : 'flat',
+      text: `AI forecast: ${(shown * 100).toFixed(0)}% chance of rising (${accTxt})${noTestedEdge
         ? ` — on ${interval} charts it has not beaten the simple baseline in testing (${tested.accuracyPct}% vs ${tested.baselinePct}%), so it barely counts`
         : w < 0.25 ? ' — little measured edge, so it barely counts here' : ''}.`,
     });

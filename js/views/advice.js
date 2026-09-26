@@ -1,7 +1,7 @@
 // One reading per coin across the market, ranked by how much measured evidence
 // stands behind it. This was "What to buy" until the chart score it ranked on
 // was measured to point the wrong way; it reports now instead of recommending.
-import { markets, getCandles, isStable, INTERVAL_MS } from '../api/market.js';
+import { markets, getCandles, isStable, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { generateSignal } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
@@ -16,7 +16,7 @@ import { load } from '../store.js';
 export const title = 'Market scan';
 
 export async function render(el) {
-  const st = { interval: '4h', rows: [], run: 0, disposed: false, count: 60 };
+  const st = { interval: '4h', rows: [], run: 0, disposed: false, count: 60, skipped: 0 };
 
   el.innerHTML = `
     <div class="page-head">
@@ -87,7 +87,7 @@ export async function render(el) {
         <h3>How much to trust this</h3>
         <p class="fine">The chart score is <b>not</b> part of any verdict here. Across 244,000 bars the share of bars that rose falls as the score rises, so it is shown as a reading and given no vote — the same accuracy gate every other component passes through.</p>
         <p class="fine">Each verdict blends four readings, and each one is weighted by its own measured accuracy — a reading that has shown no edge barely moves the result. The forecast component scored <b>${TESTED_ACCURACY[st.interval] ?? TESTED_ACCURACY.all}%</b> on ${TESTED_ACCURACY.tests} out-of-sample tests across ${TESTED_ACCURACY.coins} coins, against a ${TESTED_ACCURACY.baseline[st.interval] ?? TESTED_ACCURACY.allBaseline}% baseline for simply naming the more common direction${(TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` — on ${esc(st.interval)} it did not beat that baseline either` : ''}. A BUY or AVOID only appears when a reading with a measured edge leans clearly; when the only lean comes from readings that barely count, the coin is marked "leans up" or "leans down" instead. Timing says when a move may peak, not which way it goes, so it is shown but never votes.</p>
-        <p class="fine">${esc(ADVICE_DISCLAIMER)} ${wait.length} of ${done.length} coins scanned came back as "no edge — wait", which is usually the honest answer.</p>
+        <p class="fine">${esc(ADVICE_DISCLAIMER)} ${wait.length} of ${done.length} coins scanned came back as "no edge — wait", which is usually the honest answer.${st.skipped ? ` ${st.skipped} more were skipped: they have no exchange candles on ${esc(st.interval)}, only CoinGecko's hourly line or demo data, which the forecast was never tested on.` : ''}</p>
       </div>`;
 
     $$('.advice-card', el).forEach((c) => c.addEventListener('click', (e) => {
@@ -106,6 +106,7 @@ export async function render(el) {
   const scan = async () => {
     const run = ++st.run;
     st.rows = [];
+    st.skipped = 0;
     draw();
     let list;
     try {
@@ -123,21 +124,24 @@ export async function render(el) {
       while (queue.length) {
         const coin = queue.shift();
         try {
-          const { candles } = await getCandles(coin, iv, 500);
+          // The coin page's 1,500 candles; CoinGecko and demo data are skipped and counted.
+          const res = await getCandles(coin, iv, 1500);
           if (run !== st.run || st.disposed) return;
-          const signal = generateSignal(candles, { interval: iv });
-          // Show the chart reading straight away; the forecast pass below only
-          // refines it, so the page is never a blank skeleton while it runs.
-          st.rows.push({ coin, signal, candles, advice: adviseCoin({ signal, forecast: null, timing: null, interval: iv }) });
-          draw();
-        } catch { /* skip coin */ }
+          if (!isTestedSource(res)) { st.skipped++; } else {
+            const signal = generateSignal(res.candles, { interval: iv });
+            // Show the chart reading straight away; the forecast pass below only
+            // refines it, so the page is never a blank skeleton while it runs.
+            st.rows.push({ coin, signal, candles: res.candles, advice: adviseCoin({ signal, forecast: null, timing: null, interval: iv }) });
+            draw();
+          }
+        } catch { st.skipped++; }
         done++; setProg();
       }
     };
     await Promise.all([worker(), worker(), worker(), worker()]);
     if (run !== st.run || st.disposed) return;
     if (!st.rows.length) {
-      $('#body', el).innerHTML = '<div class="card empty"><h3>No chart data came back</h3><p>None of the coins returned candles on this timeframe, so there is nothing to read. Press Rescan to try again.</p></div>';
+      $('#body', el).innerHTML = `<div class="card empty"><h3>No chart data came back</h3><p>None of the coins returned exchange candles on this timeframe${st.skipped ? ` (${st.skipped} skipped: CoinGecko or demo data only)` : ''}, so there is nothing to read. Press Rescan to try again.</p></div>`;
       $('#meter i', el).style.width = '100%';
       return;
     }
@@ -148,7 +152,7 @@ export async function render(el) {
       if (run !== st.run || st.disposed) return;
       let fc = null, tm = null;
       try {
-        fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], fast: true, intervalMs: INTERVAL_MS[iv] });
+        fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], intervalMs: INTERVAL_MS[iv] });
         tm = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
       } catch { /* the advice still works without it */ }
       row.advice = adviseCoin({ signal: row.signal, forecast: fc, timing: tm, interval: iv });

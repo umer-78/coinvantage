@@ -1,6 +1,6 @@
 // Gathers everything the assistant needs about a coin: live candles, signals on
 // several timeframes, the AI forecast, backtest, sentiment and the user's holdings.
-import { markets, findCoin, getCandles, getFearGreed, INTERVAL_MS } from '../api/market.js';
+import { markets, findCoin, getCandles, getFearGreed, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { generateSignal, confluence, backtest } from '../lib/signals.js';
 import { summarizeForecast } from '../lib/predict.js';
 import { runForecast, runHistory } from '../lib/compute.js';
@@ -79,15 +79,18 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
 
   const list = (await markets()).filter((c) => !isStable(c.symbol)).slice(0, count);
   const rows = [];
-  let done = 0;
+  let done = 0, skipped = 0;
   const queue = [...list];
   const worker = async () => {
     while (queue.length) {
       const coin = queue.shift();
       try {
-        const { candles } = await getCandles(coin, interval, 500);
-        rows.push({ coin, signal: generateSignal(candles, { interval }), candles });
-      } catch { /* skip */ }
+        // Same candles and model as the coin page; CoinGecko and demo data are
+        // skipped and counted, because the forecast was never tested on them.
+        const res = await getCandles(coin, interval, 1500);
+        if (isTestedSource(res)) rows.push({ coin, signal: generateSignal(res.candles, { interval }), candles: res.candles });
+        else skipped++;
+      } catch { skipped++; }
       onStep?.(`Scanning the market… ${++done}/${list.length}`);
     }
   };
@@ -103,7 +106,7 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
   for (const row of shortlist) {
     onStep?.(`Forecasting ${row.coin.symbol}…`);
     try {
-      const fc = await runForecast(row.candles, { horizon, fast: true, intervalMs: INTERVAL_MS[interval] });
+      const fc = await runForecast(row.candles, { horizon, intervalMs: INTERVAL_MS[interval] });
       row.forecast = fc;
       row.timing = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[interval] }) : null;
     } catch { /* advice still works from the signal alone */ }
@@ -112,6 +115,7 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
     row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing, interval: row.interval || interval });
     row.candles = null;
   }
+  rows.skipped = skipped;
   scanCache.set(key, { at: Date.now(), rows });
   return rows;
 }
@@ -140,6 +144,7 @@ export function marketContext(rows, interval) {
     interval,
     horizonText: horizonText(interval, DEFAULT_HORIZON[interval] || 12),
     scanned: total,
+    skipped: rows.skipped || 0,
     buys: buys.slice(0, 6).map(shape),
     avoid: avoid.slice(0, 4).map(shape),
     waitingCount: wait.length,
@@ -206,22 +211,27 @@ export async function compareCoins(symbols, { interval = '4h', onStep } = {}) {
     try {
       const coin = await findCoin(sym);
       if (!coin) continue;
-      const { candles } = await getCandles(coin, interval, 600);
+      const res = await getCandles(coin, interval, 1500);
+      const { candles } = res;
       const signal = generateSignal(candles, { interval });
       let forecast = null, timing = null;
-      try {
-        forecast = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, fast: true, intervalMs: INTERVAL_MS[interval] });
-        timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
-      } catch { /* the chart signal alone still ranks */ }
+      // No forecast on CoinGecko or demo candles: it was never tested on them.
+      if (isTestedSource(res)) {
+        try {
+          forecast = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, intervalMs: INTERVAL_MS[interval] });
+          timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
+        } catch { /* the chart signal alone still ranks */ }
+      }
       const advice = adviseCoin({ signal, forecast, timing, interval });
       const live = list.find((c) => c.symbol === coin.symbol);
-      const f = forecast?.ok ? summarizeForecast(forecast) : null;
+      const f = forecast?.ok ? summarizeForecast(forecast, interval) : null;
       rows.push({
         coin: coin.symbol, name: coin.name,
         verdict: advice.verdict, conviction: advice.conviction,
         signalText: signal.ok ? signal.text : null,
         score: signal.ok ? signal.score : null,
         probUpPct: f ? f.probUpPct : null,
+        forecastNote: isTestedSource(res) ? null : 'No forecast: only CoinGecko or demo candles for this coin, which the forecast was never tested on.',
         accuracyPct: f ? f.validatedAccuracyPct : null,
         change24h: live?.change24h ?? coin.change24h ?? null,
         buyBetween: advice.plan ? advice.plan.entryZone : null,
@@ -255,7 +265,7 @@ export function analystContext(a, portfolio) {
     mtf: mtfShort,
     confluence: a.confluence,
     backtest: a.backtest,
-    forecast: summarizeForecast(a.forecast),
+    forecast: summarizeForecast(a.forecast, a.interval),
     timing: summarizeTiming(a.timing),
     timingSentence: a.timing?.ok && a.timing.shaped
       ? timingText(a.timing, (bars) => horizonText(a.interval, bars), (v) => v.toLocaleString('en-US', { maximumFractionDigits: 2 }))
@@ -277,7 +287,7 @@ export function llmData(a) {
     chart: a.interval,
     signal: s.ok ? { verdict: s.text, score: s.score, plan: s.plan && { side: s.plan.side, entryZone: s.plan.entryZone, stopLoss: s.plan.stopLoss, takeProfits: s.plan.takeProfits }, supports: s.levels.supports, resistances: s.levels.resistances, rsi: s.indicators.rsi && +s.indicators.rsi.toFixed(1) } : null,
     timeframes: Object.fromEntries(Object.entries(a.mtf).map(([iv, x]) => [iv, x?.ok ? x.text : null])),
-    aiForecast: summarizeForecast(a.forecast) && { horizon: a.horizonText, ...summarizeForecast(a.forecast) },
+    aiForecast: summarizeForecast(a.forecast, a.interval) && { horizon: a.horizonText, ...summarizeForecast(a.forecast, a.interval) },
     moveTiming: summarizeTiming(a.timing),
     recentHeadlines: (a.news || []).slice(0, 5).map((n) => `${n.source}: ${n.title}`),
     multiYearHistory: a.history?.ok ? a.history.summary : null,

@@ -841,6 +841,11 @@ export const TESTED_ACCURACY = {
   // The 90% range (added 2026-09-26), measured on the same 1,440 tests.
   band90: { '1m': 90.0, '5m': 82.9, '15m': 82.5, '1h': 92.5, '4h': 87.5, '1d': 89.6 },
   bandsAll: { band50: 48.4, band80: 78.5, band90: 87.5, before: { band50: 45.1, band80: 71.7 } },
+  // How far the direction lean can be trusted: the logit shrink s that best
+  // calibrated probUp on these same 1,440 tests (shown = sigmoid(s·logit p)).
+  // 0 means the lean carried no information on that chart. Charts that were
+  // never tested (1s, 5s, 10s, 1w) are absent, and absent counts as 0.
+  directionTrust: { '1m': 0.90, '5m': 0.41, '15m': 0.38, '1h': 0, '4h': 0, '1d': 0 },
   // Timeframes where the model scored at or below the do-nothing baseline.
   noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
   beatsBaselineOverall: false,
@@ -862,14 +867,33 @@ export function accuracyFor(interval) {
   return { accuracyPct: acc, baselinePct: base, edgePts: +(acc - base).toFixed(1), beatsBaseline: acc > base };
 }
 
-// Compact version for prompts / scanner rows
-export function summarizeForecast(f) {
+/**
+ * The chance of a rise to SHOW on a chart: the raw probUp shrunk toward 50% by
+ * that timeframe's measured trust. The raw value stays on the forecast for the
+ * learning ledger, which grades what the models actually said.
+ */
+export function shownProbUp(p, interval) {
+  const s = TESTED_ACCURACY.directionTrust[interval] ?? 0;
+  const q = Math.min(1 - 1e-9, Math.max(1e-9, p));
+  return 1 / (1 + Math.exp(-s * Math.log(q / (1 - q))));
+}
+
+/** False where the release test found the direction lean carries no information. */
+export const directionReliable = (interval) => (TESTED_ACCURACY.directionTrust[interval] ?? 0) > 0;
+
+// Compact version for prompts / scanner rows. `interval` is the chart the
+// forecast was made on; the probability is the shown one, not the raw one.
+export function summarizeForecast(f, interval = null) {
   if (!f?.ok) return null;
+  const shown = shownProbUp(f.probUp, interval);
+  const reliable = directionReliable(interval);
   return {
     horizonBars: f.horizon,
-    probUpPct: +(f.probUp * 100).toFixed(1),
-    direction: f.direction,
-    confidence: f.confidence,
+    probUpPct: +(shown * 100).toFixed(1),
+    rawProbUpPct: +(f.probUp * 100).toFixed(1),
+    directionReliable: reliable,
+    direction: shown >= 0.54 ? 'UP' : shown <= 0.46 ? 'DOWN' : 'SIDEWAYS',
+    confidence: reliable ? f.confidence : 'Low',
     expectedMovePct: +f.expectedReturnPct.toFixed(2),
     targetPrice: +f.targetPrice.toPrecision(6),
     likelyRange: [+f.range.p25.toPrecision(6), +f.range.p75.toPrecision(6)],

@@ -403,7 +403,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20260926-170339";
+export const BUILD = "20260926-132416";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

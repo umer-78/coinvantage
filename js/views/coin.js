@@ -5,7 +5,7 @@ import { generateSignal, confluence, geometryFor, upRateFor } from '../lib/signa
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
 import { computeAll } from '../lib/indicators.js';
-import { TESTED_ACCURACY, summarizeForecast } from '../lib/predict.js';
+import { TESTED_ACCURACY, summarizeForecast, shownProbUp, directionReliable } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
@@ -529,7 +529,7 @@ export async function render(el, [symParam]) {
   function summaryHtml(sig) {
     const sum = tradeSummary({
       signal: { ...sig, coinSymbol: coin.symbol },
-      forecast: st.forecast ? summarizeForecast(st.forecast) : null,
+      forecast: st.forecast ? summarizeForecast(st.forecast, st.interval) : null,
       timing: st.timing || null,
       interval: st.interval,
       horizonText: st.forecast ? horizonText(st.interval, st.forecast.horizon) : null,
@@ -609,15 +609,40 @@ export async function render(el, [symParam]) {
     if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
   }
 
+  // Measured share of real outcomes that landed inside a forecast range: this
+  // chart's own test where it was run, and the whole release test beside it.
+  function coverage(band) {
+    const own = TESTED_ACCURACY[band]?.[st.interval];
+    const all = `${TESTED_ACCURACY.bandsAll[band]}% across all ${TESTED_ACCURACY.tests.toLocaleString()} tests`;
+    return typeof own === 'number' ? `held ${own}% of the time on ${esc(st.interval)} · ${all}` : `held ${all} (${esc(st.interval)} itself was not tested)`;
+  }
+
+  // The lean in plain words where it is not trusted: tested and empty, or never tested.
+  function rawLeanNote(fc) {
+    const why = st.interval in TESTED_ACCURACY.directionTrust
+      ? `in the release test its leans on ${esc(st.interval)} carried no information`
+      : `it was never tested on ${esc(st.interval)}`;
+    return `Raw model lean: ${(fc.probUp * 100).toFixed(1)}% up. Not shown as a chance, because ${why}.`;
+  }
+
   function ring(prob) {
     const r = 50, c = 2 * Math.PI * r, up = prob >= 0.5;
+    if (prob === null) {
+      return `<div class="prob-ring"><svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="10"/></svg>
+      <div class="c"><div><b class="flat">—</b><small>no reliable direction</small></div></div></div>`;
+    }
     return `<div class="prob-ring"><svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="10"/>
       <circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--${up ? 'up' : 'down'})" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(up ? prob : 1 - prob) * c} ${c}"/></svg>
       <div class="c"><div><b class="${up ? 'up' : 'down'}">${Math.round((up ? prob : 1 - prob) * 100)}%</b><small>chance ${up ? 'UP' : 'DOWN'}</small></div></div></div>`;
   }
 
   function drawForecastCard(fc) {
-    const dirTxt = fc.direction === 'UP' ? '<b class="up">Likely higher</b>' : fc.direction === 'DOWN' ? '<b class="down">Likely lower</b>' : '<b class="flat">Sideways / uncertain</b>';
+    // What is shown is the probability shrunk by its measured trust on this
+    // chart; the raw one stays in the ledger, which grades the models.
+    const shown = shownProbUp(fc.probUp, st.interval);
+    const reliable = directionReliable(st.interval);
+    const dirTxt = !reliable ? '<b class="flat">No reliable direction on this chart</b>'
+      : shown >= 0.54 ? '<b class="up">Likely higher</b>' : shown <= 0.46 ? '<b class="down">Likely lower</b>' : '<b class="flat">Sideways / uncertain</b>';
     const e = fc.ensemble;
     const ledger = st.ledger || loadLedger();
     const ls = learningStatus(ledger);
@@ -630,8 +655,8 @@ export async function render(el, [symParam]) {
     // The release test found no edge on this timeframe, so this chart cannot be
     // labelled high-confidence however strongly the models lean right now.
     const tfNoEdge = (TESTED_ACCURACY.noEdge || []).includes(st.interval) || !(st.interval in (TESTED_ACCURACY.baseline || {}));
-    const conf = fc.confidence === 'High' && tfNoEdge ? 'Moderate' : fc.confidence;
-    const confWhy = (tfNoEdge ? `Capped: the release test found no edge on ${st.interval}. ` : '') + (e.provenEdge ? 'Recent unseen cases beat the baseline by more than luck would explain.' : 'Recent unseen cases have not beaten the baseline by more than luck would explain.');
+    const conf = !reliable ? 'Low' : fc.confidence === 'High' && tfNoEdge ? 'Moderate' : fc.confidence;
+    const confWhy = (!reliable ? `No reliable direction on ${st.interval} in the release test. ` : tfNoEdge ? `Capped: the release test found no edge on ${st.interval}. ` : '') + (e.provenEdge ? 'Recent unseen cases beat the baseline by more than luck would explain.' : 'Recent unseen cases have not beaten the baseline by more than luck would explain.');
     const winHtml = (w) => {
       const r = ls.windows[w];
       if (r.pct === null) return '<span class="muted">—</span>';
@@ -640,12 +665,16 @@ export async function render(el, [symParam]) {
     };
     $('#fcCard', el).innerHTML = `
       <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${conf === 'High' ? 'up' : conf === 'Moderate' ? 'warn' : ''}" title="${esc(confWhy)}">${conf} confidence</span></div>
-      <div class="prob">${ring(fc.probUp)}
+      <dl class="kv">
+        <dt>80% range · next ${horizonText(st.interval, fc.horizon)}</dt><dd><b>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</b> <span class="fine">${coverage('band80')}</span></dd>
+        ${fc.range.p05 ? `<dt>90% range</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="fine">${coverage('band90')}</span></dd>` : ''}
+      </dl>
+      <div class="prob mt">${ring(reliable ? shown : null)}
         <div class="stack" style="gap:4px">
           <div>Next <b>${horizonText(st.interval, fc.horizon)}</b>: ${dirTxt}</div>
           <div class="fine">Target ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)})</div>
-          <div class="fine">Likely range ${usd(fc.range.p25)} – ${usd(fc.range.p75)}</div>
           <div class="fine">Tested accuracy: <b>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'}</b> on ${e.samples} unseen cases</div>
+          ${reliable ? '' : `<div class="fine">${rawLeanNote(fc)}</div>`}
         </div>
       </div>
       <div class="learning-box mt">
@@ -665,7 +694,7 @@ export async function render(el, [symParam]) {
         <dl class="kv" style="margin-top:8px">
           ${ens3.models.map((m) => `<dt>${esc(m.name)}</dt><dd><span class="${m.probUp >= 0.5 ? 'up' : 'down'}">${(m.probUp * 100).toFixed(1)}% up</span> <span class="fine">· weight ${m.weightPct}%</span></dd>`).join('')}
         </dl>
-        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b> (${ens3.direction}).${(ens3.probUp >= 0.5) !== (fc.probUp >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(fc.probUp * 100).toFixed(1)}% up), which is what the page goes by.` : ''} Weights adapt to your local rolling accuracy (source: ${esc(ens3.weights.source)}). Experimental cross-check — not part of the published walk-forward accuracy. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
+        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b> (${ens3.direction}).${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} Weights adapt to your local rolling accuracy (source: ${esc(ens3.weights.source)}). Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
       </div>` : ''}
       <dl class="kv mt">
         <dt>Brier score (lower is better)</dt><dd>${brier !== null ? brier.toFixed(3) : '—'}</dd>
@@ -816,6 +845,7 @@ export async function render(el, [symParam]) {
       if (!fc) { body.innerHTML = `<div class="row"><span class="spinner"></span> Training models…</div>`; return; }
       if (!fc.ok) { body.innerHTML = `<p class="muted">${esc(fc.reason)}</p>`; return; }
       const e = fc.ensemble;
+      const shown = shownProbUp(fc.probUp, st.interval), reliable = directionReliable(st.interval);
       body.innerHTML = `
         <div class="grid fc-grid">
           <div>
@@ -825,13 +855,15 @@ export async function render(el, [symParam]) {
           </div>
           <div class="stack">
             <div class="grid g3">
-              <div class="stat"><span class="k">Chance of rise</span><span class="v ${fc.probUp >= 0.5 ? 'up' : 'down'}">${(fc.probUp * 100).toFixed(1)}%</span></div>
+              <div class="stat"><span class="k">Chance of rise</span>${reliable
+                ? `<span class="v ${shown >= 0.5 ? 'up' : 'down'}">${(shown * 100).toFixed(1)}%</span>`
+                : `<span class="v flat">—</span><span class="s fine">No reliable direction on this chart. ${rawLeanNote(fc)}</span>`}</div>
               <div class="stat"><span class="k">Expected move</span><span class="v ${fc.expectedReturnPct >= 0 ? 'up' : 'down'}">${pct(fc.expectedReturnPct)}</span></div>
               <div class="stat"><span class="k">Target</span><span class="v">${usd(fc.targetPrice)}</span></div>
             </div>
             <div class="kv">
-              <dt>80% range at horizon</dt><dd>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</dd>
-              ${fc.range.p05 ? `<dt>90% range at horizon</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="muted">(in testing the price ended inside this range ${TESTED_ACCURACY.band90?.[st.interval] ?? TESTED_ACCURACY.bandsAll.band90}% of the time)</span></dd>` : ''}
+              <dt>80% range at horizon</dt><dd>${usd(fc.range.p10)} – ${usd(fc.range.p90)} <span class="muted">(${coverage('band80')})</span></dd>
+              ${fc.range.p05 ? `<dt>90% range at horizon</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="muted">(${coverage('band90')})</span></dd>` : ''}
               ${st.learned ? `<dt>AI learning <a class="fine" href="#/learn">(how it learns)</a></dt><dd>learned blend ${(st.learned.blendProb * 100).toFixed(1)}% up · <span class="muted">${(() => {
                 const earned = Object.values(st.learned.weights || {}).filter(Boolean).length;
                 const speaking = Object.entries(st.learned.votes || {}).filter(([k, v]) => v && st.learned.weights?.[k]).length;

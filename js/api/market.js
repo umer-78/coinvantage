@@ -370,6 +370,13 @@ async function geckoCandles(coin, interval, total) {
   return { candles, source: 'coingecko', pair: null, lowRes: true, grain, closeOnly: want === step };
 }
 
+/**
+ * Candles the forecast was tested on: real exchange OHLCV. CoinGecko's hourly
+ * line (lowRes) and demo candles are not, so the scans skip those coins and
+ * say how many they skipped.
+ */
+export const isTestedSource = (r) => Boolean(r) && !r.lowRes && r.source !== 'demo';
+
 export async function getCandles(coin, interval = '1h', total = 500) {
   const pair = typeof coin === 'string' ? coin : coin?.binance;
 
