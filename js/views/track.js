@@ -3,6 +3,7 @@
 import { $, $$, bindSeg, skeleton, icon } from '../ui.js';
 import { esc, pct, money, dateTime } from '../format.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
+import { liveDirectionCheck, directionTrustFor, LIVE_PROOF_NATS } from '../lib/selfimprove.js';
 import { getTrackRecord, backendEnabled } from '../api/backend.js';
 import { CONFIG } from '../config.js';
 import { clockOffsetMs } from '../api/clock.js';
@@ -131,6 +132,7 @@ export async function render(el) {
     }
     const symRows = [...bySym.entries()].filter(([, e]) => e.n >= 5).sort((a, b) => rate(b[1].hit, b[1].n) - rate(a[1].hit, a[1].n));
 
+    const checks = [...new Set(done.map((r) => r.interval))].sort().map((iv) => liveDirectionCheck(done, iv)).filter((c) => c.n);
     const acc = rate(hit, fc.length);
     const beatsBaseline = acc !== null && baseline !== null && acc > baseline;
     const tested = TESTED_ACCURACY[interval === 'all' ? 'all' : interval];
@@ -154,6 +156,20 @@ export async function render(el) {
         <p class="fine">One detail that makes the plan column harsher than the plan itself: the scorer walks each candle and records a stop as a loss even when the first target was reached earlier, while the plan's own exit rules say to take partial profit at target 1 and move the stop to break-even. So the average result above is more pessimistic than following the plan would have been. It is left that way deliberately — the numbers already scored under this rule stay comparable, and erring against ourselves is the safer error.</p>
         <p class="fine">The offline back-test, run over ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} coins before any of this was live, scored ${tested ? `${tested}%` : '—'} on this timeframe. Where the live number disagrees with it, the live number is the one that counts.</p>`}
       </div>
+
+      ${checks.length ? `<div class="card mt">
+        <div class="card-h"><h3>Is the forecast's direction worth anything live?</h3><span class="fine">the fit that sets the coin page's trust, run on these graded rows</span></div>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Timeframe</th><th>Graded</th><th>Separate candles</th><th>Best-fitting trust</th><th>Evidence (${LIVE_PROOF_NATS} needed)</th><th>Hit rate · baseline</th><th>Trust used here</th></tr></thead><tbody>
+        ${checks.map((c) => `<tr style="cursor:default">
+          <td class="l"><b>${esc(c.interval)}</b></td><td>${c.n}</td><td>${c.candles}</td><td>${c.s.toFixed(2)}</td>
+          <td class="${c.proven ? 'up' : ''}">${c.evidence.toFixed(2)}</td>
+          <td class="${c.hit > c.baseline ? 'up' : 'down'}">${(c.hit * 100).toFixed(1)}% · ${(c.baseline * 100).toFixed(1)}%</td>
+          <td>${directionTrustFor(c.interval).trust.toFixed(2)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="fine mt">Trust is how far the forecast's chance of rise is kept from 50%: at 0 it is shown as 50% and the coin page says there is no reliable direction; at 1 it is shown exactly as the model gave it. The best-fitting trust is the one that would have predicted these outcomes best. Coins move together, so forecasts made on the same candle count as one observation, and the evidence is how much better that trust fits than no direction at all, per candle. ${checks.some((c) => c.proven)
+          ? 'Where it passes the bar and beats the baseline, the live record supports showing a direction there.'
+          : `No timeframe here clears ${LIVE_PROOF_NATS} while beating the baseline, so the live record agrees with keeping the direction off where the release test found none.`}</p>
+      </div>` : ''}
 
       ${actionRows.length ? `<div class="card mt">
         <div class="card-h"><h3>How each kind of call turned out</h3><span class="fine">the label the site showed, against what price actually did</span></div>
@@ -181,7 +197,7 @@ export async function render(el) {
             <td class="l"><b>${esc(r.symbol)}</b></td><td class="fine">${esc(r.interval)}</td>
             <td class="l"><span class="chip ${toneOf(r.action)}">${esc(readable(r.action))}</span></td>
             <td>${money(r.price)}</td>
-            <td class="${r.prob_up >= 0.54 ? 'up' : r.prob_up <= 0.46 ? 'down' : ''}">${r.prob_up === null ? '—' : `${(r.prob_up * 100).toFixed(0)}%`}</td>
+            <td class="${!(TESTED_ACCURACY.directionTrust[r.interval] > 0) ? 'muted' : r.prob_up >= 0.54 ? 'up' : r.prob_up <= 0.46 ? 'down' : ''}" ${TESTED_ACCURACY.directionTrust[r.interval] > 0 ? '' : `title="The model's raw lean. On ${esc(r.interval)} the coin page shows no direction, because it did not hold up in testing."`}>${r.prob_up === null ? '—' : `${(r.prob_up * 100).toFixed(0)}%`}</td>
             <td>${r.resolved ? money(r.outcome_price) : '<span class="fine muted">open</span>'}</td>
             <td>${r.forecast_correct === null ? '—' : r.forecast_correct ? '<span class="up">✓ right</span>' : '<span class="down">✕ wrong</span>'}</td>
             <td class="hide-m">${r.plan_result && r.plan_result !== 'none' ? `<span class="${PLAN_WIN.has(r.plan_result) ? 'up' : PLAN_LOSS.has(r.plan_result) ? 'down' : 'muted'}">${esc(PLAN_WORDS[r.plan_result] || r.plan_result)}${r.plan_return_pct === null ? '' : ` ${pct(+r.plan_return_pct)}`}</span>` : '<span class="fine muted">—</span>'}</td>

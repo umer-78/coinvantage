@@ -112,18 +112,56 @@ export function learnedTrust(ledger, interval) {
   const graded = (ledger?.entries ?? []).filter((e) => e.resolved && e.interval === interval
     && Number.isFinite(e.probUp) && typeof e.actualUp === 'boolean');
   if (graded.length < MIN_GRADED_FOR_TRUST) return { trust: prior, prior, local: null, graded: graded.length };
-  let local = 0, best = -Infinity;
-  for (let i = 0; i <= 20; i++) {
-    const s = i / 20;
-    let ll = 0;
-    for (const e of graded) {
-      const q = clamp(sigmoid(s * logit(clamp(e.probUp, 1e-6, 1 - 1e-6))), 1e-9, 1 - 1e-9);
-      ll += Math.log(e.actualUp ? q : 1 - q);
-    }
-    if (ll > best + 1e-9) { best = ll; local = s; }
-  }
+  const local = fitShrink(graded.map((e) => ({ p: e.probUp, up: e.actualUp }))).s;
   const trust = prior > 0 ? (prior * priorN + local * graded.length) / (priorN + graded.length) : 0;
   return { trust, prior, local, graded: graded.length };
+}
+
+/**
+ * The trust s on a 0..1 grid that best predicts graded outcomes {p, up}, and
+ * how much better it fits than s = 0, i.e. than no direction at all (log
+ * likelihood, in nats).
+ */
+export function fitShrink(graded) {
+  let s = 0, best = -Infinity, none = 0;
+  for (let i = 0; i <= 20; i++) {
+    const k = i / 20;
+    let ll = 0;
+    for (const g of graded) {
+      const q = clamp(sigmoid(k * logit(clamp(g.p, 1e-6, 1 - 1e-6))), 1e-9, 1 - 1e-9);
+      ll += Math.log(g.up ? q : 1 - q);
+    }
+    if (i === 0) none = ll;
+    if (ll > best + 1e-9) { best = ll; s = k; }
+  }
+  return { s, gain: best - none };
+}
+
+// Coins move together, so the forecasts made on one candle are closer to one
+// observation than to twelve. The live check counts candles, not rows, and a
+// direction would need to fit this much better than none on that count (about
+// a 1-in-100 chance of luck) before it could be called proven.
+export const LIVE_PROOF_NATS = 3.3;
+
+/**
+ * What the server's graded track record (signal_log rows) says about one
+ * timeframe's direction: the trust that fits it best, the evidence for it per
+ * independent candle, and the hit rate against always calling the more common
+ * outcome.
+ */
+export function liveDirectionCheck(rows, interval) {
+  const graded = (rows || []).filter((r) => r.interval === interval && r.resolved && r.prob_up !== null
+    && [r.prob_up, r.price, r.outcome_price].every((x) => Number.isFinite(+x)))
+    .map((r) => ({ p: +r.prob_up, up: +r.outcome_price > +r.price, t: r.candle_time }));
+  const n = graded.length;
+  if (!n) return { interval, n: 0 };
+  const candles = new Set(graded.map((g) => g.t)).size;
+  const { s, gain } = fitShrink(graded);
+  const hit = graded.filter((g) => (g.p >= 0.5) === g.up).length / n;
+  const rose = graded.filter((g) => g.up).length / n;
+  const baseline = Math.max(rose, 1 - rose);
+  const evidence = (gain * candles) / n;
+  return { interval, n, candles, s, gain, evidence, hit, baseline, proven: s > 0 && evidence >= LIVE_PROOF_NATS && hit > baseline };
 }
 
 /** The trust every page uses for a timeframe: the release test, adjusted by this device's record. */

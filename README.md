@@ -32,7 +32,7 @@ computers alike.
 | **Tools** | Coin ↔ currency converter (PKR and 15 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
 | **Price alerts** | Browser notifications while the site is open, plus server-side alerts by e-mail and Telegram while it is closed |
-| **Track record** | Public page scoring every signal the server logged *before* the outcome was known |
+| **Track record** | Public page scoring every signal the server logged *before* the outcome was known, against the hit rate of always calling the more common outcome. A live check fits the same trust the coin page uses to the graded rows, counting coins on one candle as one observation, and says whether the live record supports showing a direction on each timeframe |
 | **News** | Headlines from 5 crypto outlets, tagged by coin, refreshed every 20 minutes |
 | **AI Assistant** | Chat about any coin. Answers are grounded in live data, signals, backtest, the forecast and the multi-year history study |
 | **Accounts** | Optional sign-in syncs watchlist, holdings, wallet addresses and settings across devices |

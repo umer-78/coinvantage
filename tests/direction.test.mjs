@@ -113,7 +113,7 @@ test('candles that stopped days ago are not passed off as live', async () => {
 });
 
 // ------------------------------------------------ trust learned on the device
-import { learnedTrust, directionTrustFor, MIN_GRADED_FOR_TRUST } from '../js/lib/selfimprove.js';
+import { learnedTrust, directionTrustFor, MIN_GRADED_FOR_TRUST, liveDirectionCheck, LIVE_PROOF_NATS } from '../js/lib/selfimprove.js';
 
 // Graded forecasts where the model leaned `p` up and the price rose when `rose(i)` says so.
 const graded = (interval, n, p, rose) => ({
@@ -150,4 +150,41 @@ test('the pages pass the learned trust through to what they show', () => {
   const fc = forecast(demoCandles('bitcoin', '4h', 600), { horizon: 6, fast: true });
   const trust = learnedTrust(graded('15m', 120, 0.7, (i) => i % 2 === 1), '15m').trust;
   assert.equal(summarizeForecast(fc, '15m', trust).probUpPct, +(shownProbUp(fc.probUp, '15m', trust) * 100).toFixed(1));
+});
+
+// ------------------------------------------------ the server's live record
+function liveRows(outcome) {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const rows = [];
+  for (let c = 0; c < 400; c++) {
+    const t = new Date(Date.UTC(2026, 0, 1) + c * 144e5).toISOString();
+    const p = 0.2 + 0.6 * rnd();
+    const up = outcome(p, c, rnd);
+    // three coins on the same candle, moving together
+    for (const symbol of ['BTC', 'ETH', 'SOL']) rows.push({ symbol, interval: '4h', resolved: true, prob_up: p, price: 100, outcome_price: up ? 101 : 99, candle_time: t });
+  }
+  rows.push({ symbol: 'BTC', interval: '4h', resolved: false, prob_up: 0.9, price: 100, outcome_price: null, candle_time: 'open' });
+  return rows;
+}
+
+test('the live check counts candles, not coins, and calls a real edge proven', () => {
+  const live = liveDirectionCheck(liveRows((p, c, rnd) => rnd() < p), '4h');
+  assert.equal(live.n, 1200, 'open rows are not graded');
+  assert.equal(live.candles, 400);
+  assert.ok(live.s >= 0.8, `outcomes drawn from the forecast fit a trust near 1 (got ${live.s})`);
+  assert.ok(Math.abs(live.evidence - live.gain / 3) < 1e-9, 'three coins on one candle count once');
+  assert.ok(live.hit > live.baseline);
+  assert.equal(live.proven, true);
+});
+
+test('the live check does not call noise or a trending market proven', () => {
+  const noise = liveDirectionCheck(liveRows((p, c) => c % 2 === 0), '4h');
+  assert.ok(noise.evidence < LIVE_PROOF_NATS, `outcomes that ignore the forecast (evidence ${noise.evidence})`);
+  assert.equal(noise.proven, false);
+  // everything rose: saying "up" every time wins, and a lean that is sometimes down cannot beat it
+  const trend = liveDirectionCheck(liveRows(() => true), '4h');
+  assert.equal(trend.baseline, 1);
+  assert.equal(trend.proven, false);
+  assert.deepEqual(liveDirectionCheck([], '1d'), { interval: '1d', n: 0 });
 });
