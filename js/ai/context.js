@@ -3,6 +3,7 @@
 import { markets, findCoin, getCandles, getFearGreed, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { generateSignal, confluence, backtest } from '../lib/signals.js';
 import { summarizeForecast } from '../lib/predict.js';
+import { directionTrustFor } from '../lib/selfimprove.js';
 import { runForecast, runHistory } from '../lib/compute.js';
 import { timingOutlook, summarizeTiming, timingText } from '../lib/timing.js';
 import { adviseCoin, rankAdvice } from '../lib/advice.js';
@@ -112,7 +113,7 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
     } catch { /* advice still works from the signal alone */ }
   }
   for (const row of rows) {
-    row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing, interval: row.interval || interval });
+    row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing, interval: row.interval || interval, trust: directionTrustFor(row.interval || interval).trust });
     row.candles = null;
   }
   rows.skipped = skipped;
@@ -222,9 +223,10 @@ export async function compareCoins(symbols, { interval = '4h', onStep } = {}) {
           timing = forecast?.ok ? timingOutlook(forecast, { intervalMs: INTERVAL_MS[interval] }) : null;
         } catch { /* the chart signal alone still ranks */ }
       }
-      const advice = adviseCoin({ signal, forecast, timing, interval });
+      const trust = directionTrustFor(interval).trust;
+      const advice = adviseCoin({ signal, forecast, timing, interval, trust });
       const live = list.find((c) => c.symbol === coin.symbol);
-      const f = forecast?.ok ? summarizeForecast(forecast, interval) : null;
+      const f = forecast?.ok ? summarizeForecast(forecast, interval, trust) : null;
       rows.push({
         coin: coin.symbol, name: coin.name,
         verdict: advice.verdict, conviction: advice.conviction,
@@ -265,7 +267,7 @@ export function analystContext(a, portfolio) {
     mtf: mtfShort,
     confluence: a.confluence,
     backtest: a.backtest,
-    forecast: summarizeForecast(a.forecast, a.interval),
+    forecast: summarizeForecast(a.forecast, a.interval, directionTrustFor(a.interval).trust),
     timing: summarizeTiming(a.timing),
     timingSentence: a.timing?.ok && a.timing.shaped
       ? timingText(a.timing, (bars) => horizonText(a.interval, bars), (v) => v.toLocaleString('en-US', { maximumFractionDigits: 2 }))
@@ -287,7 +289,7 @@ export function llmData(a) {
     chart: a.interval,
     signal: s.ok ? { verdict: s.text, score: s.score, plan: s.plan && { side: s.plan.side, entryZone: s.plan.entryZone, stopLoss: s.plan.stopLoss, takeProfits: s.plan.takeProfits }, supports: s.levels.supports, resistances: s.levels.resistances, rsi: s.indicators.rsi && +s.indicators.rsi.toFixed(1) } : null,
     timeframes: Object.fromEntries(Object.entries(a.mtf).map(([iv, x]) => [iv, x?.ok ? x.text : null])),
-    aiForecast: summarizeForecast(a.forecast, a.interval) && { horizon: a.horizonText, ...summarizeForecast(a.forecast, a.interval) },
+    aiForecast: summarizeForecast(a.forecast, a.interval) && { horizon: a.horizonText, ...summarizeForecast(a.forecast, a.interval, directionTrustFor(a.interval).trust) },
     moveTiming: summarizeTiming(a.timing),
     recentHeadlines: (a.news || []).slice(0, 5).map((n) => `${n.source}: ${n.title}`),
     multiYearHistory: a.history?.ok ? a.history.summary : null,

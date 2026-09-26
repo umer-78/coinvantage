@@ -9,7 +9,7 @@
 // never invented, and a small sample is always labelled as one.
 
 import { computeAll } from './indicators.js';
-import { findPatterns, shownProbUp } from './predict.js';
+import { findPatterns, shownProbUp, TESTED_ACCURACY } from './predict.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -88,6 +88,47 @@ export function resolveDueLedger(ledger, candles, { symbol = null, interval = nu
     };
   });
   return changed ? { ...ledger, entries, updatedAt: Date.now() } : ledger;
+}
+
+// ---------------------------------------------------------------- direction trust
+const logit = (p) => Math.log(p / (1 - p));
+const sigmoid = (z) => 1 / (1 + Math.exp(-z));
+
+/** Graded forecasts needed before this device's record moves the trust at all. */
+export const MIN_GRADED_FOR_TRUST = 30;
+
+/**
+ * How far the direction lean on a timeframe can be trusted, re-measured on this
+ * device's own graded forecasts. The local value is the shrink s (0 to 1) that
+ * best explains the outcomes seen, sigmoid(s * logit p), found by maximum
+ * likelihood on a grid; ties go to the smaller s. It is blended with the
+ * release test, which counts as its 240 forecasts, so a handful of lucky calls
+ * cannot move it far. A timeframe the release test found no direction on stays
+ * at 0: one device's sample does not overrule 240 forecasts on 12 coins.
+ */
+export function learnedTrust(ledger, interval) {
+  const prior = TESTED_ACCURACY.directionTrust[interval] ?? 0;
+  const priorN = TESTED_ACCURACY.testsPerInterval;
+  const graded = (ledger?.entries ?? []).filter((e) => e.resolved && e.interval === interval
+    && Number.isFinite(e.probUp) && typeof e.actualUp === 'boolean');
+  if (graded.length < MIN_GRADED_FOR_TRUST) return { trust: prior, prior, local: null, graded: graded.length };
+  let local = 0, best = -Infinity;
+  for (let i = 0; i <= 20; i++) {
+    const s = i / 20;
+    let ll = 0;
+    for (const e of graded) {
+      const q = clamp(sigmoid(s * logit(clamp(e.probUp, 1e-6, 1 - 1e-6))), 1e-9, 1 - 1e-9);
+      ll += Math.log(e.actualUp ? q : 1 - q);
+    }
+    if (ll > best + 1e-9) { best = ll; local = s; }
+  }
+  const trust = prior > 0 ? (prior * priorN + local * graded.length) / (priorN + graded.length) : 0;
+  return { trust, prior, local, graded: graded.length };
+}
+
+/** The trust every page uses for a timeframe: the release test, adjusted by this device's record. */
+export function directionTrustFor(interval, ledger = loadLedger()) {
+  return learnedTrust(ledger, interval);
 }
 
 // ---------------------------------------------------------------- accuracy
@@ -283,7 +324,7 @@ export function anomalyFlags(candles) {
  * Plain-language risk warnings assembled from what is already on the page.
  * Every line is tied to a number the reader can see; nothing is invented.
  */
-export function riskWarnings({ signal = null, forecast = null, backtest = null, anomalies = [], interval = null, noEdgeTimeframe = false, noEdgeText = null } = {}) {
+export function riskWarnings({ signal = null, forecast = null, backtest = null, anomalies = [], interval = null, noEdgeTimeframe = false, noEdgeText = null, trust = undefined } = {}) {
   const out = [];
   for (const a of anomalies) out.push({ key: `anomaly:${a.key}`, level: a.level || 'warn', text: a.text });
 
@@ -313,7 +354,7 @@ export function riskWarnings({ signal = null, forecast = null, backtest = null, 
   }
   if (signal?.ok && Math.abs(signal.score) >= 45 && forecast?.ok) {
     const leanUp = signal.score > 0;
-    const shown = shownProbUp(forecast.probUp, interval);
+    const shown = shownProbUp(forecast.probUp, interval, trust);
     const fcLeanUp = shown >= 0.54;
     const fcLeanDown = shown <= 0.46;
     if ((leanUp && fcLeanDown) || (!leanUp && fcLeanUp)) {

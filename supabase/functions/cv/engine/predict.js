@@ -870,23 +870,23 @@ export function accuracyFor(interval) {
 /**
  * The chance of a rise to SHOW on a chart: the raw probUp shrunk toward 50% by
  * that timeframe's measured trust. The raw value stays on the forecast for the
- * learning ledger, which grades what the models actually said.
+ * learning ledger, which grades what the models actually said. `s` defaults to
+ * the release test; the app passes the device-adjusted value (selfimprove.js).
  */
-export function shownProbUp(p, interval) {
-  const s = TESTED_ACCURACY.directionTrust[interval] ?? 0;
+export function shownProbUp(p, interval, s = TESTED_ACCURACY.directionTrust[interval] ?? 0) {
   const q = Math.min(1 - 1e-9, Math.max(1e-9, p));
   return 1 / (1 + Math.exp(-s * Math.log(q / (1 - q))));
 }
 
 /** False where the release test found the direction lean carries no information. */
-export const directionReliable = (interval) => (TESTED_ACCURACY.directionTrust[interval] ?? 0) > 0;
+export const directionReliable = (interval, s = TESTED_ACCURACY.directionTrust[interval] ?? 0) => s > 0;
 
 // Compact version for prompts / scanner rows. `interval` is the chart the
 // forecast was made on; the probability is the shown one, not the raw one.
-export function summarizeForecast(f, interval = null) {
+export function summarizeForecast(f, interval = null, trust = TESTED_ACCURACY.directionTrust[interval] ?? 0) {
   if (!f?.ok) return null;
-  const shown = shownProbUp(f.probUp, interval);
-  const reliable = directionReliable(interval);
+  const shown = shownProbUp(f.probUp, interval, trust);
+  const reliable = directionReliable(interval, trust);
   return {
     horizonBars: f.horizon,
     probUpPct: +(shown * 100).toFixed(1),
