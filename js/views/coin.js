@@ -1,6 +1,7 @@
 import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
+import { streamCandles } from '../api/exstream.js';
 import { generateSignal, confluence, geometryFor, upRateFor } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
@@ -391,19 +392,41 @@ export async function render(el, [symParam]) {
         });
       }
       if (r.venue) {
-        // Other exchanges have no stream here, so poll the newest candles.
-        const timer = setInterval(async () => {
-          if (st.disposed || iv !== st.interval) return;
-          const fresh = await exchangeCandles(coin, iv, 3, r.source).catch(() => null);
-          if (!fresh || st.disposed || iv !== st.interval) return;
+        // Gate.io, HTX and OKX push candles over WebSocket. A poll stays as the
+        // fallback and only fetches once nothing has streamed for 30 s.
+        const step = INTERVAL_MS[iv];
+        let streamedAt = 0, filling = null;
+        // Fetch whatever the chart lacks since its last candle: the newest few
+        // on a poll, or the whole gap after the socket or the tab slept.
+        const catchUp = () => (filling ??= (async () => {
           const lastT = st.candles[st.candles.length - 1]?.t ?? 0;
+          const n = Math.min(1000, Math.max(3, Math.ceil((Date.now() - lastT) / step) + 2));
+          const fresh = await exchangeCandles(coin, iv, n, r.source).catch(() => null);
+          if (!fresh || st.disposed || iv !== st.interval) return;
           let closed = false;
           for (const c of fresh.candles) { if (c.t >= lastT) { if (c.t > lastT) closed = true; chart.update(c); } }
           st.candles = chart.candles;
           setPrice(st.candles[st.candles.length - 1].c);
           if (closed) updateSignal();
+        })().finally(() => { filling = null; }));
+        const stopStream = streamCandles(r.source, String(coin.symbol).toUpperCase(), iv, (c) => {
+          if (st.disposed || iv !== st.interval || filling) return;
+          streamedAt = Date.now();
+          const lastT = st.candles[st.candles.length - 1]?.t ?? 0;
+          if (c.t > lastT + step) { catchUp(); return; } // candles went by while nothing streamed
+          if (c.t < lastT) return;
+          chart.update(c);
+          st.candles = chart.candles;
+          setPrice(c.c);
+          if (c.t > lastT) updateSignal();
+        }, (on) => {
+          const chip = $('#srcChip', el);
+          if (chip && !st.disposed && iv === st.interval) chip.textContent = on ? `● Live · ${r.venue}` : `● ${r.venue} · updates every 20s`;
+        });
+        const timer = setInterval(() => {
+          if (!st.disposed && iv === st.interval && Date.now() - streamedAt >= 30e3) catchUp();
         }, 20e3);
-        liveUnsub = () => clearInterval(timer);
+        liveUnsub = () => { clearInterval(timer); if (stopStream) stopStream(); };
       }
       runAi();
       runBt();

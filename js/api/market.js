@@ -268,7 +268,7 @@ const GECKO_STEP = { hourly: 36e5, daily: 864e5 };
 // candles through public APIs that allow browser requests, so a coin like XMR
 // or HYPE gets real OHLCV candles on every timeframe instead of CoinGecko's
 // hourly line (which cannot draw a 1m, 5m or 15m chart at all).
-const EX_BAR = {
+export const EX_BAR = {
   gate: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' },
   htx: { '1m': '1min', '5m': '5min', '15m': '15min', '1h': '60min', '4h': '4hour', '1d': '1day', '1w': '1week' },
   okx: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1Dutc', '1w': '1Wutc' },
