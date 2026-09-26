@@ -4,3 +4,4 @@ tools/*.json
 *.log
 cv-*.tgz
 *.tgz
+supabase/.temp/
