@@ -12,6 +12,7 @@
 
 import { upRateFor } from './signals.js';
 import { accuracyFor } from './predict.js';
+import { TESTED_TIMING } from './timing.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -98,7 +99,14 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
   let timingNote = null;
   if (timing?.ok && timing.shaped) {
     const room = timing.rising ? clamp(1 - timing.peak.bar / timing.horizonBars, 0, 1) : 0;
-    parts.push({ key: 'timing', value: timing.rising ? room * 0.6 : -0.5, weight: 0.5 });
+    // Timing used to cast a flat 0.5 vote on direction. But its measured record
+    // (TESTED_TIMING) is about WHEN a high or low lands, and the direction of the
+    // path it times comes from the forecast — so that vote counted the forecast
+    // a second time, at full weight, even on timeframes where the forecast has
+    // no edge. It is shown, and it shapes the entry note, but it no longer
+    // votes on which way.
+    const tt = TESTED_TIMING?.byInterval?.[interval];
+    parts.push({ key: 'timing', value: timing.rising ? room * 0.6 : -0.5, weight: 0, measuredEdge: tt ? +(tt.hitPct - tt.baselinePct).toFixed(1) : null });
     timingNote = timing;
     reasons.push({
       tone: timing.rising ? 'good' : 'bad',
@@ -121,7 +129,14 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
   const evidence = evidenceWeight < 0.5 ? 'thin' : evidenceWeight < 1.2 ? 'moderate' : 'good';
 
   let verdict, tone, headline;
-  if (holding) {
+  // A verdict needs evidence behind it. A lone reading that "barely counts"
+  // used to produce BUY on its own (XMR: forecast at weight 0.35 → BUY 35/100
+  // while its own line said it barely counts). With thin evidence the page now
+  // says which way it leans and that it is not enough to act on.
+  if (!holding && evidence === 'thin' && Math.abs(score) >= 0.15) {
+    verdict = score > 0 ? 'LEANS UP' : 'LEANS DOWN'; tone = 'flat';
+    headline = 'Leaning, but the evidence is too thin to act on';
+  } else if (holding) {
     if (score <= -0.35) { verdict = 'SELL'; tone = 'down'; headline = 'Reduce or close'; }
     else if (score <= -0.12) { verdict = 'TRIM'; tone = 'warn'; headline = 'Take some off'; }
     else if (score >= 0.3) { verdict = 'ADD'; tone = 'up'; headline = 'Hold and add on dips'; }
@@ -162,7 +177,7 @@ export function rankAdvice(rows) {
     .sort((a, b) => b.advice.score - a.advice.score);
   const avoid = scored.filter((r) => r.advice.verdict === 'AVOID')
     .sort((a, b) => a.advice.score - b.advice.score);
-  const wait = scored.filter((r) => r.advice.verdict === 'WAIT');
+  const wait = scored.filter((r) => ['WAIT', 'LEANS UP', 'LEANS DOWN'].includes(r.advice.verdict));
   return { buys, avoid, wait, total: scored.length };
 }
 

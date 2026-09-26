@@ -1457,3 +1457,49 @@ test('everyday words are not read as coins, real mentions still are', async () =
   assert.deepEqual(namedCoins('BTC, ETH, etc. are up'), ['BTC', 'ETH']);
   assert.equal(isMarketWide('which coin looks strongest on the 4h chart?'), true);
 });
+
+// ---- Supertrend, Keltner, Donchian, MFI, CCI, Williams %R
+import { supertrend, keltner, donchian, mfi, cci, williamsR, ema as emaFn } from '../js/lib/indicators.js';
+{
+  const mk = (closes) => closes.map((c, i) => ({ t: i * 36e5, o: c, h: c * 1.01, l: c * 0.99, c, v: 100 + (i % 7) }));
+  const upThenDown = mk([...Array.from({ length: 60 }, (_, i) => 100 + i), ...Array.from({ length: 60 }, (_, i) => 159 - i * 1.5)]);
+
+  test('supertrend is up in a rally, flips down after the drop, and trails on the correct side', () => {
+    const { line, dir } = supertrend(upThenDown);
+    assert.equal(dir[55], 1);
+    assert.ok(line[55] < upThenDown[55].c, 'up line sits under price');
+    assert.equal(dir[119], -1);
+    assert.ok(line[119] > upThenDown[119].c, 'down line sits above price');
+    assert.equal(dir.slice(60).filter((d, k, a) => k && d !== a[k - 1]).length, 1, 'exactly one flip in the decline');
+  });
+
+  test('donchian and williams %R agree on the range', () => {
+    const d = donchian(upThenDown, 20), w = williamsR(upThenDown, 20);
+    const i = 50;
+    const hi = Math.max(...upThenDown.slice(i - 19, i + 1).map((c) => c.h)), lo = Math.min(...upThenDown.slice(i - 19, i + 1).map((c) => c.l));
+    assert.equal(d.upper[i], hi); assert.equal(d.lower[i], lo);
+    assert.ok(Math.abs(w[i] - ((hi - upThenDown[i].c) / (hi - lo)) * -100) < 1e-9);
+    assert.ok(w.every((v) => v === null || (v <= 0 && v >= -100)));
+    assert.equal(d.upper[18], null);
+  });
+
+  test('keltner centres on the EMA and brackets it by ATR', () => {
+    const k = keltner(upThenDown);
+    const e = emaFn(upThenDown.map((c) => c.c), 20);
+    assert.equal(k.mid[80], e[80]);
+    assert.ok(k.upper[80] > k.mid[80] && k.lower[80] < k.mid[80]);
+  });
+
+  test('MFI stays in 0..100 and is 100 when money only flows in', () => {
+    const m = mfi(upThenDown);
+    assert.ok(m.every((v) => v === null || (v >= 0 && v <= 100)));
+    assert.equal(m[40], 100);
+    assert.ok(m[110] < 5);
+  });
+
+  test('CCI is zero on a flat market and positive in a rally', () => {
+    assert.equal(cci(mk(Array(40).fill(50)))[30], 0);
+    assert.ok(cci(upThenDown)[50] > 0);
+    assert.ok(cci(upThenDown)[110] < 0);
+  });
+}

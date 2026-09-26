@@ -311,6 +311,24 @@ function rollingSigma(closes, i, lookback = 100) {
   return Math.sqrt(Math.max(s2 / m - mu * mu, 1e-10));
 }
 
+/**
+ * Quantiles of the coin's past H-bar log returns in units of σ√H (σ = the
+ * 100-bar volatility at the start of each move), centred on their median.
+ * Uses only candles before `last`, so a forecast never sees its own outcome.
+ */
+function empiricalBandQuantiles(closes, last, H) {
+  const zs = [];
+  for (let j = 101; j <= last - H; j++) {
+    const s = rollingSigma(closes, j) * Math.sqrt(H);
+    if (s > 0) zs.push(Math.log(closes[j + H] / closes[j]) / s);
+  }
+  if (zs.length < 60) return null;
+  zs.sort((a, b) => a - b);
+  const q = (p) => { const k = (zs.length - 1) * p, lo = Math.floor(k); return zs[lo] + (zs[Math.min(lo + 1, zs.length - 1)] - zs[lo]) * (k - lo); };
+  const med = q(0.5);
+  return { q10: q(0.1) - med, q25: q(0.25) - med, q75: q(0.75) - med, q90: q(0.9) - med };
+}
+
 // ---------------------------------------------------------------- pattern matching
 function znorm(arr) {
   const m = arr.reduce((s, v) => s + v, 0) / arr.length;
@@ -724,15 +742,21 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   const price = closes[last];
   const step = intervalMs || (n > 1 ? candles[last].t - candles[last - 1].t : 36e5);
   const path = [];
-  // Range calibration: in walk-forward tests on 12 coins the raw volatility cone was too wide
-  // (50% band held 63% of outcomes, 80% band held 91%); scaling σ by 0.75 fixes both.
+  // Range: the quantiles of this coin's own past H-bar moves, each measured in
+  // units of the volatility at that time, so a quiet week and a wild week are
+  // comparable. Crypto moves have fat tails: the old normal curve × 0.75 drew
+  // the 80% band too narrow (it held 72% of outcomes in the 2026-09-26
+  // walk-forward test); the coin's own history held 79%. With too little
+  // history it falls back to the old normal band.
+  const zq = empiricalBandQuantiles(closes, last, H);
   const RANGE_CALIBRATION = 0.75;
+  const Z = zq || { q10: -1.2816 * RANGE_CALIBRATION, q25: -0.6745 * RANGE_CALIBRATION, q75: 0.6745 * RANGE_CALIBRATION, q90: 1.2816 * RANGE_CALIBRATION };
   for (let h = 1; h <= H; h++) {
-    const m = (mu * h) / H, sd = sig * Math.sqrt(h) * RANGE_CALIBRATION;
+    const m = (mu * h) / H, sd = sig * Math.sqrt(h);
     path.push({
       t: candles[last].t + step * h,
-      p10: price * Math.exp(m - 1.2816 * sd), p25: price * Math.exp(m - 0.6745 * sd), p50: price * Math.exp(m),
-      p75: price * Math.exp(m + 0.6745 * sd), p90: price * Math.exp(m + 1.2816 * sd),
+      p10: price * Math.exp(m + Z.q10 * sd), p25: price * Math.exp(m + Z.q25 * sd), p50: price * Math.exp(m),
+      p75: price * Math.exp(m + Z.q75 * sd), p90: price * Math.exp(m + Z.q90 * sd),
     });
   }
   const end = path[path.length - 1];
@@ -775,35 +799,38 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
 
 // Update the numbers below only by re-running tools/evaluate-engine.mjs — never by estimating.
 /**
- * Walk-forward accuracy, re-measured after the 1m and 5m models were trained
- * and every pooled model refitted. 240 forecasts per timeframe, 1,440 in total,
- * on 12 coins, each one produced using only the candles that existed at that
- * moment.
+ * Walk-forward accuracy, re-measured 2026-09-26 on fresh Binance candles after
+ * the range change: 240 forecasts per timeframe, 1,440 in total, 12 coins, each
+ * one produced using only the candles that existed at that moment.
  *
- * Every accuracy now ships with the BASELINE for the same rows — the score you
- * get by ignoring the model and always naming whichever direction was more
- * common in that window. The old block published bare accuracies with no
- * baseline, which is how 58.9% on the 4h chart came to look like a strong
- * result when the market in that window went one way 75.4% of the time. It was
- * never an edge; nothing had been subtracted from it.
+ * Every accuracy ships with its BASELINE — the score of always naming whichever
+ * direction was more common in that window. That baseline uses hindsight (no
+ * one knows the majority direction in advance), so it is a strict bar; for a
+ * bar that CAN be known in advance, "always say up" scored 52.2% on the same
+ * tests against the forecast's 53.9%.
  *
- * Read together, the honest summary is: no edge overall (49.6% against a 51.0%
- * baseline), a small positive on 5m, and negatives on 1m, 1h and 4h. The three
- * "beats" are all within a couple of points on 240 correlated samples, which is
- * not enough to call skill — they are reported as measured, not as promises.
+ * Honest summary: the direction call is close to a coin flip. It is below the
+ * hindsight baseline on every timeframe, and the calls where the models lean
+ * hardest (10+ points from 50/50) were right 50.7% of the time — no better.
+ * What DID improve is the price range: the 80% band now holds 78.5% of real
+ * outcomes (it held 71.7% before) and the 50% band 48.4% (was 45.1%), measured
+ * on the same 1,440 tests.
  */
 export const TESTED_ACCURACY = {
   // accuracy, and what it had to beat
-  all: 49.6, allBaseline: 51.0,
-  '1m': 44.6, '5m': 55.0, '15m': 52.5, '1h': 48.8, '4h': 43.8, '1d': 52.9,
-  baseline: { '1m': 53.8, '5m': 52.5, '15m': 51.2, '1h': 64.2, '4h': 75.4, '1d': 52.1 },
-  testsPerInterval: 240, tests: 1440, coins: 12,
-  brier: { '1m': 0.271, '5m': 0.246, '15m': 0.259, '1h': 0.264, '4h': 0.263, '1d': 0.252 },
-  // Share of outcomes that landed inside the range the forecast drew.
-  band50: { '1m': 46.7, '5m': 57.9, '15m': 57.5, '1h': 50.0, '4h': 40.0, '1d': 47.5 },
-  band80: { '1m': 70.0, '5m': 79.6, '15m': 78.3, '1h': 72.5, '4h': 67.5, '1d': 70.0 },
+  all: 53.9, allBaseline: 58.5,
+  '1m': 59.6, '5m': 56.7, '15m': 55.0, '1h': 52.1, '4h': 47.5, '1d': 52.5,
+  baseline: { '1m': 63.3, '5m': 58.3, '15m': 60.4, '1h': 55.0, '4h': 59.2, '1d': 54.6 },
+  alwaysUp: 52.2,
+  confident: { accuracy: 50.7, tests: 227, rule: 'model leans at least 10 points away from 50/50' },
+  testsPerInterval: 240, tests: 1440, coins: 12, measuredOn: '2026-09-26',
+  brier: { '1m': 0.243, '5m': 0.251, '15m': 0.251, '1h': 0.265, '4h': 0.256, '1d': 0.254 },
+  // Share of outcomes that landed inside the range the forecast drew (target: 50 and 80).
+  band50: { '1m': 51.7, '5m': 46.3, '15m': 43.8, '1h': 56.7, '4h': 50.8, '1d': 41.3 },
+  band80: { '1m': 82.1, '5m': 72.9, '15m': 73.8, '1h': 84.2, '4h': 78.3, '1d': 79.6 },
+  bandsAll: { band50: 48.4, band80: 78.5, before: { band50: 45.1, band80: 71.7 } },
   // Timeframes where the model scored at or below the do-nothing baseline.
-  noEdge: ['1m', '1h', '4h'],
+  noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
   beatsBaselineOverall: false,
   caveat: 'Twelve coins over one market window: crypto moves together, so 240 forecasts on a timeframe are nowhere near 240 independent tests.',
 };

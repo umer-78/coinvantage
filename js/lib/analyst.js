@@ -76,7 +76,7 @@ function detectIntent(q) {
   if (/(exit|close|sell|take profit|tp\b|stop|get out)/.test(s)) return 'exit';
   if (/(entry|enter|buy|long|get in|good time|should i)/.test(s)) return 'entry';
   if (/(support|resistance|level)/.test(s)) return 'levels';
-  if (/(indicator|rsi|macd|ema|bollinger|adx|stoch)/.test(s)) return 'indicators';
+  if (/(indicator|rsi|macd|ema|bollinger|adx|stoch|supertrend|mfi|money flow|cci|williams|donchian|keltner)/.test(s)) return 'indicators';
   return 'summary';
 }
 
@@ -501,7 +501,8 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     case 'indicators': {
       const i = sig.indicators;
-      out.push(`**Indicator readout**\n- RSI(14): ${i.rsi?.toFixed(1) ?? '—'} ${i.rsi > 70 ? '(overbought)' : i.rsi < 30 ? '(oversold)' : ''}\n- MACD: ${i.macd?.toPrecision(4) ?? '—'} vs signal ${i.macdSignal?.toPrecision(4) ?? '—'} (histogram ${i.macdHist > 0 ? 'positive' : 'negative'})\n- EMA 20 / 50 / 200: ${fmtNum(i.ema20)} / ${fmtNum(i.ema50)} / ${fmtNum(i.ema200)}\n- Bollinger: ${fmtNum(i.bbLower)} – ${fmtNum(i.bbUpper)}\n- ADX: ${i.adx?.toFixed(0) ?? '—'} ${i.adx > 25 ? '(trending)' : '(ranging)'}\n- ATR: ${fmtNum(i.atr)} (${i.atrPct}%)\n- Volume vs 20-bar avg: ${i.volumeRatio ?? '—'}×`);
+      out.push(`**Indicator readout**\n- RSI(14): ${i.rsi?.toFixed(1) ?? '—'} ${i.rsi > 70 ? '(overbought)' : i.rsi < 30 ? '(oversold)' : ''}\n- MACD: ${i.macd?.toPrecision(4) ?? '—'} vs signal ${i.macdSignal?.toPrecision(4) ?? '—'} (histogram ${i.macdHist > 0 ? 'positive' : 'negative'})\n- EMA 20 / 50 / 200: ${fmtNum(i.ema20)} / ${fmtNum(i.ema50)} / ${fmtNum(i.ema200)}\n- Bollinger: ${fmtNum(i.bbLower)} – ${fmtNum(i.bbUpper)}\n- ADX: ${i.adx?.toFixed(0) ?? '—'} ${i.adx > 25 ? '(trending)' : '(ranging)'}\n- ATR: ${fmtNum(i.atr)} (${i.atrPct}%)\n- Volume vs 20-bar avg: ${i.volumeRatio ?? '—'}×${i.supertrendDir ? `\n- Supertrend: ${i.supertrendDir === 1 ? 'up' : 'down'} (flips at ${fmtNum(i.supertrend)})` : ''}${i.mfi !== null && i.mfi !== undefined ? `\n- Money Flow Index: ${i.mfi.toFixed(0)} ${i.mfi > 80 ? '(heavy buying)' : i.mfi < 20 ? '(heavy selling)' : ''}` : ''}${i.cci !== null && i.cci !== undefined ? `\n- CCI(20): ${i.cci.toFixed(0)} ${i.cci > 100 ? '(stretched up)' : i.cci < -100 ? '(stretched down)' : ''}` : ''}${i.willR !== null && i.willR !== undefined ? `\n- Williams %R: ${i.willR.toFixed(0)} ${i.willR > -20 ? '(near the top of its range)' : i.willR < -80 ? '(near the bottom of its range)' : ''}` : ''}${i.donchianHigh ? `\n- 20-bar breakout levels: ${fmtNum(i.donchianLow)} – ${fmtNum(i.donchianHigh)}` : ''}`);
+      out.push('These readings describe the chart; none of them was measured to predict the next move on its own.');
       out.push(reasonsBlock(sig, 5));
       break;
     }

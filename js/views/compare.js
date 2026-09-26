@@ -80,7 +80,12 @@ export async function render(el, [preset]) {
       const vol = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / r.length) * Math.sqrt(perYear);
       let peak = s.candles[0].c, dd = 0; for (const c of s.candles) { peak = Math.max(peak, c.c); dd = Math.max(dd, 1 - c.c / peak); }
       const total = (s.candles[s.candles.length - 1].c / s.candles[0].c - 1) * 100;
-      return { ...s, total, vol: vol * 100, dd: dd * 100, best: Math.max(...r) * 100, worst: Math.min(...r) * 100, ratio: vol ? (mean * perYear) / vol : 0, thin: false };
+      // Return ÷ risk over the period itself: the period's log return divided by
+      // the volatility over the same period. It used to annualise a 7- or 30-day
+      // mean, which turned one good month into a ratio of 4+ and made short
+      // windows look far better than they were.
+      const periodVol = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / r.length) * Math.sqrt(r.length);
+      return { ...s, total, vol: vol * 100, dd: dd * 100, best: Math.max(...r) * 100, worst: Math.min(...r) * 100, ratio: periodVol ? (mean * r.length) / periodVol : 0, thin: false };
     });
     $('#stats', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Return</th><th>Volatility (yr)</th><th>Max drawdown</th><th class="hide-m">Best / worst candle</th><th>Return ÷ risk</th></tr></thead><tbody>
       ${stats.sort((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity)).map((s) => `<tr data-sym="${esc(s.sym)}"><td class="l"><div class="coin-cell">${coinLogo(s.coin, 22)}<b>${esc(s.sym)}</b></div></td>
@@ -88,7 +93,7 @@ export async function render(el, [preset]) {
           ? `<td colspan="5" class="muted fine">Not enough price history on this timeframe to measure</td>`
           : `<td class="${s.total >= 0 ? 'up' : 'down'}"><b>${pct(s.total)}</b></td><td>${s.vol.toFixed(0)}%</td><td class="down">${pct(-s.dd, 1)}</td>
         <td class="hide-m"><span class="up">${pct(s.best, 1)}</span> / <span class="down">${pct(s.worst, 1)}</span></td><td>${s.ratio.toFixed(2)}</td>`}</tr>`).join('')}
-    </tbody></table></div><p class="fine mt">${stats.filter((x) => !x.thin).length ? `Winner over ${st.period.toUpperCase()}: <b>${esc(stats.find((x) => !x.thin).sym)}</b>.` : ''} Return ÷ risk above 1 means the gain was large relative to the swings.</p>`;
+    </tbody></table></div><p class="fine mt">${stats.filter((x) => !x.thin).length ? `Best performer over the last ${st.period.toUpperCase()}: <b>${esc(stats.find((x) => !x.thin).sym)}</b> — that describes the past window only and says nothing about which coin will do better next.` : ''} Return ÷ risk is the period's return divided by its own swings over the same period: above 1 means the gain was large relative to the volatility.</p>`;
     $$('#stats tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
 
     // correlation matrix on aligned timestamps

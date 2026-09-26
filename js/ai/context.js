@@ -72,7 +72,7 @@ export async function analyzeCoin(symbol, { interval = '4h', withForecast = true
 // "Which coin should I buy?" needs the whole market, not one chart. Scans the
 // top coins and returns a ranked verdict for each, same engine as the advice page.
 const scanCache = new Map();
-export async function scanMarket({ interval = '4h', count = 20, onStep } = {}) {
+export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
   const key = `${interval}:${count}`;
   const hit = scanCache.get(key);
   if (hit && Date.now() - hit.at < 180e3) return hit.rows;
@@ -95,7 +95,10 @@ export async function scanMarket({ interval = '4h', count = 20, onStep } = {}) {
 
   // Forecast + timing only for the coins with a real technical signal — that
   // keeps the answer fast without dropping anything that could be a pick.
-  const shortlist = rows.filter((r) => r.signal.ok).sort((a, b) => Math.abs(b.signal.score) - Math.abs(a.signal.score)).slice(0, 10);
+  // Every scanned coin gets a forecast. The shortlist used to be the 10 coins
+  // with the strongest chart score — the one reading measured to have no edge —
+  // so most coins were never forecast and could never be recommended.
+  const shortlist = rows.filter((r) => r.signal.ok);
   const horizon = DEFAULT_HORIZON[interval] || 12;
   for (const row of shortlist) {
     onStep?.(`Forecasting ${row.coin.symbol}…`);
@@ -152,7 +155,7 @@ export const SCAN_FRAMES = [
   { interval: '1d', label: 'Position' },
 ];
 
-export async function scanMarketMulti({ intervals = SCAN_FRAMES.map((f) => f.interval), count = 20, onStep } = {}) {
+export async function scanMarketMulti({ intervals = SCAN_FRAMES.map((f) => f.interval), count = 30, onStep } = {}) {
   const byInterval = {};
   for (const interval of intervals) {
     onStep?.(`Scanning the market on the ${interval} chart…`);

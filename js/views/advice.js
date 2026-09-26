@@ -16,7 +16,7 @@ import { load } from '../store.js';
 export const title = 'Market scan';
 
 export async function render(el) {
-  const st = { interval: '4h', rows: [], run: 0, disposed: false, count: 30 };
+  const st = { interval: '4h', rows: [], run: 0, disposed: false, count: 60 };
 
   el.innerHTML = `
     <div class="page-head">
@@ -86,7 +86,7 @@ export async function render(el) {
       <div class="card mt" style="background:var(--surface-2)">
         <h3>How much to trust this</h3>
         <p class="fine">The chart score is <b>not</b> part of any verdict here. Across 244,000 bars the share of bars that rose falls as the score rises, so it is shown as a reading and given no vote — the same accuracy gate every other component passes through.</p>
-        <p class="fine">Each verdict blends four readings, and each one is weighted by its own measured accuracy — a reading that has shown no edge barely moves the result. The forecast component scored <b>${TESTED_ACCURACY[st.interval] ?? TESTED_ACCURACY.all}%</b> on ${TESTED_ACCURACY.tests} out-of-sample tests across ${TESTED_ACCURACY.coins} coins, against a ${TESTED_ACCURACY.baseline[st.interval] ?? TESTED_ACCURACY.allBaseline}% baseline for simply naming the more common direction${(TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` — on ${esc(st.interval)} it did not beat that baseline either` : ''}. With both the chart score and the forecast gated to near zero, a verdict only appears when timing or the multi-year history check actually leans.</p>
+        <p class="fine">Each verdict blends four readings, and each one is weighted by its own measured accuracy — a reading that has shown no edge barely moves the result. The forecast component scored <b>${TESTED_ACCURACY[st.interval] ?? TESTED_ACCURACY.all}%</b> on ${TESTED_ACCURACY.tests} out-of-sample tests across ${TESTED_ACCURACY.coins} coins, against a ${TESTED_ACCURACY.baseline[st.interval] ?? TESTED_ACCURACY.allBaseline}% baseline for simply naming the more common direction${(TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` — on ${esc(st.interval)} it did not beat that baseline either` : ''}. A BUY or AVOID only appears when a reading with a measured edge leans clearly; when the only lean comes from readings that barely count, the coin is marked "leans up" or "leans down" instead. Timing says when a move may peak, not which way it goes, so it is shown but never votes.</p>
         <p class="fine">${esc(ADVICE_DISCLAIMER)} ${wait.length} of ${done.length} coins scanned came back as "no edge — wait", which is usually the honest answer.</p>
       </div>`;
 
