@@ -8,7 +8,7 @@ export const title = 'Exchanges';
 export async function render(el, [preset]) {
   const st = { base: (preset || 'BTC').toUpperCase(), timer: null, disposed: false };
   const all = await markets().catch(() => []);
-  const options = all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 120);
+  const options = all.filter((c) => !isStable(c.symbol)).slice(0, 120);
   el.innerHTML = `
     <div class="page-head">
       <div><h1>Exchanges</h1><p>The same coin on ${EXCHANGE_NAMES.length} exchanges: live price, spread, volume and where it's cheapest right now.</p></div>

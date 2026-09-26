@@ -15,9 +15,9 @@ test('signal meter needle stays on the track (0-100 %)', () => {
 });
 
 test('signal meter labels follow the score bands', () => {
-  assert.equal(signalMeter(60).label, 'Strong buy');
-  assert.equal(signalMeter(20).label, 'Buy');
-  assert.equal(signalMeter(0).label, 'Neutral');
-  assert.equal(signalMeter(-20).label, 'Sell');
-  assert.equal(signalMeter(-60).label, 'Strong sell');
+  assert.equal(signalMeter(60).label, 'Strong rise');
+  assert.equal(signalMeter(20).label, 'Rising');
+  assert.equal(signalMeter(0).label, 'Flat');
+  assert.equal(signalMeter(-20).label, 'Falling');
+  assert.equal(signalMeter(-60).label, 'Strong fall');
 });

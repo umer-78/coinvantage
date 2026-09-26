@@ -245,11 +245,14 @@ export function signalMeter(score) {
   const s = clamp(Number.isFinite(score) ? score : 0, -100, 100);
   const pos = (s + 100) / 2; // percent along the track, 0 = strong sell, 100 = strong buy
   let label, tone;
-  if (s >= 45) { label = 'Strong buy'; tone = 'up'; }
-  else if (s >= 18) { label = 'Buy'; tone = 'up'; }
-  else if (s <= -45) { label = 'Strong sell'; tone = 'down'; }
-  else if (s <= -18) { label = 'Sell'; tone = 'down'; }
-  else { label = 'Neutral'; tone = 'flat'; }
+  // Momentum words, not orders: measured, the highest scores were the LEAST
+  // likely to keep rising (see SCORE_BUCKETS_TESTED), so "Strong buy" said the
+  // opposite of the data.
+  if (s >= 45) { label = 'Strong rise'; tone = 'up'; }
+  else if (s >= 18) { label = 'Rising'; tone = 'up'; }
+  else if (s <= -45) { label = 'Strong fall'; tone = 'down'; }
+  else if (s <= -18) { label = 'Falling'; tone = 'down'; }
+  else { label = 'Flat'; tone = 'flat'; }
   return { score: s, pos, label, tone };
 }
 
