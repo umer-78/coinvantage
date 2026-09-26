@@ -21,8 +21,8 @@ const PLAN_LOSS = new Set(['stop']);
 // vocabularies are rendered — the history is not rewritten to match the new
 // wording, it is translated at display time.
 const ACTION_WORDS = {
-  STRONG_BUY: 'Extended up', BUY: 'Leaning up', NEUTRAL: 'No trend', SELL: 'Leaning down', STRONG_SELL: 'Extended down',
-  EXTENDED_UP: 'Extended up', LEANING_UP: 'Leaning up', NO_TREND: 'No trend', LEANING_DOWN: 'Leaning down', EXTENDED_DOWN: 'Extended down',
+  STRONG_BUY: 'Strong rise so far', BUY: 'Rising', NEUTRAL: 'No clear trend', SELL: 'Falling', STRONG_SELL: 'Strong fall so far',
+  EXTENDED_UP: 'Strong rise so far', LEANING_UP: 'Rising', NO_TREND: 'No clear trend', LEANING_DOWN: 'Falling', EXTENDED_DOWN: 'Strong fall so far',
 };
 const readable = (a) => ACTION_WORDS[a] || a || '—';
 const toneOf = (a) => (/UP|BUY/.test(a || '') ? 'up' : /DOWN|SELL/.test(a || '') ? 'down' : '');

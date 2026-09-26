@@ -109,7 +109,7 @@ export async function render(el) {
     draw();
     let list;
     try {
-      list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+      list = (await markets()).filter((c) => !isStable(c.symbol)).slice(0, st.count);
     } catch {
       $('#body', el).innerHTML = '<div class="card empty"><h3>Could not load the coin list</h3><p>The market feed did not answer, so there is nothing to scan. Press Rescan to try again.</p></div>';
       return;

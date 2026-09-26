@@ -110,7 +110,7 @@ export function reconcileTimeframes(mtf, interval) {
   return { rows, score: c.score, text: c.text, tone: c.tone, dir, here, anchor, relation, split, span };
 }
 
-/** "15m leaning up (+30) · 1h no trend (+5) · 4h leaning up (+33) · 1d extended up (+67)" */
+/** "15m rising (+30) · 1h no clear trend (+5) · 4h rising (+33) · 1d strong rise so far (+67)" */
 function rowList(rec) {
   return rec.rows.map((r) => `${r.interval} ${String(r.text).toLowerCase()} (${signed(r.score)})`).join(' · ');
 }
@@ -256,24 +256,24 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     tone = 'warn';
     headline = relation === 'split'
       ? `This ${interval} chart wants to ${side === 'short' ? 'sell' : 'buy'}, but the other timeframes point the other way and across ${rec.span} it all cancels out (${signed(rec.score)}). A split board is a disagreement, not a trend, and the honest call is to stay out until it resolves.`
-      : `This ${interval} chart wants to ${side === 'short' ? 'sell' : 'buy'}, but across ${rec.span} the weight of evidence is ${rec.text.toLowerCase()} (${signed(rec.score)}). One chart against the rest is a pullback more often than it is a turn, so the honest call is to wait for them to line up.`;
+      : `This ${interval} chart wants to ${side === 'short' ? 'sell' : 'buy'}, but across ${rec.span} the combined reading is “${rec.text.toLowerCase()}” (${signed(rec.score)}). One chart against the rest is a pullback more often than it is a turn, so the honest call is to wait for them to line up.`;
   } else if (side === 'long') {
     verdict = reading;
     tone = 'warn';
     headline = measured
-      ? `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. That is a description, not a recommendation: across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins, readings in this band were followed by a higher price ${measured.upRatePct}% of the time — ${measured.upRatePct < 50 ? 'slightly less often than a coin flip' : 'about as often as a coin flip'}. The levels below are the geometry of the setup if you choose to trade it for your own reasons.`
-      : `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. This timeframe has not been measured, so treat the levels below as geometry rather than as evidence.`;
+      ? `The ${interval} chart reads “${readingText.toLowerCase()}”. That is a description, not a recommendation: across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins, readings in this band were followed by a higher price ${measured.upRatePct}% of the time — ${measured.upRatePct < 50 ? 'slightly less often than a coin flip' : 'about as often as a coin flip'}. The levels below are the geometry of the setup if you choose to trade it for your own reasons.`
+      : `The ${interval} chart reads “${readingText.toLowerCase()}”. This timeframe has not been measured, so treat the levels below as geometry rather than as evidence.`;
   } else if (side === 'short') {
     verdict = reading;
     tone = 'warn';
     headline = measured
-      ? `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. Measured over ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars, readings in this band were followed by a higher price ${measured.upRatePct}% of the time — so this is not the sell signal the old wording made it sound like. If you hold this coin, the levels below are where the chart structure sits.`
-      : `The indicators on the ${interval} chart are ${readingText.toLowerCase()}. This timeframe has not been measured, so treat the levels below as geometry rather than as evidence.`;
+      ? `The ${interval} chart reads “${readingText.toLowerCase()}”. Measured over ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars, readings in this band were followed by a higher price ${measured.upRatePct}% of the time — so this is not the sell signal the old wording made it sound like. If you hold this coin, the levels below are where the chart structure sits.`
+      : `The ${interval} chart reads “${readingText.toLowerCase()}”. This timeframe has not been measured, so treat the levels below as geometry rather than as evidence.`;
   } else {
-    verdict = reading === 'NO TREND' ? 'NO TREND' : reading;
+    verdict = reading;
     tone = 'flat';
     headline = rec && rec.dir !== 0
-      ? `Nothing on the ${interval} chart clears the bar to act on, though across ${rec.span} the weight of evidence is ${rec.text.toLowerCase()} (${signed(rec.score)}). Sitting out is a position, and it is the right one more often than people expect.`
+      ? `Nothing on the ${interval} chart clears the bar to act on, though across ${rec.span} the combined reading is “${rec.text.toLowerCase()}” (${signed(rec.score)}). Sitting out is a position, and it is the right one more often than people expect.`
       : 'Nothing here clears the bar to act on. Sitting out is a position, and it is the right one more often than people expect.';
   }
 

@@ -1,4 +1,4 @@
-import { findCoin, getCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
+import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { generateSignal, confluence, geometryFor, upRateFor } from '../lib/signals.js';
@@ -348,8 +348,8 @@ export async function render(el, [symParam]) {
       const r = await getCandles(coin, iv, isSecondInterval(iv) ? (MAX_BARS[iv] || 600) : 1500);
       if (st.disposed || iv !== st.interval) return;
       st.candles = r.candles; st.source = r.source;
-      $('#srcChip', el).textContent = r.source === 'binance' ? `● Live · Binance ${pair}` : r.source === 'demo' ? 'Demo data' : 'CoinGecko (delayed)';
-      $('#srcChip', el).className = `chip ${r.source === 'binance' ? 'up' : r.source === 'demo' ? 'warn' : ''}`;
+      $('#srcChip', el).textContent = r.source === 'binance' ? `● Live · Binance ${pair}` : r.venue ? `● ${r.venue} · updates every 20s` : r.source === 'demo' ? 'Demo data' : 'CoinGecko (delayed)';
+      $('#srcChip', el).className = `chip ${r.source === 'binance' || r.venue ? 'up' : r.source === 'demo' ? 'warn' : ''}`;
       chart.setData(r.candles);
       updateSignal();
       if (liveUnsub) liveUnsub();
@@ -389,6 +389,21 @@ export async function render(el, [symParam]) {
           setPrice(c.c);
           if (closed) refreshSignal();
         });
+      }
+      if (r.venue) {
+        // Other exchanges have no stream here, so poll the newest candles.
+        const timer = setInterval(async () => {
+          if (st.disposed || iv !== st.interval) return;
+          const fresh = await exchangeCandles(coin, iv, 3, r.source).catch(() => null);
+          if (!fresh || st.disposed || iv !== st.interval) return;
+          const lastT = st.candles[st.candles.length - 1]?.t ?? 0;
+          let closed = false;
+          for (const c of fresh.candles) { if (c.t >= lastT) { if (c.t > lastT) closed = true; chart.update(c); } }
+          st.candles = chart.candles;
+          setPrice(st.candles[st.candles.length - 1].c);
+          if (closed) updateSignal();
+        }, 20e3);
+        liveUnsub = () => clearInterval(timer);
       }
       runAi();
       runBt();
@@ -483,12 +498,12 @@ export async function render(el, [symParam]) {
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
       <div class="verdict">
         <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
-        <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Extended down</span><span>No trend</span><span>Extended up</span></div></div>
+        <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Strong fall</span><span>No clear trend</span><span>Strong rise</span></div></div>
       </div>
       <div class="signal-meter mt">
-        <div class="row spread"><b>Signal strength</b><span class="chip ${meterTone}">${esc(meter.label)}</span></div>
+        <div class="row spread"><b>Momentum</b><span class="chip ${meterTone}">${esc(meter.label)}</span></div>
         <div class="meter-track" style="margin-top:8px"><i class="meter-needle" style="left:${meter.pos}%"></i></div>
-        <div class="meter-labels fine" style="margin-top:4px"><span>Strong sell</span><span>Sell</span><span>Neutral</span><span>Buy</span><span>Strong buy</span></div>
+        <div class="meter-labels fine" style="margin-top:4px"><span>Strong fall</span><span>Falling</span><span>Flat</span><span>Rising</span><span>Strong rise</span></div>
         <p class="fine" style="margin:6px 0 0">Conventional strength meter for how far the indicators are extended. The measured record is separate: ${(() => { const b = upRateFor(st.interval, sig.score); return b ? `on ${esc(st.interval)}, readings like this were followed by a higher price <b>${b.upRatePct}%</b> of the time` : `how often readings like this were followed by a higher price has not been measured on ${esc(st.interval)} (it was measured on 15m, 1h, 4h and 1d)`; })()} — a high score means the move is extended, not that it will continue.</p>
       </div>
       ${warnings.length ? `<div class="risk-list mt">${warnings.map((w) => `<div class="risk-item ${w.level}">${icon('info', 14)}<span>${esc(w.text)}</span></div>`).join('')}</div>` : ''}

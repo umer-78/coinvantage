@@ -118,12 +118,15 @@ export const SCORE_BUCKETS_TESTED = {
   invertingItAlsoFails: true,
 };
 
+// Plain words for what the indicators show about the move SO FAR. ("Extended
+// up" read like jargon, and people took it as a call.) The action codes stay
+// the same so logged rows keep their meaning.
 export function labelFor(score) {
-  if (score >= THRESHOLDS.strong) return { action: 'EXTENDED_UP', text: 'Extended up', tone: 'up' };
-  if (score >= THRESHOLDS.normal) return { action: 'LEANING_UP', text: 'Leaning up', tone: 'up' };
-  if (score <= -THRESHOLDS.strong) return { action: 'EXTENDED_DOWN', text: 'Extended down', tone: 'down' };
-  if (score <= -THRESHOLDS.normal) return { action: 'LEANING_DOWN', text: 'Leaning down', tone: 'down' };
-  return { action: 'NO_TREND', text: 'No trend', tone: 'flat' };
+  if (score >= THRESHOLDS.strong) return { action: 'EXTENDED_UP', text: 'Strong rise so far', tone: 'up' };
+  if (score >= THRESHOLDS.normal) return { action: 'LEANING_UP', text: 'Rising', tone: 'up' };
+  if (score <= -THRESHOLDS.strong) return { action: 'EXTENDED_DOWN', text: 'Strong fall so far', tone: 'down' };
+  if (score <= -THRESHOLDS.normal) return { action: 'LEANING_DOWN', text: 'Falling', tone: 'down' };
+  return { action: 'NO_TREND', text: 'No clear trend', tone: 'flat' };
 }
 
 /** What the measured up-rate was for this reading, so the UI can show it. */
@@ -492,11 +495,11 @@ export function adviseHolding({ signal, avgBuyPrice, price }) {
   if (!signal?.ok) return { text: 'Not enough data', tone: 'flat' };
   const pnl = avgBuyPrice ? (price / avgBuyPrice - 1) * 100 : null;
   const rsiV = signal.indicators.rsi;
-  if (signal.score <= -THRESHOLDS.strong) return { text: 'Strong sell signal — consider exiting or tightening your stop', tone: 'down' };
+  if (signal.score <= -THRESHOLDS.strong) return { text: 'Strong fall so far — check that your stop-loss is where you want it', tone: 'down' };
   if (signal.score <= -THRESHOLDS.normal) {
-    return { text: pnl !== null && pnl > 0 ? 'Trend weakening — consider locking in profit' : 'Bearish — review your stop-loss', tone: 'down' };
+    return { text: pnl !== null && pnl > 0 ? 'Falling — you are in profit, so decide whether to lock some in' : 'Falling — check your stop-loss', tone: 'down' };
   }
   if (rsiV !== null && rsiV > 75 && pnl !== null && pnl > 15) return { text: 'Overbought while in profit — consider taking partial profit', tone: 'warn' };
-  if (signal.score >= THRESHOLDS.normal) return { text: 'Bullish — hold; trail stop below support', tone: 'up' };
-  return { text: 'Neutral — hold and watch key levels', tone: 'flat' };
+  if (signal.score >= THRESHOLDS.normal) return { text: 'Rising — a stop below support protects the gain if it turns', tone: 'up' };
+  return { text: 'No clear trend — watch the key levels', tone: 'flat' };
 }

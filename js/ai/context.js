@@ -77,7 +77,7 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
   const hit = scanCache.get(key);
   if (hit && Date.now() - hit.at < 180e3) return hit.rows;
 
-  const list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, count);
+  const list = (await markets()).filter((c) => !isStable(c.symbol)).slice(0, count);
   const rows = [];
   let done = 0;
   const queue = [...list];

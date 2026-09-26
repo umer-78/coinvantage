@@ -263,6 +263,78 @@ async function fetchKlines(pair, interval, total, ttl) {
 // more — the result is marked lowRes so the page can say that plainly.
 const GECKO_STEP = { hourly: 36e5, daily: 864e5 };
 
+// ------------------------------------------------------------ other exchanges
+// Coins Binance does not list still trade elsewhere. These exchanges publish
+// candles through public APIs that allow browser requests, so a coin like XMR
+// or HYPE gets real OHLCV candles on every timeframe instead of CoinGecko's
+// hourly line (which cannot draw a 1m, 5m or 15m chart at all).
+const EX_BAR = {
+  gate: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' },
+  htx: { '1m': '1min', '5m': '5min', '15m': '15min', '1h': '60min', '4h': '4hour', '1d': '1day', '1w': '1week' },
+  okx: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1Dutc', '1w': '1Wutc' },
+};
+const EX_NAME = { gate: 'Gate.io', htx: 'HTX', okx: 'OKX' };
+const num = (v) => +v;
+
+async function gateCandles(sym, bar, total, ttl, step) {
+  const base = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${sym}_USDT&interval=${bar}`;
+  const map = (rows) => rows.map((r) => ({ t: r[0] * 1e3, o: num(r[5]), h: num(r[3]), l: num(r[4]), c: num(r[2]), v: num(r[6]) }));
+  let out = map(await getJson(`${base}&limit=${Math.min(1000, total)}`, { ttl, timeout: 9000 }));
+  // Gate refuses `limit` together with a time window, so older pages ask for
+  // an explicit from/to range of at most 1,000 candles.
+  while (out.length && out.length < total) {
+    const to = out[0].t / 1e3 - 1, n = Math.min(1000, total - out.length);
+    const rows = map(await getJson(`${base}&from=${Math.floor(to - (n - 1) * step / 1e3)}&to=${Math.floor(to)}`, { ttl, timeout: 9000 }));
+    if (!rows.length) break;
+    out = rows.concat(out);
+  }
+  return out;
+}
+async function htxCandles(sym, bar, total, ttl) {
+  const j = await getJson(`https://api.huobi.pro/market/history/kline?symbol=${sym.toLowerCase()}usdt&period=${bar}&size=${Math.min(2000, total)}`, { ttl, timeout: 9000 });
+  if (j?.status !== 'ok' || !Array.isArray(j.data)) return [];
+  return j.data.map((r) => ({ t: r.id * 1e3, o: num(r.open), h: num(r.high), l: num(r.low), c: num(r.close), v: num(r.amount) })).reverse();
+}
+async function okxCandles(sym, bar, total, ttl) {
+  const inst = `${sym}-USDT`;
+  const map = (j) => (Array.isArray(j?.data) ? j.data : []).map((r) => ({ t: num(r[0]), o: num(r[1]), h: num(r[2]), l: num(r[3]), c: num(r[4]), v: num(r[5]) })).reverse();
+  let out = map(await getJson(`https://www.okx.com/api/v5/market/candles?instId=${inst}&bar=${bar}&limit=300`, { ttl, timeout: 9000 }));
+  // older candles come 100 at a time; stop at 1,000 to keep the request count sane
+  for (let i = 0; out.length && out.length < Math.min(total, 1000) && i < 8; i++) {
+    const rows = map(await getJson(`https://www.okx.com/api/v5/market/history-candles?instId=${inst}&bar=${bar}&after=${out[0].t}&limit=100`, { ttl, timeout: 9000 }));
+    if (!rows.length) break;
+    out = rows.concat(out);
+  }
+  return out;
+}
+const EX_FETCH = { gate: gateCandles, htx: htxCandles, okx: okxCandles };
+
+/**
+ * Real candles for a coin Binance does not list. Tries Gate.io, HTX and OKX in
+ * turn and keeps the first whose latest close is within 10% of the coin's
+ * market price — so a different token that happens to share the ticker is never
+ * charted — and whose newest candle is recent.
+ */
+export async function exchangeCandles(coin, interval, total = 500, only = null) {
+  const sym = String(coin?.symbol || '').toUpperCase();
+  const step = INTERVAL_MS[interval];
+  if (!sym || !/^[A-Z0-9]{2,12}$/.test(sym) || !EX_BAR.gate[interval]) return null;
+  const ttl = interval.endsWith('m') ? 15e3 : 60e3;
+  for (const ex of only ? [only] : ['gate', 'htx', 'okx']) {
+    try {
+      const rows = (await EX_FETCH[ex](sym, EX_BAR[ex][interval], total, ttl, step))
+        .filter((c) => [c.o, c.h, c.l, c.c].every((x) => Number.isFinite(x) && x > 0));
+      if (rows.length < (only ? 1 : 50)) continue;
+      const last = rows[rows.length - 1];
+      if (now() - last.t > step * 3 + 2 * 864e5) continue;
+      if (Number.isFinite(coin.price) && coin.price > 0 && Math.abs(last.c / coin.price - 1) > 0.1) continue;
+      markLive();
+      return { candles: rows.slice(-total), source: ex, venue: `${EX_NAME[ex]} ${sym}/USDT`, pair: null };
+    } catch { /* next exchange */ }
+  }
+  return null;
+}
+
 async function geckoCandles(coin, interval, total) {
   const want = INTERVAL_MS[interval];
   if (!want) throw new HttpError(`Unknown interval ${interval}.`, 400);
@@ -343,6 +415,11 @@ export async function getCandles(coin, interval = '1h', total = 500) {
         return { candles: out, source: 'binance', pair };
       }
     } catch { /* fall through */ }
+  }
+  // Not on Binance (or Binance unreachable): real candles from another exchange.
+  if (coin && typeof coin === 'object') {
+    const ex = await exchangeCandles(coin, interval, total).catch(() => null);
+    if (ex) return ex;
   }
   if (coin && typeof coin === 'object' && coin.source === 'coingecko') {
     // a 404 here is a real answer — "this timeframe does not exist for this

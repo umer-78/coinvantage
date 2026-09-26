@@ -12,7 +12,7 @@ export async function render(el) {
   const st = { interval: '4h', filter: 'all', sort: 'score', rows: [], run: 0, disposed: false, count: 30 };
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Scanner</h1><p>Scans the top coins on Binance and ranks them by how far the indicators lean and what the forecast says. Sorting by score is a way to find extended charts, not a ranking of what to buy.</p></div>
+      <div><h1>Scanner</h1><p>Scans the top coins (Binance, or Gate.io, HTX or OKX for coins Binance does not list) and ranks them by how far the indicators lean and what the forecast says. Sorting by score is a way to find extended charts, not a ranking of what to buy.</p></div>
       <div class="row">
         <div class="seg" id="iv">${['1m', '5m', '15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
         <div class="seg" id="cnt"><button data-v="20">Top 20</button><button data-v="30" class="on">Top 30</button><button data-v="50">Top 50</button></div>
@@ -21,7 +21,7 @@ export async function render(el) {
     </div>
     <div class="card">
       <div class="card-h">
-        <div class="seg" id="flt"><button data-v="all" class="on">All</button><button data-v="buy">Leaning up</button><button data-v="sell">Leaning down</button><button data-v="aiup">AI: likely up</button><button data-v="aidown">AI: likely down</button><button data-v="oversold">Oversold</button><button data-v="overbought">Overbought</button></div>
+        <div class="seg" id="flt"><button data-v="all" class="on">All</button><button data-v="buy">Rising</button><button data-v="sell">Falling</button><button data-v="aiup">AI: likely up</button><button data-v="aidown">AI: likely down</button><button data-v="oversold">Oversold</button><button data-v="overbought">Overbought</button></div>
         <span class="fine" id="prog"></span>
       </div>
       <div class="meter" id="meter" style="margin-bottom:10px"><i style="width:0%"></i></div>
@@ -84,7 +84,7 @@ export async function render(el) {
     draw();
     let list;
     try {
-      list = (await markets()).filter((c) => c.binance && !isStable(c.symbol)).slice(0, st.count);
+      list = (await markets()).filter((c) => !isStable(c.symbol)).slice(0, st.count);
     } catch (err) {
       if (run !== st.run) return;
       $('#prog', el).textContent = 'Scan unavailable';

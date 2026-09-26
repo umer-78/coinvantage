@@ -67,7 +67,7 @@ export async function render(el) {
   }
 
   const all = await markets().catch(() => []);
-  const tradable = all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 60);
+  const tradable = all.filter((c) => !isStable(c.symbol)).slice(0, 60);
 
   el.innerHTML = `
     <div class="page-head">

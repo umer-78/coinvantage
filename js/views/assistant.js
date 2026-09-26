@@ -33,7 +33,7 @@ export async function render(el, [symParam]) {
         <div class="card">
           <div class="card-h"><h3>Coin in focus</h3></div>
           <div class="row" style="margin-bottom:10px">
-            <select class="inp" id="coinSel" aria-label="Coin in focus" style="flex:1">${all.filter((c) => c.binance && !isStable(c.symbol)).slice(0, 150).map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.symbol ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
+            <select class="inp" id="coinSel" aria-label="Coin in focus" style="flex:1">${all.filter((c) => !isStable(c.symbol)).slice(0, 150).map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === st.symbol ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select>
           </div>
           <div class="row"><span class="fine">Chart</span><div class="seg" id="ivSeg">${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => `<button data-v="${iv}" class="${iv === st.interval ? 'on' : ''}">${iv}</button>`).join('')}</div></div>
           <div id="focus" class="mt fine"></div>
