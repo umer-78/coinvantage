@@ -326,7 +326,7 @@ function empiricalBandQuantiles(closes, last, H) {
   zs.sort((a, b) => a - b);
   const q = (p) => { const k = (zs.length - 1) * p, lo = Math.floor(k); return zs[lo] + (zs[Math.min(lo + 1, zs.length - 1)] - zs[lo]) * (k - lo); };
   const med = q(0.5);
-  return { q10: q(0.1) - med, q25: q(0.25) - med, q75: q(0.75) - med, q90: q(0.9) - med };
+  return { q05: q(0.05) - med, q10: q(0.1) - med, q25: q(0.25) - med, q75: q(0.75) - med, q90: q(0.9) - med, q95: q(0.95) - med };
 }
 
 // ---------------------------------------------------------------- pattern matching
@@ -750,13 +750,13 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
   // history it falls back to the old normal band.
   const zq = empiricalBandQuantiles(closes, last, H);
   const RANGE_CALIBRATION = 0.75;
-  const Z = zq || { q10: -1.2816 * RANGE_CALIBRATION, q25: -0.6745 * RANGE_CALIBRATION, q75: 0.6745 * RANGE_CALIBRATION, q90: 1.2816 * RANGE_CALIBRATION };
+  const Z = zq || { q05: -1.6449 * RANGE_CALIBRATION, q10: -1.2816 * RANGE_CALIBRATION, q25: -0.6745 * RANGE_CALIBRATION, q75: 0.6745 * RANGE_CALIBRATION, q90: 1.2816 * RANGE_CALIBRATION, q95: 1.6449 * RANGE_CALIBRATION };
   for (let h = 1; h <= H; h++) {
     const m = (mu * h) / H, sd = sig * Math.sqrt(h);
     path.push({
       t: candles[last].t + step * h,
-      p10: price * Math.exp(m + Z.q10 * sd), p25: price * Math.exp(m + Z.q25 * sd), p50: price * Math.exp(m),
-      p75: price * Math.exp(m + Z.q75 * sd), p90: price * Math.exp(m + Z.q90 * sd),
+      p05: price * Math.exp(m + Z.q05 * sd), p10: price * Math.exp(m + Z.q10 * sd), p25: price * Math.exp(m + Z.q25 * sd), p50: price * Math.exp(m),
+      p75: price * Math.exp(m + Z.q75 * sd), p90: price * Math.exp(m + Z.q90 * sd), p95: price * Math.exp(m + Z.q95 * sd),
     });
   }
   const end = path[path.length - 1];
@@ -782,7 +782,7 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
     probUp, direction, confidence,
     expectedReturnPct: (Math.exp(mu) - 1) * 100,
     targetPrice: end.p50,
-    range: { p10: end.p10, p25: end.p25, p50: end.p50, p75: end.p75, p90: end.p90 },
+    range: { p05: end.p05, p10: end.p10, p25: end.p25, p50: end.p50, p75: end.p75, p90: end.p90, p95: end.p95 },
     path, models,
     ensemble: {
       accuracy: ensembleAcc, samples: eN, baseline,
@@ -828,7 +828,9 @@ export const TESTED_ACCURACY = {
   // Share of outcomes that landed inside the range the forecast drew (target: 50 and 80).
   band50: { '1m': 51.7, '5m': 46.3, '15m': 43.8, '1h': 56.7, '4h': 50.8, '1d': 41.3 },
   band80: { '1m': 82.1, '5m': 72.9, '15m': 73.8, '1h': 84.2, '4h': 78.3, '1d': 79.6 },
-  bandsAll: { band50: 48.4, band80: 78.5, before: { band50: 45.1, band80: 71.7 } },
+  // The 90% range (added 2026-09-26), measured on the same 1,440 tests.
+  band90: { '1m': 90.0, '5m': 82.9, '15m': 82.5, '1h': 92.5, '4h': 87.5, '1d': 89.6 },
+  bandsAll: { band50: 48.4, band80: 78.5, band90: 87.5, before: { band50: 45.1, band80: 71.7 } },
   // Timeframes where the model scored at or below the do-nothing baseline.
   noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
   beatsBaselineOverall: false,
@@ -854,6 +856,7 @@ export function summarizeForecast(f) {
     expectedMovePct: +f.expectedReturnPct.toFixed(2),
     targetPrice: +f.targetPrice.toPrecision(6),
     likelyRange: [+f.range.p25.toPrecision(6), +f.range.p75.toPrecision(6)],
+    range90: f.range.p05 ? [+f.range.p05.toPrecision(6), +f.range.p95.toPrecision(6)] : null,
     wideRange: [+f.range.p10.toPrecision(6), +f.range.p90.toPrecision(6)],
     validatedAccuracyPct: f.ensemble.accuracy !== null ? +(f.ensemble.accuracy * 100).toFixed(1) : null,
     baselineAccuracyPct: +(f.ensemble.baseline * 100).toFixed(1),

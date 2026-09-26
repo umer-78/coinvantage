@@ -81,6 +81,8 @@ computers alike.
 | **All** | **53.9%** | 58.5% | **48.4%** | **78.5%** |
 
 - **Direction is close to a coin flip.** "Always say up" — a bar you *can* know in advance — scored 52.2% on the same tests. The calls where the models lean hardest were right 50.7% of the time (227 tests), no better. No model can predict crypto direction 90% of the time; any site that claims it is not measuring honestly.
+- **A 90% range** is shown too: on the same tests the price ended inside it 87.5% of the time (1m 90.0%, 5m 82.9%, 15m 82.5%, 1h 92.5%, 4h 87.5%, 1d 89.6%).
+- **History as a second opinion was tested and not added:** on the 240 daily tests the multi-year history engine alone scored 51.3%, a 50/50 blend with the forecast 52.5% (the forecast alone: 52.5%), and the 145 cases where both agreed 53.1%. No gain, so it stays a separate tab.
 - **The price range is now calibrated.** It is built from each coin's own past moves (in units of the volatility at the time) instead of a normal curve × 0.75, which drew the 80% band too narrow for crypto's fat tails. Same 1,440 tests: the 80% band now holds 78.5% of outcomes (was 71.7%) and the 50% band 48.4% (was 45.1%).
 - The **History & cycles** tab scores itself separately, per coin, and prints that number next to its verdict.
 - Treat forecasts as probabilities and always use stop-losses.
