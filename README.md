@@ -197,3 +197,7 @@ If every source is unreachable, clearly-labelled demo data is shown instead.
 - `get_posts` is an intentionally public `SECURITY DEFINER` function: it is the only way
   anonymous visitors read trade ideas, and it nulls out the body, entry, stop-loss and
   targets of premium posts before returning them.
+
+## Licence
+
+MIT licence (see [LICENSE](LICENSE)).
