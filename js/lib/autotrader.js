@@ -13,7 +13,7 @@
 // that happened while the tab was closed, so the record stays continuous
 // instead of only counting the hours someone had the page open.
 
-import { computeAll, atr } from './indicators.js';
+import { computeAll, atr, ema } from './indicators.js';
 import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
 
 /**
@@ -78,6 +78,9 @@ export const DEFAULT_CONFIG = {
   minAdx: null,          // skip entries while ADX is below this (a ranging market)
   maxEntryRsi: null,     // skip entries while RSI is above this (already stretched)
   excluded: [],          // coins the review stopped trading after a run of losses
+  entryMode: 'trend',     // 'trend' buys a high score; 'pullback' a dip in an uptrend; 'breakout' a new 20-candle high
+  momentumConfirm: false, // also require price > 20 EMA > 50 EMA and a rising MACD
+  marketFilter: false,    // no new buys while Bitcoin is below its 200 EMA
   interval: '1h',
   universe: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'AVAX', 'LINK'],
 };
@@ -112,96 +115,186 @@ const round = (v, dp = 6) => (Number.isFinite(v) ? +v.toFixed(dp) : v);
 export function replaySymbol(state, cfg, symbol, candles, pre = null) {
   if (!candles || candles.length < 220) return { processed: 0 };
   // `pre` lets the evaluation harness reuse indicators and scores across settings.
-  const ind = pre?.ind || computeAll(candles);
-  const atrArr = pre?.atr || atr(candles, 14);
-  const from = state.cursor[symbol] ?? 0;
-  let processed = 0;
-  let consecutiveExit = 0;
-  let lastScore = null;
+  const s = { symbol, candles, ind: pre?.ind || computeAll(candles), atr: pre?.atr || atr(candles, 14), scores: pre?.scores || null, regime: pre?.regime || null };
+  const out = { processed: 0, lastScore: null };
+  for (let i = 210; i < candles.length; i++) advance(state, cfg, s, i, out);
+  return out;
+}
 
-  for (let i = 210; i < candles.length; i++) {
-    const c = candles[i];
-    if (c.t <= from) continue;
-    state.cursor[symbol] = c.t;
-    if (state.liveFrom && c.t < state.liveFrom) continue;
-    processed++;
-    if (!state.firstBarAt || c.t < state.firstBarAt) state.firstBarAt = c.t;
-
-    const pos = state.open[symbol];
-    const score = pre?.scores ? pre.scores[i] : scoreAt(candles, ind, i).score;
-    lastScore = score;
-
-    // ---- manage an open position first, on this bar's high/low
-    if (pos) {
-      // Conservative: if both the stop and the target are inside one candle,
-      // assume the stop hit first. Never flatter than reality.
-      if (c.l <= pos.stop) { closePosition(state, cfg, symbol, Math.min(pos.stop, c.o), c.t, pos.stop > pos.initialStop ? 'trailing stop' : 'stop-loss'); }
-      else if (pos.tp !== null && c.h >= pos.tp) { closePosition(state, cfg, symbol, pos.tp, c.t, 'target'); }
-      else {
-        // trailing stop: ratchet up under the highest high since entry, never down
-        if (cfg.trailAtr && atrArr[i]) {
-          pos.high = Math.max(pos.high ?? pos.entry, c.h);
-          const trail = pos.high - cfg.trailAtr * atrArr[i];
-          if (trail > pos.stop) pos.stop = round(trail);
-        }
-        // break-even stop once the trade is +1R in profit
-        const r = pos.entry - pos.initialStop;
-        const beR = cfg.breakEvenAtR;
-        if (beR !== null && beR !== undefined && !pos.movedToBreakEven && r > 0 && c.h >= pos.entry + beR * r) {
-          pos.stop = pos.entry;
-          pos.movedToBreakEven = true;
-        }
-        const exitBars = cfg.signalExitBars;
-        if (exitBars !== null && exitBars !== undefined) {
-          consecutiveExit = score <= cfg.exitScore ? consecutiveExit + 1 : 0;
-          if (consecutiveExit >= exitBars) closePosition(state, cfg, symbol, c.c, c.t, 'signal reversal');
-        }
-      }
-      markEquity(state, c.t);
-      continue;
-    }
-
-    // ---- look for an entry
-    if (score < cfg.entryScore) continue;
-    if (Object.keys(state.open).length >= cfg.maxPositions) continue;
-    if (cfg.trendFilter && !(ind.ema200[i] && c.c > ind.ema200[i] && ind.ema50[i] > ind.ema200[i])) continue;
-    if (cfg.minAdx && !(ind.adx.adx[i] >= cfg.minAdx)) continue;
-    if (cfg.maxEntryRsi && ind.rsi[i] !== null && ind.rsi[i] > cfg.maxEntryRsi) continue;
-    if (cfg.excluded?.includes(symbol)) continue;
-    const a = atrArr[i];
-    if (!a) continue;
-
-    const entry = c.c;
-    const stop = entry - cfg.atrStop * a;
-    const riskPerUnit = entry - stop;
-    if (riskPerUnit <= 0) continue;
-
-    const riskCash = state.balance * (cfg.riskPct / 100);
-    let notional = (riskCash / riskPerUnit) * entry;
-    notional = Math.min(notional, state.balance * (cfg.maxPositionPct / 100), state.balance);
-    if (notional < 1) continue;
-
-    const qty = notional / entry;
-    const fee = notional * (cfg.feePct / 100);
-    state.balance -= fee;
-    state.open[symbol] = {
-      symbol, side: 'long',
-      entry: round(entry), initialStop: round(stop), stop: round(stop),
-      tp: cfg.trailAtr ? null : round(entry + cfg.rMultiple * riskPerUnit),
-      qty: round(qty, 10), notional: round(notional, 2),
-      openedAt: c.t, openScore: score, entryBar: cfg.entryScore, movedToBreakEven: false, feePaid: round(fee, 4),
-      // What the market looked like at entry, so the self-review can learn from the log.
-      riskCash: round(riskCash, 2),
-      ctx: {
-        trendUp: !!(ind.ema200[i] && c.c > ind.ema200[i]),
-        adx: ind.adx.adx[i] === null ? null : round(ind.adx.adx[i], 1),
-        rsi: ind.rsi[i] === null ? null : round(ind.rsi[i], 1),
-        atrPct: round((a / entry) * 100, 3),
-      },
-    };
-    markEquity(state, c.t);
+/**
+ * Replay several coins together, one moment at a time, oldest first — the way
+ * the published test ran and the way a live account sees the market. Replaying
+ * one coin's whole backlog before the next (what a catch-up after a few days
+ * away used to do) let the first coin's trades take every slot and all the
+ * cash before the others' earlier signals were even looked at.
+ */
+export function replayAll(state, cfg, candlesBySymbol, { regimeCandles = null } = {}) {
+  const series = [];
+  const result = {};
+  const regime = cfg.marketFilter ? marketRegime(regimeCandles || candlesBySymbol.BTC) : null;
+  for (const [symbol, candles] of Object.entries(candlesBySymbol)) {
+    result[symbol] = { processed: 0, lastScore: null };
+    if (!candles || candles.length < 220) continue;
+    series.push({ symbol, candles, ind: computeAll(candles), atr: atr(candles, 14), scores: null, regime });
   }
-  return { processed, lastScore };
+  return replaySeries(state, cfg, series, { result });
+}
+
+/**
+ * The time-ordered replay itself, on series whose indicators are already
+ * computed ({ symbol, candles, ind, atr, scores?, regime? }). Exported for the
+ * evaluation harness, which reuses one computation across many settings.
+ */
+export function replaySeries(state, cfg, series, { from = 210, result = {} } = {}) {
+  const pos = series.map(() => from);
+  for (const s of series) result[s.symbol] ||= { processed: 0, lastScore: null };
+  for (;;) {
+    let k = -1;
+    for (let j = 0; j < series.length; j++) {
+      if (pos[j] < series[j].candles.length && (k < 0 || series[j].candles[pos[j]].t < series[k].candles[pos[k]].t)) k = j;
+    }
+    if (k < 0) break;
+    advance(state, cfg, series[k], pos[k]++, result[series[k].symbol]);
+  }
+  return result;
+}
+
+// One closed candle of one coin: skip it if already seen, else trade it.
+function advance(state, cfg, s, i, out) {
+  const c = s.candles[i];
+  const from = state.cursor[s.symbol] ?? 0;
+  if (c.t <= from) return;
+  state.cursor[s.symbol] = c.t;
+  if (state.liveFrom && c.t < state.liveFrom) return;
+  out.processed++;
+  if (!state.firstBarAt || c.t < state.firstBarAt) state.firstBarAt = c.t;
+  const score = s.scores ? s.scores[i] : scoreAt(s.candles, s.ind, i).score;
+  out.lastScore = score;
+  stepBar(state, cfg, s, i, score);
+}
+
+/**
+ * Candle time → whether Bitcoin was in an uptrend at that candle's close (price
+ * above its 200 EMA and the 50 above the 200), for the market filter.
+ */
+export function marketRegime(btcCandles) {
+  const map = new Map();
+  if (!btcCandles || btcCandles.length < 210) return map;
+  const closes = btcCandles.map((c) => c.c);
+  const e50 = ema(closes, 50), e200 = ema(closes, 200);
+  btcCandles.forEach((c, i) => { if (e200[i] !== null && e50[i] !== null) map.set(c.t, c.c > e200[i] && e50[i] > e200[i]); });
+  return map;
+}
+
+// Cash not already tied up in open simulated positions. Sizing used to look at
+// the balance alone, so five positions at the 25% cap put 125% of the account
+// in the market (250% with ten) — borrowed money in an account that never
+// borrows. A recorded real trade lives in its own account and is not counted.
+export function freeCash(state) {
+  const tied = Object.values(state.open).reduce((sum, p) => sum + (p.real ? 0 : (p.notional || 0)), 0);
+  return state.balance - tied;
+}
+
+// "Pullback" buys a dip inside an uptrend and sells into strength; "trend"
+// buys strength and sells when the reading turns down.
+function wantsEntry(cfg, score, ind, i, c) {
+  if (cfg.entryMode === 'pullback') return score <= -cfg.entryScore;
+  // a close above the highest high of the previous 20 candles
+  if (cfg.entryMode === 'breakout') return ind.donchian.upper[i - 1] !== null && c.c > ind.donchian.upper[i - 1];
+  return score >= cfg.entryScore;
+}
+const wantsExit = (cfg, score) => (cfg.entryMode === 'pullback' ? score >= -cfg.exitScore : score <= cfg.exitScore);
+
+function stepBar(state, cfg, s, i, score) {
+  const { symbol, candles, ind } = s;
+  const atrArr = s.atr;
+  const c = candles[i];
+  const pos = state.open[symbol];
+
+  // ---- manage an open position first, on this bar's high/low
+  if (pos) {
+    // Conservative: if both the stop and the target are inside one candle,
+    // assume the stop hit first. Never flatter than reality.
+    if (c.l <= pos.stop) {
+      const why = pos.stop > pos.initialStop ? (pos.movedToBreakEven && pos.stop === pos.entry ? 'break-even stop' : 'trailing stop') : 'stop-loss';
+      closePosition(state, cfg, symbol, Math.min(pos.stop, c.o), c.t, why);
+    } else if (pos.tp !== null && c.h >= pos.tp) {
+      closePosition(state, cfg, symbol, pos.tp, c.t, 'target');
+    } else {
+      // trailing stop: ratchet up under the highest high since entry, never down
+      if (cfg.trailAtr && atrArr[i]) {
+        pos.high = Math.max(pos.high ?? pos.entry, c.h);
+        const trail = pos.high - cfg.trailAtr * atrArr[i];
+        if (trail > pos.stop) pos.stop = round(trail);
+      }
+      // break-even stop once the trade is +1R in profit
+      const r = pos.entry - pos.initialStop;
+      const beR = cfg.breakEvenAtR;
+      if (beR !== null && beR !== undefined && !pos.movedToBreakEven && r > 0 && c.h >= pos.entry + beR * r) {
+        pos.stop = pos.entry;
+        pos.movedToBreakEven = true;
+      }
+      // The run of reversal bars is kept on the position. It used to be a
+      // local count that restarted with every check, and a live check sees one
+      // new candle, so "two bars in a row" could never happen live — only in
+      // a catch-up — and a new trade could inherit the last one's count.
+      const exitBars = cfg.signalExitBars;
+      if (exitBars !== null && exitBars !== undefined) {
+        pos.reversalBars = wantsExit(cfg, score) ? (pos.reversalBars || 0) + 1 : 0;
+        if (pos.reversalBars >= exitBars) closePosition(state, cfg, symbol, c.c, c.t, cfg.entryMode === 'pullback' ? 'sold into strength' : 'signal reversal');
+      }
+    }
+    markEquity(state, c.t);
+    return;
+  }
+
+  // ---- look for an entry
+  if (!wantsEntry(cfg, score, ind, i, c)) return;
+  if (Object.keys(state.open).length >= cfg.maxPositions) return;
+  if ((cfg.trendFilter || cfg.entryMode === 'pullback') && !(ind.ema200[i] && c.c > ind.ema200[i] && ind.ema50[i] > ind.ema200[i])) return;
+  // The chart score adds oversold readings as reasons to buy, so early in a
+  // fall it can still read high. Confirmation asks for the short-term trend
+  // and momentum to be pointing up as well.
+  if (cfg.momentumConfirm && !(c.c > ind.ema20[i] && ind.ema20[i] > ind.ema50[i] && ind.macd.hist[i] > 0)) return;
+  // Most coins fall together: no new buys while Bitcoin itself is in a downtrend.
+  if (s.regime && s.regime.get(c.t) === false) return;
+  if (cfg.minAdx && !(ind.adx.adx[i] >= cfg.minAdx)) return;
+  if (cfg.maxEntryRsi && ind.rsi[i] !== null && ind.rsi[i] > cfg.maxEntryRsi) return;
+  if (cfg.excluded?.includes(symbol)) return;
+  const a = atrArr[i];
+  if (!a) return;
+
+  const entry = c.c;
+  const stop = entry - cfg.atrStop * a;
+  const riskPerUnit = entry - stop;
+  if (riskPerUnit <= 0) return;
+
+  const riskCash = state.balance * (cfg.riskPct / 100);
+  let notional = (riskCash / riskPerUnit) * entry;
+  // the fee is paid from the same cash
+  notional = Math.min(notional, state.balance * (cfg.maxPositionPct / 100), freeCash(state) / (1 + cfg.feePct / 100));
+  if (notional < 1) return;
+
+  const qty = notional / entry;
+  const fee = notional * (cfg.feePct / 100);
+  state.balance -= fee;
+  state.open[symbol] = {
+    symbol, side: 'long',
+    entry: round(entry), initialStop: round(stop), stop: round(stop),
+    tp: cfg.trailAtr ? null : round(entry + cfg.rMultiple * riskPerUnit),
+    qty: round(qty, 10), notional: round(notional, 2),
+    openedAt: c.t, openScore: score, entryBar: cfg.entryMode === 'pullback' ? -cfg.entryScore : cfg.entryMode === 'breakout' ? null : cfg.entryScore, entryMode: cfg.entryMode || 'trend',
+    movedToBreakEven: false, feePaid: round(fee, 4),
+    // What the market looked like at entry, so the self-review can learn from the log.
+    riskCash: round(qty * riskPerUnit, 2),
+    ctx: {
+      trendUp: !!(ind.ema200[i] && c.c > ind.ema200[i]),
+      adx: ind.adx.adx[i] === null ? null : round(ind.adx.adx[i], 1),
+      rsi: ind.rsi[i] === null ? null : round(ind.rsi[i], 1),
+      atrPct: round((a / entry) * 100, 3),
+    },
+  };
+  markEquity(state, c.t);
 }
 
 function closePosition(state, cfg, symbol, exitPrice, t, reason) {
@@ -237,8 +330,11 @@ export function openManual(state, cfg, symbol, price, { notional, stopPrice, tar
   if (Object.keys(state.open).length >= cfg.maxPositions) return { ok: false, error: `You already have ${cfg.maxPositions} demo positions open — that is the limit in your settings.` };
   if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
 
-  const size = Math.min(+notional || 0, state.balance);
-  if (!(size >= 1)) return { ok: false, error: 'Enter an amount of at least 1.' };
+  // what can be spent with the fee still covered
+  const cash = Math.floor((freeCash(state) / (1 + cfg.feePct / 100)) * 100) / 100;
+  if (+notional > cash + 1e-9 && cash >= 1) return { ok: false, error: `Only ${cash.toFixed(2)} of the demo balance is free (after the fee) — the rest is in open positions. Enter that much or less, or close a position first.` };
+  const size = Math.min(+notional || 0, cash);
+  if (!(size >= 1)) return { ok: false, error: cash < 1 ? 'All of the demo balance is in open positions. Close one first.' : 'Enter an amount of at least 1.' };
 
   const stop = Number.isFinite(stopPrice) && stopPrice > 0 && stopPrice < price ? stopPrice : price * 0.95;
   const tp = Number.isFinite(targetPrice) && targetPrice > price ? targetPrice : price + (price - stop) * cfg.rMultiple;
@@ -306,10 +402,10 @@ export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry,
 export const REAL_NOTICE = 'CoinVantage only keeps the record: it never places an order, connects to an exchange or holds any key.';
 
 /** Close a position by hand at the current price. */
-export function closeManual(state, cfg, symbol, price, at = Date.now()) {
+export function closeManual(state, cfg, symbol, price, at = Date.now(), reason = 'closed by you') {
   if (!state.open[symbol]) return { ok: false, error: `No open position on ${symbol}.` };
   if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
-  closePosition(state, cfg, symbol, price, at, 'closed by you');
+  closePosition(state, cfg, symbol, price, at, reason);
   markEquity(state, at);
   return { ok: true, trade: state.closed[state.closed.length - 1] };
 }

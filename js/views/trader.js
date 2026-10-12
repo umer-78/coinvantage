@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -48,6 +48,9 @@ export async function render(el) {
   const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe'];
   const LEARNED_KEYS = ['minAdx', 'maxEntryRsi', 'excluded', 'trendFilter'];
   const cfg = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(savedCfg).filter(([k]) => USER_KEYS.includes(k) || (savedCfg.v === 2 && LEARNED_KEYS.includes(k)))), v: 2 };
+  // Risk per trade above 5% is a setting that wipes an account out in a short
+  // losing run; older saves allowed 10.
+  cfg.riskPct = Math.min(5, Math.max(0.1, +cfg.riskPct || DEFAULT_CONFIG.riskPct));
   let state = load(STATE_KEY, null);
 
   const applySession = (event) => {
@@ -192,9 +195,17 @@ export async function render(el) {
   function startCard() {
     return `<div class="card empty">
       <h3>Run the strategy on simulated money</h3>
-      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with the fee it would have paid.</p>
+      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. ${entryRule(cfg)} It sizes each position so a stop-out costs at most ${cfg.riskPct}% of the balance, with no more than ${cfg.maxPositionPct}% of it in one coin and never more cash than the account has, and sells at ${cfg.trailAtr ? `a stop that trails ${cfg.trailAtr} ATR under the highest price since it bought` : `the target (${cfg.rMultiple}R)`}, the stop (${cfg.atrStop} ATR)${cfg.signalExitBars ? ` or ${cfg.entryMode === 'pullback' ? 'once the bounce has come' : 'a signal reversal'}` : ''}. Every trade is logged with the fee it would have paid.</p>
       <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
     </div>${learningCard()}`;
+  }
+
+  // The rule that opens a trade, in words, for whichever entry mode is set.
+  function entryRule(c) {
+    const extra = `${c.momentumConfirm ? ' while the short-term trend and momentum also point up' : ''}${c.marketFilter ? ', and only while Bitcoin itself is in an uptrend' : ''}`;
+    if (c.entryMode === 'pullback') return `When a coin in an uptrend dips until the score falls to −${c.entryScore} or lower, it buys the dip${extra}.`;
+    if (c.entryMode === 'breakout') return `When a coin closes above its highest price of the previous 20 candles${c.trendFilter ? ' in an uptrend' : ''}, it buys${extra}.`;
+    return `When the score clears +${c.entryScore}${c.trendFilter ? ' in an uptrend' : ''} it buys${extra}.`;
   }
 
   // ---------------------------------------------------------------- engine
@@ -212,29 +223,51 @@ export async function render(el) {
     if (!state.interval) state.interval = cfg.interval;
     const runCfg = { ...cfg, interval: state.interval };
 
-    let processed = 0, failed = [];
+    let processed = 0;
+    const failed = [], noExchange = [];
     const forecastInputs = [];
     const scores = [];
     const tradesBefore = state.closed.length;
     const openKeysBefore = new Set(Object.values(state.open).map((p) => `${p.symbol}:${p.openedAt}`));
-    for (const sym of cfg.universe) {
+    // A coin taken off the list while a position in it was open used to be
+    // skipped for good, leaving that position with no stop or target. It is
+    // still checked now, for its exits only.
+    const held = Object.keys(state.open).filter((sym) => !cfg.universe.includes(sym));
+    const bySymbol = {};
+    for (const sym of [...cfg.universe, ...held]) {
       if (st.disposed) return;
       const coin = all.find((c) => c.symbol === sym);
       if (!coin) { failed.push(sym); continue; }
       try {
         const r = await getCandles(coin, runCfg.interval, 500);
-        // only fully closed candles drive decisions
-        const candles = r.candles.slice(0, -1);
+        // Demo candles are invented: never trade on them or price a position with them.
+        if (r.source === 'demo') { failed.push(sym); continue; }
         // Open positions used to be marked at their ENTRY price until a live
         // tick arrived, so every one showed +$0.00 (0.00%). The newest candle's
         // close is a real, recent price — use it until a tick replaces it.
         const lastPx = r.candles[r.candles.length - 1]?.c;
         if (Number.isFinite(lastPx) && st.priceFrom[sym] !== 'live') { st.prices[sym] = lastPx; st.priceFrom[sym] = 'candle'; }
-        const res = replaySymbol(state, runCfg, sym, candles);
-        processed += res.processed;
-        if (Number.isFinite(res.lastScore)) scores.push({ sym, score: res.lastScore });
+        // Only coins with real exchange candles are traded. One without them
+        // gets sparse price samples from CoinGecko (FIGR_HELOC, a tokenised
+        // home loan, was traded that way: 12 trades, nearly all losses), so it
+        // is skipped and a position already open in it is closed at that price.
+        if (r.source === 'coingecko' || r.lowRes) {
+          noExchange.push(sym);
+          if (state.open[sym] && Number.isFinite(lastPx)) closeManual(state, runCfg, sym, lastPx, Date.now(), 'no exchange price');
+          continue;
+        }
+        // only fully closed candles drive decisions
+        const candles = r.candles.slice(0, -1);
+        bySymbol[sym] = candles;
         forecastInputs.push({ sym, candles });
       } catch { failed.push(sym); }
+    }
+    if (st.disposed) return;
+    // Every coin advances together, candle by candle, as in the published test.
+    const results = replayAll(state, { ...runCfg, excluded: [...(runCfg.excluded || []), ...held] }, bySymbol);
+    for (const [sym, res] of Object.entries(results)) {
+      processed += res.processed;
+      if (Number.isFinite(res.lastScore)) scores.push({ sym, score: res.lastScore });
     }
     // The page was closed or redrawn (a sync brought newer trades) while the last
     // coin loaded: saving now would put this older copy back over them. Nothing
@@ -256,6 +289,7 @@ export async function render(el) {
     btn.disabled = false;
     btn.innerHTML = old;
     if (failed.length) toast(`No data for ${failed.join(', ')} — skipped.`, 'info');
+    if (noExchange.length) toast(`${noExchange.join(', ')} ${noExchange.length > 1 ? 'have' : 'has'} no exchange candles, so the AI does not trade ${noExchange.length > 1 ? 'them' : 'it'}. Take ${noExchange.length > 1 ? 'them' : 'it'} off its list in Settings.`, 'info');
     draw();
     if (processed) toast(`Checked ${processed.toLocaleString('en-US')} new candle${processed === 1 ? '' : 's'}.`, 'up');
     learnFrom(forecastInputs, runCfg.interval);
@@ -306,7 +340,7 @@ export async function render(el) {
     }
     for (const c of state.log || []) ev.push({ t: c.t, kind: c.kind, c });
     ev.sort((a, b) => b.t - a.t);
-    const why = { target: 'hit its target', 'stop-loss': 'hit its stop-loss', 'trailing stop': 'hit its trailing stop', 'signal reversal': 'the signal turned against it' };
+    const why = { target: 'hit its target', 'stop-loss': 'hit its stop-loss', 'trailing stop': 'hit its trailing stop', 'break-even stop': 'came back to its entry after the stop was raised there', 'signal reversal': 'the signal turned against it', 'sold into strength': 'the bounce it bought for had arrived', 'no exchange price': 'no exchange trades this coin, so the AI stopped trading it' };
     const line = (e) => {
       if (e.kind === 'check') {
         const c = e.c;
@@ -761,12 +795,12 @@ export async function render(el) {
       <form class="stack mt" style="gap:10px" id="cf">
         <div class="row" style="gap:8px">
           <label class="fld">Starting balance<input class="inp" name="startingBalance" type="number" min="100" step="100" value="${cfg.startingBalance}" style="width:130px"></label>
-          <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="10" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
+          <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="5" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
           <label class="fld">Max open<input class="inp" name="maxPositions" type="number" min="1" max="10" value="${cfg.maxPositions}" style="width:90px"></label>
         </div>
         <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => `<option ${i === cfg.interval ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
         <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
-        <p class="fine">Available: ${esc(tradable.slice(0, 24).map((c) => c.symbol).join(', '))}…</p>
+        <p class="fine">Available: ${esc(tradable.filter((c) => c.binance).slice(0, 24).map((c) => c.symbol).join(', '))}… The AI only trades coins with real exchange candles.</p>
         <button class="btn primary">Save settings</button>
       </form>`);
     $('#cf', m.el).addEventListener('submit', (e) => {
@@ -776,7 +810,7 @@ export async function render(el) {
       if (!uni.length) { toast('Pick at least one tradable coin.', 'down'); return; }
       Object.assign(cfg, {
         startingBalance: Math.max(100, +f.startingBalance.value),
-        riskPct: Math.min(10, Math.max(0.1, +f.riskPct.value)),
+        riskPct: Math.min(5, Math.max(0.1, +f.riskPct.value)),
         maxPositions: Math.min(10, Math.max(1, +f.maxPositions.value)),
         interval: f.interval.value,
         universe: uni.slice(0, 12),
