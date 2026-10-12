@@ -9,7 +9,7 @@ on:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, all]
+        options: [selection, trader-rules, trader-folds, all]
         default: selection
 
 permissions:
@@ -64,3 +64,28 @@ jobs:
         with:
           name: selection
           path: selection.txt
+
+  trader-folds:
+    if: inputs.job == 'trader-folds' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download candles
+        env:
+          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
+          PLAN: '{"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Each chart's own rules against the app's, walk-forward
+        run: node tools/evaluate-trader-folds.mjs klines.json | tee trader-folds.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trader-folds
+          path: trader-folds.txt
