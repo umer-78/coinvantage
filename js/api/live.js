@@ -45,12 +45,13 @@ class LiveHub extends EventTarget {
     const ws = new WebSocket(`${base}/stream`);
     this.ws = ws;
     ws.onopen = () => {
-      this.connected = true; this.retry = 0;
+      this.connected = true; this.retry = 0; this.lastMsg = Date.now();
       this.dispatchEvent(new CustomEvent('status', { detail: { connected: true } }));
       const streams = [...this.handlers.keys()];
       for (let i = 0; i < streams.length; i += 100) this.send('SUBSCRIBE', streams.slice(i, i + 100));
     };
     ws.onmessage = (ev) => {
+      this.lastMsg = Date.now();
       let msg; try { msg = JSON.parse(ev.data); } catch { return; }
       if (!msg.stream) return;
       const set = this.handlers.get(msg.stream);
@@ -70,6 +71,21 @@ class LiveHub extends EventTarget {
 }
 
 export const live = new LiveHub();
+
+// A socket can stay "open" while nothing arrives — after a laptop sleeps or the
+// network changes — and prices froze while the page still said Live. The
+// market-wide ticker sends every second, so a minute of silence means the
+// connection is dead: close it and let the normal reconnect take over.
+const SILENCE_MS = 60000;
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    if (live.ws && live.connected && live.handlers.size && Date.now() - (live.lastMsg || 0) > SILENCE_MS) {
+      try { live.ws.close(); } catch { /* onclose reconnects */ }
+    }
+  }, 15000);
+  // Back online: reconnect now rather than after the remaining backoff.
+  window.addEventListener('online', () => { live.retry = 0; live.ensure(); });
+}
 
 // Pause streams when the tab is hidden for a while to save battery/data on phones.
 if (typeof document !== 'undefined') {
