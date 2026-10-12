@@ -138,7 +138,12 @@ The site degrades gracefully without it — every backend call fails soft.
   To run your own copy, create a Supabase project, apply them in order (SQL editor, or
   `supabase link` then `supabase db push`), change the project address inside
   `private.call_cv()` (in `20260912115252_schedule_background_jobs.sql`) to your own, and
-  put your project URL and publishable key in `js/config.js`.
+  put your project URL and publishable key in `js/config.js`. Then create the two
+  secrets the jobs and the Telegram webhook check, each a long random string:
+  `select vault.create_secret('<random>', 'cron_secret');` and
+  `select vault.create_secret('<random>', 'telegram_webhook_secret');`. Without the
+  first every scheduled job is refused; without the second the bot ignores every
+  message.
 - Sync merges each piece of a user's data separately (`js/lib/cloudsync.js`): whichever
   device changed something since the two last agreed wins. When two devices changed the
   same thing, the saved copy is kept, and demo or real trades only the other device had

@@ -1,7 +1,7 @@
 // Account page: profile, alert channels (e-mail + Telegram), premium status, data & deletion.
 import { $, $$, icon, toast, modal } from '../ui.js';
 import { esc, money } from '../format.js';
-import { load } from '../store.js';
+import { load, settings } from '../store.js';
 import { myActivity, myForecasts, forecastScore, resolveDueForecasts, clearMyActivity } from '../api/activity.js';
 import { changePassword, signOutEverywhere } from '../api/security.js';
 import { getCandles, findCoin } from '../api/market.js';
@@ -62,6 +62,12 @@ export async function render(el, [flag]) {
       </div>
 
       <div class="card" style="grid-column:1/-1">
+        <h3>Daily watchlist summary</h3>
+        <label class="row mt" style="gap:8px"><input type="checkbox" id="dg" ${settings.get().digest !== false ? 'checked' : ''}> Send me a short summary of my watchlist every morning (08:00 UTC) on Telegram or e-mail</label>
+        <p class="fine">It goes to whichever of the two you have linked above. Untick it to stop it.</p>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
         <div class="card-h"><h3>Your activity</h3><button class="btn sm ghost" id="clearAct">Clear history</button></div>
         <div id="activityBox">Loading…</div>
       </div>
@@ -94,6 +100,11 @@ export async function render(el, [flag]) {
     toast('Profile saved.', 'up');
   });
   $('#out', el).addEventListener('click', async () => { await signOut(); location.hash = '#/'; });
+
+  $('#dg', el)?.addEventListener('change', (e) => {
+    settings.set({ digest: e.target.checked });
+    toast(e.target.checked ? 'Daily summary on.' : 'Daily summary off.', 'info');
+  });
 
   // ---------------------------------------------------------------- e-mail alerts
   const paintEmail = () => {

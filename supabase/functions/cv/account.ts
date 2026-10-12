@@ -2,7 +2,7 @@
 // reset codes (when e-mail is configured), Telegram linking, Stripe checkout.
 import {
   admin, json, HttpError, requireUser, getProfile, rateLimit, clientIp, secret, setting,
-  sendEmail, sendTelegram, sha256Hex, randomCode, escHtml, SUPABASE_URL,
+  sendEmail, sendTelegram, sha256Hex, randomCode, escHtml, SUPABASE_URL, toMinor,
 } from './lib.ts';
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[a-z]{2,24}$/i;
@@ -66,6 +66,9 @@ export async function account(req: Request): Promise<Response> {
       if (!EMAIL_RE.test(email)) throw new HttpError('Please enter a valid e-mail address.');
       if (!(await secret('resend_api_key'))) throw new HttpError('E-mail sending is not set up on this site yet. Contact the site admin.', 503);
       await rateLimit(`code:${email}`, 3, 900);
+      // At most 8 codes a day for one address (5 guesses each): without it a
+      // patient attacker had about 1,400 guesses a day at a 6-digit reset code.
+      await rateLimit(`code-day:${email}`, 8, 86400);
       await rateLimit(`code-ip:${clientIp(req)}`, 10, 3600);
       // Don't reveal whether an account exists for password resets.
       if (purpose === 'reset') {
@@ -136,7 +139,7 @@ export async function account(req: Request): Promise<Response> {
         mode: 'payment',
         'line_items[0][quantity]': '1',
         'line_items[0][price_data][currency]': (premium.currency || 'USD').toLowerCase(),
-        'line_items[0][price_data][unit_amount]': String(Math.round((premium.price || 19) * 100)),
+        'line_items[0][price_data][unit_amount]': String(toMinor(premium.price || 19, premium.currency || 'USD')),
         'line_items[0][price_data][product_data][name]': `CoinVantage Premium — ${premium.period_days || 30} days`,
         client_reference_id: user.id,
         customer_email: user.email || '',

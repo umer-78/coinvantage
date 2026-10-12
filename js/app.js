@@ -333,10 +333,14 @@ async function showTriggeredServerAlerts() {
   try {
     const rows = await serverAlerts();
     const seen = new Set(load('seenAlerts', []));
-    const fresh = rows.filter((a) => a.triggered_at && !seen.has(a.id));
+    // Keyed by firing, not by alert: a repeating signal alert fires many times.
+    // Signal alerts used to come out as "BTC went null —".
+    const key = (a) => `${a.id}:${a.triggered_at}`;
+    const fresh = rows.filter((a) => a.triggered_at && !seen.has(key(a)) && !seen.has(a.id));
     for (const a of fresh.slice(0, 4)) {
-      toast(`🔔 ${a.symbol} went ${a.direction} ${money(a.price)} while you were away`, a.direction === 'above' ? 'up' : 'down', 9000);
-      seen.add(a.id);
+      if (a.kind === 'signal') toast(`🔔 Your ${a.symbol} signal alert fired on the ${a.interval} chart while you were away`, 'info', 9000);
+      else toast(`🔔 ${a.symbol} went ${a.direction} ${money(a.price)} while you were away`, a.direction === 'above' ? 'up' : 'down', 9000);
+      seen.add(key(a));
     }
     if (fresh.length) save('seenAlerts', [...seen].slice(-200));
   } catch { /* backend optional */ }
@@ -436,7 +440,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261012-023100";
+export const BUILD = "20261012-024443";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

@@ -4,7 +4,8 @@
 // import the pure lib/ modules, so check the whole graph statically here.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -48,4 +49,32 @@ test('every relative import resolves to a real file and export', () => {
     }
   }
   assert.deepEqual(problems, []);
+});
+
+// The edge function is deployed separately, so nothing else checks it. Node can
+// read its TypeScript by stripping the types.
+const FN = join(ROOT, 'supabase/functions/cv');
+
+// (`node --check` on a .ts file with imports passes even when it is broken, so
+// the types are stripped first and the plain JavaScript is checked.)
+test('every edge function file parses', async (t) => {
+  const { stripTypeScriptTypes } = await import('node:module');
+  if (typeof stripTypeScriptTypes !== 'function') return t.skip('this Node has no stripTypeScriptTypes');
+  const tmp = mkdtempSync(join(tmpdir(), 'cv-fn-'));
+  for (const f of readdirSync(FN).filter((x) => x.endsWith('.ts'))) {
+    let js = '';
+    assert.doesNotThrow(() => { js = stripTypeScriptTypes(readFileSync(join(FN, f), 'utf8')); }, `${f} is not valid TypeScript`);
+    const out = join(tmp, f.replace(/\.ts$/, '.mjs'));
+    writeFileSync(out, js);
+    const r = spawnSync(process.execPath, ['--check', out], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `${f}\n${r.stderr}`);
+  }
+});
+
+test('the server engine is a byte-identical copy of the browser engine', () => {
+  // /cv/selftest and the server-side alerts depend on it; deploy-backend.sh
+  // refuses to deploy a drifted copy, and this catches the drift at commit time.
+  for (const f of ['signals', 'predict', 'indicators', 'barrier', 'pooled']) {
+    assert.equal(readFileSync(join(FN, 'engine', `${f}.js`), 'utf8'), readFileSync(join(ROOT, 'js/lib', `${f}.js`), 'utf8'), `${f}.js differs`);
+  }
 });

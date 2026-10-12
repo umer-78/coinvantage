@@ -111,7 +111,7 @@ async function checkSignalAlerts(alerts: Record<string, unknown>[]) {
     const plan = [
       `Now: $${fmtPrice(sig.price)}  ·  score ${sig.score > 0 ? '+' : ''}${sig.score}/100`,
       `Entry: $${fmtPrice(sig.plan.entryZone[0])} – $${fmtPrice(sig.plan.entryZone[1])}`,
-      `Stop-loss: $${fmtPrice(sig.plan.stopLoss)} (${sig.plan.riskPct}% risk)`,
+      `Stop-loss: $${fmtPrice(sig.plan.stopLoss)} (${sig.plan.riskPct}% from entry)`,
       `Targets: ${tps}`,
     ].join('\n');
     const link = site?.url ? `\n<a href="${escHtml(site.url)}#/coin/${a.symbol}">Open the ${a.symbol} chart</a>` : '';
@@ -123,7 +123,7 @@ async function checkSignalAlerts(alerts: Record<string, unknown>[]) {
         `<div style="font-family:system-ui,sans-serif"><h2>${isLong ? '🟢' : '🔴'} ${a.symbol} — ${escHtml(sig.text)}</h2>
          <p>On the ${escHtml(String(a.interval))} chart, score ${sig.score > 0 ? '+' : ''}${sig.score}/100. Price now <b>$${fmtPrice(sig.price)}</b>.</p>
          <ul><li>Entry $${fmtPrice(sig.plan.entryZone[0])} – $${fmtPrice(sig.plan.entryZone[1])}</li>
-         <li>Stop-loss <b>$${fmtPrice(sig.plan.stopLoss)}</b> (${sig.plan.riskPct}% risk)</li>
+         <li>Stop-loss <b>$${fmtPrice(sig.plan.stopLoss)}</b> (${sig.plan.riskPct}% from entry)</li>
          <li>Targets ${tps}</li></ul>
          ${site?.url ? `<p><a href="${escHtml(site.url)}#/coin/${a.symbol}">Open the chart</a></p>` : ''}
          <p style="color:#888">Set the stop-loss when you place the order. This app never trades for you. Not financial advice.</p></div>`);
@@ -197,7 +197,7 @@ export async function watchlistDigest(req: Request): Promise<Response> {
     movers.sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg));
     const top = movers[0];
     const head = `📋 <b>Your watchlist today</b>\nBiggest move: <b>${escHtml(top.sym)}</b> ${top.chg >= 0 ? '+' : ''}${top.chg.toFixed(1)}%`;
-    const link = site?.url ? `\n\n<a href="${escHtml(site.url)}#/advice">See what to buy →</a>` : '';
+    const link = site?.url ? `\n\n<a href="${escHtml(site.url)}#/advice">See today's readings →</a>` : '';
     const text = `${head}\n\n${reads.join('\n')}${link}\n\n<i>Readings from the 4h chart. Not financial advice.</i>`;
 
     if (p?.telegram_chat_id) await sendTelegram(p.telegram_chat_id, text);
@@ -205,7 +205,7 @@ export async function watchlistDigest(req: Request): Promise<Response> {
       await sendEmail(p.email, `Your watchlist: ${top.sym} ${top.chg >= 0 ? '+' : ''}${top.chg.toFixed(1)}%`,
         `<div style="font-family:system-ui,sans-serif"><h2>📋 Your watchlist today</h2>
          <ul>${reads.map((l) => `<li>${l}</li>`).join('')}</ul>
-         ${site?.url ? `<p><a href="${escHtml(site.url)}#/advice">See what to buy</a></p>` : ''}
+         ${site?.url ? `<p><a href="${escHtml(site.url)}#/advice">See today's readings</a></p>` : ''}
          <p style="color:#888">Readings from the 4h chart. Not financial advice.</p></div>`);
     }
     sent++;

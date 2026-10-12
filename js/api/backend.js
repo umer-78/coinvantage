@@ -165,10 +165,14 @@ export async function serverAlerts() {
   return data || [];
 }
 
+/** Saves an alert on the server and returns its id. */
 export async function createServerAlert(alert) {
   const client = await sb();
-  const { error } = await client.from('alerts').insert({ ...alert, user_id: auth.user.id });
+  if (!auth.user) throw new Error('Sign in to save alerts on the server.');
+  if (!client) throw new Error('The alert server is not reachable right now.');
+  const { data, error } = await client.from('alerts').insert({ ...alert, user_id: auth.user.id }).select('id').single();
   if (error) throw new Error(error.message.includes('Alert limit') ? error.message : 'Could not save the alert.');
+  return data?.id ?? null;
 }
 
 export async function deleteServerAlert(id) {

@@ -91,9 +91,27 @@ export const escHtml = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) =>
 
 export function fmtPrice(v: number) {
   const a = Math.abs(v);
-  const dp = a >= 1000 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 6 : 8;
+  // The same decimals as the browser (engine/signals.js): a coin priced at
+  // 0.0000000015 used to read "$0" in alerts and Telegram replies.
+  const dp = a >= 1000 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 6 : !(a > 0) || a >= 1e-5 ? 8 : Math.min(20, Math.ceil(-Math.log10(a)) + 3);
   return Number(v.toFixed(dp)).toLocaleString('en-US', { maximumFractionDigits: dp });
 }
+
+// Stripe counts these currencies in whole units and these in thousandths, so
+// "price x 100" charged 100 times the price in yen. https://docs.stripe.com/currencies
+const ZERO_DECIMAL = new Set(['bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'ugx', 'vnd', 'vuv', 'xaf', 'xof', 'xpf']);
+const THREE_DECIMAL = new Set(['bhd', 'jod', 'kwd', 'omr', 'tnd']);
+const minorUnits = (currency: string) => {
+  const c = String(currency || 'usd').toLowerCase();
+  return ZERO_DECIMAL.has(c) ? 1 : THREE_DECIMAL.has(c) ? 1000 : 100;
+};
+/** An amount in Stripe's smallest unit for that currency. */
+export function toMinor(amount: number, currency: string) {
+  const m = minorUnits(currency);
+  const v = Math.round(amount * m);
+  return m === 1000 ? Math.round(v / 10) * 10 : v;   // three-decimal amounts must end in 0
+}
+export const fromMinor = (v: number, currency: string) => v / minorUnits(currency);
 
 // ------------------------------------------------------------------ messaging
 export async function sendTelegram(chatId: number | string, text: string, extra: Record<string, unknown> = {}) {
@@ -181,6 +199,13 @@ export async function sha256Hex(s: string) {
 }
 
 export function randomCode(len = 6, alphabet = '0123456789') {
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  return [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
+  // Rejection sampling: a byte modulo 10 made 0-5 slightly likelier than 6-9.
+  const limit = 256 - (256 % alphabet.length);
+  let out = '';
+  while (out.length < len) {
+    for (const b of crypto.getRandomValues(new Uint8Array(len * 2))) {
+      if (b < limit && out.length < len) out += alphabet[b % alphabet.length];
+    }
+  }
+  return out;
 }

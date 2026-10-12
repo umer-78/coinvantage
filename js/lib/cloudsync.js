@@ -30,7 +30,7 @@ export const ACCOUNT_KEYS = ['traderState', 'myDemoState', 'realTradeState'];
 /** The accounts holding trades the user made; the AI's own account is not one. */
 export const OWN_ACCOUNTS = ['myDemoState', 'realTradeState'];
 /** The settings that follow the account; the rest stay per device. */
-export const SETTINGS_FIELDS = ['theme', 'interval', 'currency', 'lang', 'llmModel'];
+export const SETTINGS_FIELDS = ['theme', 'interval', 'currency', 'lang', 'llmModel', 'digest'];
 const META_KEY = 'syncMeta';      // { user, base: { key: fingerprint } }
 const BACKUP_KEY = 'syncBackup';  // { at, user, keys: { account: value } }
 

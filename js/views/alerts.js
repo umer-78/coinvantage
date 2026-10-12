@@ -1,6 +1,6 @@
 import { markets, isStable } from '../api/market.js';
 import { $, $$, icon, toast, coinLogo, skeleton } from '../ui.js';
-import { esc, price, usd, ago, money} from '../format.js';
+import { esc, price, ago, money } from '../format.js';
 import { load, save } from '../store.js';
 import { fx } from '../api/fx.js';
 import { auth, backendEnabled, serverAlerts, createServerAlert, deleteServerAlert } from '../api/backend.js';
@@ -31,6 +31,7 @@ export async function render(el, [preset]) {
           </div>
           <p class="fine" id="cur"></p>
           <button class="btn primary">${icon('alerts', 16)} Create alert</button>
+          <p class="fine" id="reach"></p>
         </form>
         <div class="mt" id="permBox">${perm === 'granted' ? '<p class="fine up">Browser notifications are on.</p>' : perm === 'unsupported' ? '<p class="fine">This browser does not support notifications — alerts appear as on-screen messages.</p>' : '<button class="btn sm" id="perm">Enable browser notifications</button>'}</div>
       </div>
@@ -131,39 +132,88 @@ export async function render(el, [preset]) {
   }
 
   drawSignals();
-  const onAuth = () => drawSignals();
+  const onAuth = () => { drawSignals(); loadElsewhere(); };
   auth.addEventListener('change', onAuth);
 
+  // Price alerts were kept only in this browser, so nothing reached Telegram or
+  // e-mail with the site closed, though the server already knew how to send
+  // them. Signed in, each one is now saved on the server as well.
+  const signedIn = () => !!auth.user && backendEnabled();
+  const reach = () => {
+    const r = $('#reach', el);
+    if (r) r.textContent = signedIn()
+      ? 'Signed in: the server watches your price alerts too and sends them to Telegram or e-mail with the site closed, once you link them on the account page.'
+      : 'Works while this site is open. Sign in to also get price alerts by Telegram or e-mail with the site closed.';
+  };
+  let elsewhere = [];   // server price alerts saved from another device
+  const row = (c, sym, dir, lvl, sub, attr) => `<div class="row spread" style="padding:10px;border-radius:10px;background:var(--surface-2)">
+        <div class="row">${coinLogo(c || { symbol: sym }, 26)}<div><b>${esc(sym)}</b> ${esc(dir)} <b>${money(lvl)}</b><br><small class="muted">${sub}</small></div></div>
+        <button class="icon-btn" style="width:32px;height:32px" ${attr} aria-label="Delete alert">${icon('trash', 14)}</button></div>`;
   const draw = () => {
     const alerts = load('alerts', []);
-    $('#list', el).innerHTML = alerts.length ? `<div class="stack" style="gap:8px">${alerts.map((a, i) => {
-      const c = coins.find((x) => x.symbol === a.symbol);
-      return `<div class="row spread" style="padding:10px;border-radius:10px;background:var(--surface-2)">
-        <div class="row">${coinLogo(c || { symbol: a.symbol }, 26)}<div><b>${esc(a.symbol)}</b> ${a.dir} <b>${usd(a.price)}</b><br><small class="muted">${a.triggered ? `✅ Triggered ${ago(a.triggered)}` : `Waiting · now ${money(c?.price)}`}</small></div></div>
-        <button class="icon-btn" style="width:32px;height:32px" data-del="${i}" aria-label="Delete alert">${icon('trash', 14)}</button></div>`;
-    }).join('')}</div>` : '<p class="muted">No alerts yet.</p>';
-    $$('[data-del]', el).forEach((b) => b.addEventListener('click', () => { const al = load('alerts', []); al.splice(+b.dataset.del, 1); save('alerts', al); draw(); }));
+    const items = [
+      ...alerts.map((a, i) => {
+        const c = coins.find((x) => x.symbol === a.symbol);
+        return row(c, a.symbol, a.dir, a.price, `${a.triggered ? `✅ Triggered ${ago(a.triggered)}` : `Waiting · now ${money(c?.price)}`}${a.serverId ? ' · also by Telegram / e-mail' : ''}`, `data-del="${i}"`);
+      }),
+      ...elsewhere.map((a) => row(coins.find((x) => x.symbol === a.symbol), a.symbol, a.direction, Number(a.price),
+        `${a.triggered_at ? `✅ Triggered ${ago(new Date(a.triggered_at).getTime())}` : 'Waiting'} · saved on another device`, `data-srv="${esc(String(a.id))}"`)),
+    ];
+    $('#list', el).innerHTML = items.length ? `<div class="stack" style="gap:8px">${items.join('')}</div>` : '<p class="muted">No alerts yet.</p>';
+    $$('[data-del]', el).forEach((b) => b.addEventListener('click', async () => {
+      const al = load('alerts', []);
+      const [gone] = al.splice(+b.dataset.del, 1);
+      save('alerts', al);
+      if (gone?.serverId) { try { await deleteServerAlert(gone.serverId); } catch (err) { toast(err.message, 'down'); } }
+    }));
+    $$('[data-srv]', el).forEach((b) => b.addEventListener('click', async () => {
+      try { await deleteServerAlert(b.dataset.srv); elsewhere = elsewhere.filter((a) => String(a.id) !== b.dataset.srv); draw(); } catch (err) { toast(err.message, 'down'); }
+    }));
+  };
+  const loadElsewhere = async () => {
+    reach();
+    if (!signedIn()) { elsewhere = []; draw(); return; }
+    const rows = await serverAlerts().catch(() => null);
+    if (!rows) return;
+    const mine = new Set(load('alerts', []).map((a) => String(a.serverId)));
+    elsewhere = rows.filter((a) => (a.kind ?? 'price') === 'price' && !mine.has(String(a.id)));
+    draw();
   };
 
-  f.addEventListener('submit', (e) => {
+  f.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const alerts = load('alerts', []);
+    const btn = f.querySelector('button');
     const typed = parseFloat(f.price.value);
-    const usdLevel = toUsd(typed);
-    alerts.unshift({ symbol: f.sym.value, dir: f.dir.value, price: usdLevel, created: Date.now() });
+    const entry = { symbol: f.sym.value, dir: f.dir.value, price: toUsd(typed), created: Date.now() };
+    let where = 'It works while this site is open.';
+    if (signedIn()) {
+      btn.disabled = true;
+      try {
+        entry.serverId = await createServerAlert({ kind: 'price', symbol: entry.symbol, direction: entry.dir, price: entry.price, channels: ['telegram', 'email'], active: true });
+        where = 'The server watches it too.';
+      } catch (err) { where = `Saved in this browser only: ${err.message}`; }
+      btn.disabled = false;
+    }
+    const alerts = load('alerts', []);
+    alerts.unshift(entry);
     save('alerts', alerts);
-    toast(`Alert set: ${f.sym.value} ${f.dir.value} ${money(usdLevel)}`, 'info');
+    toast(`Alert set: ${entry.symbol} ${entry.dir} ${money(entry.price)}. ${where}`, 'info');
     f.price.value = '';
-    draw();
   });
   $('#perm', el)?.addEventListener('click', async () => {
     const r = await Notification.requestPermission();
     $('#permBox', el).innerHTML = r === 'granted' ? '<p class="fine up">Browser notifications are on.</p>' : '<p class="fine">Notifications blocked — alerts will show on screen instead.</p>';
   });
-  $('#clear', el).addEventListener('click', () => { save('alerts', load('alerts', []).filter((a) => !a.triggered)); draw(); });
+  $('#clear', el).addEventListener('click', () => {
+    const all = load('alerts', []);
+    save('alerts', all.filter((a) => !a.triggered));
+    // a server copy that has not fired yet would still fire later
+    for (const a of all) if (a.triggered && a.serverId) deleteServerAlert(a.serverId).catch(() => {});
+  });
   const onStore = (e) => { if (e.detail.key === 'alerts') draw(); };
   window.addEventListener('cv:store', onStore);
   draw();
+  loadElsewhere();
   return () => {
     window.removeEventListener('cv:store', onStore);
     window.removeEventListener('cv:currency', onCurrency);

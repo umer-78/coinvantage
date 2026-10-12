@@ -1,5 +1,5 @@
 // Stripe webhook: activates Premium after a successful Checkout payment.
-import { admin, secret, setting } from './lib.ts';
+import { admin, secret, setting, fromMinor } from './lib.ts';
 
 async function verify(payload: string, header: string, whsec: string) {
   const parts = Object.fromEntries(header.split(',').map((p) => p.split('=') as [string, string]));
@@ -29,7 +29,7 @@ export async function stripeWebhook(req: Request): Promise<Response> {
     const base = p?.premium_until && new Date(p.premium_until) > new Date() ? new Date(p.premium_until) : new Date();
     const until = new Date(base.getTime() + days * 864e5).toISOString();
     await admin.from('profiles').update({ premium_until: until }).eq('id', userId);
-    await admin.from('subscriptions').insert({ user_id: userId, provider: 'stripe', provider_ref: s.id, plan: `${days} days`, amount: (s.amount_total || 0) / 100, currency: s.currency, premium_until: until });
+    await admin.from('subscriptions').insert({ user_id: userId, provider: 'stripe', provider_ref: s.id, plan: `${days} days`, amount: fromMinor(s.amount_total || 0, s.currency || 'usd'), currency: s.currency, premium_until: until });
   }
   return new Response('ok');
 }
