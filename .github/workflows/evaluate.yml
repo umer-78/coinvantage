@@ -9,7 +9,7 @@ on:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, trader-folds, all]
+        options: [selection, trader-rules, trader-folds, engine, all]
         default: selection
 
 permissions:
@@ -89,3 +89,63 @@ jobs:
         with:
           name: trader-folds
           path: trader-folds.txt
+
+  # The forecast's release test re-run on fresh candles: 12 coins, six charts,
+  # 20 forecasts per coin and chart, split over six runners.
+  engine-data:
+    if: inputs.job == 'engine' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Download candles
+        env:
+          PLAN: '{"1m":4000,"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-klines
+          path: klines.json
+
+  engine:
+    needs: engine-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-klines
+      - name: Forecasts made walk-forward
+        run: node tools/evaluate-engine.mjs klines.json ${{ matrix.shard }} 6 out-${{ matrix.shard }}.json 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-out-${{ matrix.shard }}
+          path: out-${{ matrix.shard }}.json
+
+  engine-report:
+    needs: engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-out-*
+          merge-multiple: true
+      - name: Hit rate, baseline and direction trust per chart
+        run: node tools/report-engine.mjs out-*.json | tee engine.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-report
+          path: engine.txt
