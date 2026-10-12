@@ -133,9 +133,9 @@ overall. `signal_log.plan_v` marks the rule a row was scored by (1 old, 2 new);
 many of the rows it shows still carry the old scoring.
 
 ### Backend deploy as it stands (2026-10-12)
-The live edge function `cv` (version 12) is a one-line entry that imports
+The live edge function `cv` (version 13) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com
-(8d69509, the plan-scoring change), so what runs is exactly what was committed. To deploy newer server
+(53744e7: plan scoring plus the indicator fixes), so what runs is exactly what was committed. To deploy newer server
 code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
 `/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
 `telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
