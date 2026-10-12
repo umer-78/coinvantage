@@ -31,7 +31,7 @@ export function openAuth(mode = 'in') {
     const f = FORMS[cur];
     $('#authBody', m.el).innerHTML = `
       <h3>${esc(f.title)}</h3>
-      <p class="fine">Your account syncs your watchlist, portfolio and alerts across devices. ${cur === 'up' ? 'Free — no card needed.' : ''}</p>
+      <p class="fine">Your account syncs your watchlist, portfolio, trades and alerts across devices. ${cur === 'up' ? 'Free — no card needed.' : ''}</p>
       <form class="stack mt" style="gap:10px" id="af">
         ${cur === 'up' ? '<label class="fld">Name<input class="inp" name="name" autocomplete="name" maxlength="60"></label>' : ''}
         <label class="fld">E-mail<input class="inp" name="email" type="email" autocomplete="email" required></label>

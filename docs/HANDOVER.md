@@ -16,9 +16,9 @@ A fresh session should **clone this repo, read this file, and continue from "Ope
 ## How to verify (always run all of these before deploying)
 ```
 node --check $(find js -name '*.js')      # syntax
-node --test tests/*.test.mjs              # 63 unit tests, incl. the missing-import guard
+node --test tests/*.test.mjs              # every unit test must pass, incl. the missing-import guard
 node tools/smoke.mjs                      # route smoke test
-bash tools/deploy-github.sh               # commit + push to gh-pages
+bash tools/deploy-push.sh                 # stamp the release version, commit and push main (Pages deploys from main)
 ```
 Then re-run the Supabase security + performance advisors and confirm zero errors.
 
@@ -72,13 +72,34 @@ Umer picked these four, plus the Binance import which is DONE and live.
       judge, and carries the not-advice line.
 
 ### Repair / maintenance sweep to run each time
-1. `node --check` every file in js/, then `node --test tests/*.test.mjs` (63 tests).
+1. `node --check` every file in js/, then `node --test tests/*.test.mjs` (all must pass).
 2. Walk every route on the live site and confirm zero console errors.
 3. Re-run the Supabase security advisors; confirm nothing new.
-4. Confirm engine parity: `js/lib/{signals,predict,indicators,barrier}.js` must be
+4. Confirm engine parity: `js/lib/{signals,predict,indicators,barrier,pooled}.js` must be
    byte-identical to `supabase/functions/cv/engine/` — the /cv/selftest endpoint
-   depends on it. `md5sum` both and compare.
+   depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
+
+### Cloud sync, trade results and the schema (2026-10-12)
+- **Sync** (`js/lib/cloudsync.js`): every synced key merges on its own against a
+  fingerprint of the value both sides last agreed on; whichever side changed
+  wins, and when both did the cloud's copy is kept. The Trading page's accounts
+  and the AI's rules sync too (they used to stay on one device). Demo or real
+  trades that only one device had are set aside (`syncBackup`) and the Trading
+  page offers them back; two AI accounts meeting for the first time keep the
+  one that has run longest. A shared browser never uploads one account's data
+  into another. Saves go through `public.sync_user_data(p_cols, p_trading)`,
+  which writes only the keys that changed. `tests/cloudsync.test.mjs` runs it
+  against a fake server that reorders keys the way jsonb does.
+- **Trade results count both fees.** A closed trade's P&L used to leave out the
+  entry fee, so win rates and profit factors read higher than the balance.
+  `AUTOTRADER_TESTED` no longer carries profit factors (measured the old way,
+  never shown); its returns and drawdowns are balance-based and still hold.
+- **Schema in the repo**: `supabase/migrations/` holds every migration applied to
+  the live database, exported from its history and checked byte for byte. The
+  last file (`record_live_cron_jobs`) records two scheduled jobs that had been
+  changed on the live database without a migration; it was not applied there
+  and changes nothing if it is.
 
 ### Futures data fallback (2026-09-17)
 Binance futures and Bybit both geo-block some regions (the browser only sees a
@@ -152,7 +173,7 @@ A short-side test has not been run.
 - **Trader self-review** (`js/lib/tradelearn.js`): reads the trade log, switches a filter on when one entry
   condition keeps losing (≥10 trades, ≥0.25R worse), off again if results got worse, never re-learns an
   unlearned lesson. Coin benching is off by default (measured as noise). In 8 held-out runs it acted once.
-- Forecast direction accuracy: 49.6% overall against a 51.0% baseline (no edge) — 1m 44.6% (baseline 53.8%),
+- Superseded on 2026-09-26, kept for history — forecast direction accuracy: 49.6% overall against a 51.0% baseline (no edge) — 1m 44.6% (baseline 53.8%),
   5m 55.0% (52.5%), 15m 52.5% (51.2%), 1h 48.8% (64.2%), 4h 43.8% (75.4%), 1d 52.9% (52.1%).
   1,440 tests, 12 coins, 240 per timeframe. No edge on 1m, 1h, 4h. Source of truth: TESTED_ACCURACY in js/lib/predict.js.
 - Tried and REJECTED (all measured worse, do not re-add without new evidence):

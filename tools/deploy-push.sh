@@ -8,7 +8,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MSG="${1:-Site-wide audit fixes: honest accuracy reporting, currency handling, language switcher removed}"
+# The default named one old release, so every later deploy without a message
+# described changes it did not contain.
+MSG="${1:-}"
 BRANCH="main"
 SITE="https://umer-78.github.io/coinvantage/"
 
@@ -40,7 +42,7 @@ node -e '
 echo "Build $BUILD stamped"
 
 git add -A
-git diff --cached --quiet || git commit -q -m "$MSG"
+git diff --cached --quiet || git commit -q -m "${MSG:-Release $BUILD}"
 git push origin "$BRANCH"
 
 echo

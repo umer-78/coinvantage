@@ -6,9 +6,10 @@ made on facts.
 
 ## Why the current shape cannot do it
 
-CoinVantage is static files on GitHub Pages. There is no server. Anything the app
-"knows" lives in the visitor's browser, which means an exchange API key would
-live there too — in `localStorage`, readable by:
+CoinVantage is static files on GitHub Pages. Its small Supabase backend runs
+accounts, alerts and the track record, and holds no exchange credentials. Anything
+the page itself handles lives in the visitor's browser, so an exchange API key
+would live there too — in `localStorage`, readable by:
 
 - any browser extension the user has installed (extensions with `storage` or
   content-script access read it trivially),

@@ -17,7 +17,7 @@ computers alike.
 | Area | What it does |
 |---|---|
 | **Markets** | Top 250 coins (CoinGecko, CoinPaprika fallback), live prices via Binance WebSocket, 1h/24h/7d change, sparklines, global market cap, BTC/ETH dominance, Fear & Greed gauge, trending, top gainers/losers, heatmap, watchlist |
-| **Coin page** | Live candlestick chart (15m–1w) with zoom/pan/pinch, EMA 20/50/200, Bollinger, volume, RSI, MACD, support/resistance, backtest markers and the AI forecast cone. Coins Binance does not list stream live from Gate.io, HTX or OKX over WebSocket; if the socket is blocked the chart polls every 20 s, and after a gap (a sleeping tab, a dropped socket) it fetches the missing candles instead of drawing past them |
+| **Coin page** | Live candlestick chart (1-second to weekly candles) with zoom/pan/pinch, EMA 20/50/200, Bollinger, volume, RSI, MACD, support/resistance, backtest markers and the AI forecast cone. Coins Binance does not list stream live from Gate.io, HTX or OKX over WebSocket; if the socket is blocked the chart polls every 20 s, and after a gap (a sleeping tab, a dropped socket) it fetches the missing candles instead of drawing past them |
 | **Trade signal** | Buy/Sell score (−100…+100) from 9 indicator groups, multi-timeframe confluence, entry zone, stop-loss, three take-profits, exit rules and reasons |
 | **AI forecast** | Leads with the 80% and 90% price ranges and how often ranges like them held in testing, then the chance of rise, shrunk by how far its direction held up on that timeframe (none on 1h, 4h and 1d, where it says so). An ensemble of 7 models trained in the browser on that coin's own history, each weighted by its accuracy on data it never saw |
 | **History & cycles** | The long-range study: finds every past 45-day stretch whose *shape* matched today's, shows what price did 7/30/90 days later, overlays those charts on today's, adds year-by-year paths and monthly seasonality — and publishes how often that method was actually right on this coin |
@@ -30,6 +30,8 @@ computers alike.
 | **Signal scanner** | Ranks the top 20/30/50 coins by signal score and the same full forecast as the coin page, on the same 1,500 candles; filters for rising, falling, oversold and overbought. Coins Binance does not list are read from Gate.io, HTX or OKX; coins with only CoinGecko or demo data are skipped and counted |
 | **Compare** | Up to 6 coins: normalised performance, volatility, max drawdown, return/risk, correlation matrix |
 | **Tools** | Coin ↔ currency converter (PKR and 15 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
+| **Trading** | Three accounts side by side: demo trades you place yourself from any coin page, real trades you record (or import from a Binance trade-history CSV), and an AI running a tested strategy on simulated money with fees counted. The page states that strategy's measured result against buy-and-hold first, and the AI reviews its own trade log to switch filters on or off. Nothing here places an order |
+| **AI learning** | Grades every indicator reading, the forecast and the trader against what the market did next. An indicator only earns a vote after 30+ calls with a 95% range clear of 50% |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
 | **Price alerts** | Browser notifications while the site is open, plus server-side alerts by e-mail and Telegram while it is closed |
 | **Track record** | Public page scoring every signal the server logged *before* the outcome was known, against the hit rate of always calling the more common outcome. A live check fits the same trust the coin page uses to the graded rows, counting coins on one candle as one observation, and says whether the live record supports showing a direction on each timeframe |
@@ -182,8 +184,8 @@ js/api/                 market data, exchanges, futures, WebSocket hub, FX rates
 js/lib/                 indicators, signals + backtest, forecast engine, history engine, analyst, worker
 js/ai/                  in-browser LLM engine and context builder
 js/charts/              canvas candlestick chart, line chart, sparkline/donut/gauge/treemap
-js/views/               pages: markets, coin, scanner, track, futures, news, compare, tools, exchanges,
-                        wallet, alerts, premium, account, admin, legal, auth, assistant
+js/views/               pages: markets, coin, advice, trader, learn, scanner, track, futures, news, compare,
+                        tools, exchanges, wallet, alerts, premium, account, admin, legal, auth, assistant
 supabase/functions/cv/  edge function: account, admin, alerts, news, track, telegram, stripe + engine copy
 supabase/migrations/    the database schema, one file per change, in the order applied
 tools/                  local server, accuracy evaluation, sitemap builder, browser smoke test
