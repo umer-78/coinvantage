@@ -18,7 +18,7 @@
 // the shared rule set on the newer half on at least two of three timeframes.
 import { readFileSync } from 'node:fs';
 import { alignSeries, rotationReplay, buyAndHold } from '../js/lib/rotation.js';
-import { replaySeries, newState, DEFAULT_CONFIG, equity } from '../js/lib/autotrader.js';
+import { replaySeries, newState, DEFAULT_CONFIG, CHART_RULES, equity } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 
@@ -193,8 +193,12 @@ if (!only || only === 'percoin') {
 // with them makes more on the newer half than without, with a worst drawdown
 // no more than 5 points deeper. Then the table the app ships is chosen the
 // same way on each coin's FULL history.
+// Re-run after the daily chart got its own rules (CHART_RULES['1d']): those
+// are the standard now, and the opt-in stays only if each coin's own rules
+// still make more than they do on the newer half.
 if (!only || only === 'table') {
   const WARM = 260, iv = '1d';
+  const STANDARD = CHART_RULES[iv] || {};
   const grid = [];
   for (const entryMode of ['trend', 'breakout', 'pullback'])
     for (const momentumConfirm of entryMode === 'pullback' ? [false] : [false, true])
@@ -207,7 +211,7 @@ if (!only || only === 'table') {
   const coins = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length > 2 * WARM + 200).map((k) => k.split(':')[0]);
   const prep = coins.map((sym) => { const all = candlesOf(`${sym}:${iv}`); const half = Math.floor(all.length / 2); return { sym, older: mk(sym, all.slice(0, half)), newer: mk(sym, all.slice(half - WARM)), full: mk(sym, all) }; });
   const solo = (rules, x) => {
-    const cfg = { ...DEFAULT_CONFIG, ...rules, maxPositions: 1, excluded: [], universe: [x.symbol], interval: iv };
+    const cfg = { ...DEFAULT_CONFIG, ...STANDARD, ...rules, maxPositions: 1, excluded: [], universe: [x.symbol], interval: iv };
     const st = newState(cfg);
     st.cursor[x.symbol] = x.candles[209].t;
     replaySeries(st, cfg, [x], { from: 210 });
@@ -230,7 +234,7 @@ if (!only || only === 'table') {
     return table;
   };
   const account = (perCoin) => {
-    const cfg = { ...DEFAULT_CONFIG, universe: coins, interval: iv, perCoin, excluded: [] };
+    const cfg = { ...DEFAULT_CONFIG, ...STANDARD, universe: coins, interval: iv, perCoin, excluded: [] };
     const st = newState(cfg);
     const series = prep.map((p) => p.newer);
     for (const x of series) st.cursor[x.symbol] = x.candles[WARM - 1].t;
@@ -247,13 +251,14 @@ if (!only || only === 'table') {
   const without = account(null), withOwn = account(olderTable);
   const hold = +(prep.reduce((a, p) => a + (p.newer.candles.at(-1).c / p.newer.candles[WARM].c - 1), 0) / prep.length * 100).toFixed(2);
   const enable = withOwn.ret > without.ret && withOwn.dd <= without.dd + 5;
+  const offer = withOwn.ret > without.ret;
   const from = iso(prep[0].newer.candles[WARM].t), to = iso(prep[0].newer.candles.at(-1).t);
   console.log(`\n== ACCOUNT, DAILY CHART: ${coins.length} coins together, newer half ${from} → ${to}`);
-  console.log(`  app's rules:              ret ${without.ret}%  dd ${without.dd}%  trades ${without.trades}  won ${without.winRate}%`);
+  console.log(`  daily standard rules:     ret ${without.ret}%  dd ${without.dd}%  trades ${without.trades}  won ${without.winRate}%`);
   console.log(`  + each coin's own rules:  ret ${withOwn.ret}%  dd ${withOwn.dd}%  trades ${withOwn.trades}  won ${withOwn.winRate}%   (${Object.keys(olderTable).length} of ${coins.length} coins had their own)`);
-  console.log(`  holding every coin: ${hold}%   → ${enable ? 'SWITCH ON for daily accounts' : 'LEAVE OFF'}`);
+  console.log(`  holding every coin: ${hold}%   → ${enable ? 'SWITCH ON for daily accounts' : offer ? 'OFFER AS AN OPT-IN' : 'DROP THE OPT-IN'}`);
   const fullTable = choose('full');
   console.log(`\nTABLE ${JSON.stringify(fullTable)}`);
-  out.account1d = { coins: coins.length, from, to, without, withOwn, hold, enable, own: Object.keys(olderTable).length, table: fullTable };
+  out.account1d = { coins: coins.length, from, to, standard: STANDARD, without, withOwn, hold, enable, offer, own: Object.keys(olderTable).length, table: fullTable };
 }
 console.log(`\nJSON ${JSON.stringify(out)}`);

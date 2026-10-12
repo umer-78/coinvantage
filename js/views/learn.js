@@ -4,7 +4,7 @@ import { esc, dateTime, ago, horizonText } from '../format.js';
 import { load } from '../store.js';
 import { INDICATORS, LEARN_TESTED, SWITCH_MIN, SWITCH_GAP, liveScores } from '../lib/learncenter.js';
 import { learningPass, loadLearn } from '../lib/learnpass.js';
-import { DEFAULT_CONFIG, AUTOTRADER_TESTED } from '../lib/autotrader.js';
+import { DEFAULT_CONFIG, CHART_TESTED, rulesForChart } from '../lib/autotrader.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 import { activeLessons, reviewTrades } from '../lib/tradelearn.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
@@ -50,8 +50,12 @@ export async function render(el) {
     const hist = L.history?.[st.interval]?.table || null;
     const weights = L.weights?.[st.interval] || {};
     const champion = L.champion || 'forecast';
-    const cfg = { ...DEFAULT_CONFIG, ...(load('traderCfg', {}) || {}) };
+    // the same rules the Trading page trades: its settings, the chart the
+    // account runs on, and the self-review's lessons
+    const saved = load('traderCfg', {}) || {};
     const lessons = load('traderLessons', []) || [];
+    const traderIv = load('traderState', null)?.interval || saved.interval || DEFAULT_CONFIG.interval;
+    const cfg = rulesForChart({ ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => ['universe', 'minAdx', 'maxEntryRsi', 'excluded'].includes(k))) }, traderIv, lessons);
     const ledger = loadLedger();
     const fl = learningStatus(ledger);
     const tested = LEARN_TESTED.byInterval[st.interval];
@@ -124,7 +128,7 @@ export async function render(el) {
 
       <div class="card mt">
         <div class="card-h"><h3>${icon('bolt', 16)} Trading</h3><a class="btn sm" href="#/trader">Open the trader</a></div>
-        <p class="fine" style="margin-top:0">After every check the AI trader reads its own trade log. It switches on a filter when one market condition keeps losing, and switches it off again if results get worse. Its current rules were chosen on training data and scored on data they had never seen: on ${esc(cfg.interval)} they returned ${AUTOTRADER_TESTED[cfg.interval] ? `${AUTOTRADER_TESTED[cfg.interval].pickedReturn}% against ${AUTOTRADER_TESTED[cfg.interval].buyHold}% for buy-and-hold` : 'an untested result'}.</p>
+        <p class="fine" style="margin-top:0">After every check the AI trader reads its own trade log. It switches on a filter when one market condition keeps losing, and switches it off again if results get worse. Its rules were picked on older candles and run on newer ones they had never seen, three times: on ${esc(cfg.interval)} they averaged ${CHART_TESTED[cfg.interval] ? (() => { const x = CHART_TESTED[cfg.interval], t = x.adopt ? x.own : x.standard; return `${t.ret}% a ${x.block} period against ${x.hold}% for holding the same coins`; })() : 'an untested result'}.</p>
         <p class="fine"><b>Rules in force:</b> ${esc((activeLessons(cfg).join(' · ')) || 'the original strategy')}.</p>
       </div>
 

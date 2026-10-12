@@ -135,3 +135,26 @@ test('a coin with its own rules trades them; the others and the account settings
   assert.equal(rulesFor(cfg, 'A'), cfg);
   for (const r of Object.values(PER_COIN_RULES.rules)) assert.ok(['trend', 'breakout', 'pullback'].includes(r.entryMode) && r.atrStop > 0);
 });
+
+test('a chart trades its own rules only where the published test clears the bar set before it', async () => {
+  const { CHART_RULES, CHART_TESTED } = await import('../js/lib/autotrader.js');
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const x = CHART_TESTED[iv];
+    const clears = x.better >= 2 && x.own.ret - x.standard.ret >= 1 && x.own.dd <= x.standard.dd + 5;
+    assert.equal(x.adopt, clears, `${iv}: adopt must follow the bar`);
+    assert.equal(Boolean(CHART_RULES[iv]), x.adopt, `${iv}: rules shipped exactly where adopted`);
+  }
+});
+
+test('the rules an account trades: its chart\'s own, then the self-review\'s latest trend lesson', async () => {
+  const { rulesForChart, CHART_RULES } = await import('../js/lib/autotrader.js');
+  const d = rulesForChart(DEFAULT_CONFIG, '1d');
+  for (const [k, v] of Object.entries(CHART_RULES['1d'])) assert.equal(d[k], v, k);
+  assert.equal(d.interval, '1d');
+  assert.equal(rulesForChart(DEFAULT_CONFIG, '4h').entryMode, DEFAULT_CONFIG.entryMode, '4h keeps the standard rules');
+  // a saved setting does not decide the trend filter; the lessons do
+  assert.equal(rulesForChart({ ...DEFAULT_CONFIG, trendFilter: true }, '1d').trendFilter, false);
+  assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'trend', at: 1 }]).trendFilter, true, 'learned');
+  assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'trend', at: 1 }, { lens: 'trend', at: 2, undo: true }]).trendFilter, false, 'then unlearned');
+  assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'adx', at: 1 }]).trendFilter, false, 'other lessons leave it alone');
+});

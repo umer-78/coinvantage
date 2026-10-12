@@ -52,6 +52,48 @@ export const AUTOTRADER_TESTED = {
 };
 
 /**
+ * Rules picked for one chart. tools/evaluate-trader-folds.mjs (2026-10-12, 24
+ * coins in one account, shared cash, fees) cut each chart's history into four
+ * blocks and three times picked the best of 432 rule sets on everything before
+ * a block, then ran it on that block next to the standard rules. The bar,
+ * set before the run: better in two of three blocks, by a point on average,
+ * worst drop no more than five points deeper. 1h and 1d cleared it and trade
+ * the same pick made on their full history; 15m and 4h did not and keep the
+ * standard rules. (A first run cleared 15m too; re-run twenty minutes later
+ * on slightly newer candles it did not. Its blocks are ten days long.)
+ */
+export const CHART_RULES = {
+  '1h': { entryMode: 'trend', momentumConfirm: true, trendFilter: true, marketFilter: false, atrStop: 3, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+  '1d': { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, marketFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+};
+
+/**
+ * That test's results, averaged over its three blocks: `standard` is the
+ * standard rules, `own` the chart's own pick, `hold` equal amounts of every
+ * coin held through the block. Returns, drops and fees are % of the balance
+ * per block; trades are the total over the three.
+ */
+export const CHART_TESTED = {
+  measuredOn: '2026-10-12', coins: 24, configs: 432, blocks: 3,
+  '15m': { from: '2026-09-11', to: '2026-10-12', block: '10 days', better: 1, adopt: false, hold: 7.76, standard: { ret: 5.84, dd: 9.68, trades: 273, win: 27.5, fees: 3.6 }, own: { ret: 6.93, dd: 6.51, trades: 250, win: 30.4, fees: 3.61 } },
+  '1h': { from: '2026-06-09', to: '2026-10-12', block: '6 weeks', better: 2, adopt: true, hold: 16.15, standard: { ret: 1.27, dd: 15.31, trades: 253, win: 26.9, fees: 3.5 }, own: { ret: 7.12, dd: 12.86, trades: 218, win: 33.0, fees: 3.21 } },
+  '4h': { from: '2025-08-01', to: '2026-10-12', block: '5 months', better: 0, adopt: false, hold: -9.88, standard: { ret: 0.7, dd: 23.32, trades: 218, win: 24.8, fees: 2.6 }, own: { ret: -13.42, dd: 25.28, trades: 218, win: 28.9, fees: 3.08 } },
+  '1d': { from: '2022-04-07', to: '2026-10-12', block: '18 months', better: 2, adopt: true, hold: 10.39, standard: { ret: 13.03, dd: 16.95, trades: 134, win: 27.6, fees: 0.97 }, own: { ret: 16.97, dd: 14.22, trades: 175, win: 34.9, fees: 2.54 } },
+};
+
+/**
+ * The rules an account trades on a chart: the settings given, that chart's
+ * own rules, then the self-review's latest decision about the trend filter.
+ * That decision is read from the review's log of lessons because a saved
+ * setting cannot tell a learned value from an old default, and trusting it
+ * would quietly put the old default back over a chart's measured rules.
+ */
+export function rulesForChart(cfg, interval, lessons = []) {
+  const trend = [...(lessons || [])].reverse().find((h) => h.lens === 'trend');
+  return { ...cfg, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), interval };
+}
+
+/**
  * Each coin's own rules for the daily chart, chosen on its own full daily
  * history by tools/evaluate-selection.mjs (24 coins, 216 rule sets each; a
  * coin keeps the standard rules unless others did better on it). Off unless
