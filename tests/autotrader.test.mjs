@@ -116,3 +116,22 @@ test('a manual demo buy cannot spend cash already in open positions', () => {
   const c = closeManual(st, cfg, 'E', 10, Date.now(), 'no exchange price');
   assert.equal(c.trade.reason, 'no exchange price');
 });
+
+test('a coin with its own rules trades them; the others and the account settings do not change', async () => {
+  const { rulesFor, PER_COIN_RULES } = await import('../js/lib/autotrader.js');
+  const cfg = cfgWith({ perCoin: { A: { entryMode: 'pullback', riskPct: 50 } } });
+  assert.equal(rulesFor(cfg, 'A').entryMode, 'pullback');
+  assert.equal(rulesFor(cfg, 'A').riskPct, cfg.riskPct, 'sizing stays the account\'s');
+  assert.equal(rulesFor(cfg, 'B'), cfg);
+  // same scripted dip as the pullback test: only the coin with its own rules buys it
+  const candles = climb(320);
+  const a = prepared('A', candles, (i) => (i === 250 ? -40 : 0));
+  const b = prepared('B', candles, (i) => (i === 250 ? -40 : 0));
+  const st = newState(cfg);
+  replaySeries(st, cfg, [a, b]);
+  assert.deepEqual(Object.keys(st.open), ['A']);
+  // a settings change made in place reaches the next replay
+  cfg.perCoin = null;
+  assert.equal(rulesFor(cfg, 'A'), cfg);
+  for (const r of Object.values(PER_COIN_RULES.rules)) assert.ok(['trend', 'breakout', 'pullback'].includes(r.entryMode) && r.atrStop > 0);
+});

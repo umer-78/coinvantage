@@ -132,6 +132,27 @@ overall. `signal_log.plan_v` marks the rule a row was scored by (1 old, 2 new);
 `track.ts` re-scores six old rows per run, newest first, and the page says how
 many of the rows it shows still carry the old scoring.
 
+### Coin selection and per-coin rules, measured (2026-10-12)
+`tools/evaluate-selection.mjs`, run by the Evaluate workflow (job `selection`) on fresh
+Binance candles for 24 coins. Everything is chosen on older candles and judged on newer
+ones; each bar to adopt was written in the script before the run.
+- **Strongest-coins rotation (`js/lib/rotation.js`) — REJECTED.** The setting picked on
+  the older daily half (14-day look-back, top 1, every 3 days, BTC filter) made +2,658%
+  there and −43.8% on the newer half, against −24.0% for holding the same coins (4h:
+  −6.7% against +32.9%). The module and its tests are kept; it is not offered.
+- **Per-coin AI-trader rules — offered on the daily chart as an opt-in, off by default.**
+  Walk-forward (each coin's history in four blocks, chosen and re-tested three times):
+  1d better in 3 of 3 periods, +2.94% against +1.32% a period, 40 of 72 coin-periods —
+  passed; 1h (1 of 3) and 4h (lead 0.95, under the 1-point bar) rejected. In the app's
+  own account (24 coins, shared cash, newer half 2023-10-09 → 2026-10-12): +66.45%,
+  worst drop 33.88%, against +53.89% and 24.23% for the standard rules; holding the
+  coins made +89.18%. The deeper drop broke the bar for switching it on for everyone
+  (no more than 5 points deeper), so it is a Settings checkbox with these numbers shown.
+  The table (`PER_COIN_RULES` in `js/lib/autotrader.js`) was chosen on each coin's full
+  history; a coin keeps the standard rules unless others did better on it. It follows
+  the chart the account runs on (changes only on Reset), never the one picked in Settings.
+- The 24 coins are today's survivors; that flatters every backtest that holds them.
+
 ### Backend deploy as it stands (2026-10-12)
 The live edge function `cv` (version 13) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com

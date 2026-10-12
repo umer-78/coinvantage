@@ -51,6 +51,51 @@ export const AUTOTRADER_TESTED = {
   selfReview: { runs: 8, acted: 1, note: 'Changed its rules in 1 of 8 held-out runs (4h: −10.9% → −7.2%); no change in the other 7.' },
 };
 
+/**
+ * Each coin's own rules for the daily chart, chosen on its own full daily
+ * history by tools/evaluate-selection.mjs (24 coins, 216 rule sets each; a
+ * coin keeps the standard rules unless others did better on it). Off unless
+ * the user turns it on. Measured with rules chosen on the older half of the
+ * data only and run on the newer half, all coins in one account: it made
+ * more than the standard rules (+66.5% against +53.9%) but its worst drop was
+ * deeper (33.9% against 24.2%), past the bar set before the test for turning
+ * it on for everyone. Holding all 24 coins made +89.2% over the same years.
+ * In a walk-forward check over three periods each coin's own rules beat one
+ * shared rule set in all three on daily (+2.9% against +1.3% a period); on 1h
+ * and 4h they did not, so they are offered on the daily chart only. The coins
+ * are today's survivors, which flatters every backtest of them.
+ */
+export const PER_COIN_RULES = {
+  interval: '1d', measuredOn: '2026-10-12', coins: 24,
+  tested: { from: '2023-10-09', to: '2026-10-12', standard: { ret: 53.89, dd: 24.23, trades: 108, winRate: 30.6 }, own: { ret: 66.45, dd: 33.88, trades: 192, winRate: 33.3 }, hold: 89.18, walkForward: { periods: 3, better: 3, own: 2.94, shared: 1.32 } },
+  rules: {
+    BTC: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    ETH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    BNB: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    SOL: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    XRP: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    DOGE: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    ADA: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    AVAX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    LINK: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    LTC: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    TRX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    DOT: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    BCH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    ETC: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: null },
+    XLM: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    ATOM: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 2, trailAtr: null, signalExitBars: null },
+    FIL: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 2, trailAtr: null, signalExitBars: 2 },
+    UNI: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    AAVE: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    NEAR: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    ALGO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    HBAR: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    INJ: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    SAND: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+  },
+};
+
 export const DEFAULT_CONFIG = {
   startingBalance: 10000,
   riskPct: 1.5,          // % of balance risked per trade (stop distance = this loss)
@@ -121,7 +166,8 @@ export function replaySymbol(state, cfg, symbol, candles, pre = null) {
   // `pre` lets the evaluation harness reuse indicators and scores across settings.
   const s = { symbol, candles, ind: pre?.ind || computeAll(candles), atr: pre?.atr || atr(candles, 14), scores: pre?.scores || null, regime: pre?.regime || null };
   const out = { processed: 0, lastScore: null };
-  for (let i = 210; i < candles.length; i++) advance(state, cfg, s, i, out);
+  const rules = rulesFor(cfg, symbol);
+  for (let i = 210; i < candles.length; i++) advance(state, rules, s, i, out);
   return out;
 }
 
@@ -151,6 +197,7 @@ export function replayAll(state, cfg, candlesBySymbol, { regimeCandles = null } 
  */
 export function replaySeries(state, cfg, series, { from = 210, result = {} } = {}) {
   const pos = series.map(() => from);
+  const rules = series.map((s) => rulesFor(cfg, s.symbol));
   for (const s of series) result[s.symbol] ||= { processed: 0, lastScore: null };
   for (;;) {
     let k = -1;
@@ -158,7 +205,7 @@ export function replaySeries(state, cfg, series, { from = 210, result = {} } = {
       if (pos[j] < series[j].candles.length && (k < 0 || series[j].candles[pos[j]].t < series[k].candles[pos[k]].t)) k = j;
     }
     if (k < 0) break;
-    advance(state, cfg, series[k], pos[k]++, result[series[k].symbol]);
+    advance(state, rules[k], series[k], pos[k]++, result[series[k].symbol]);
   }
   return result;
 }
@@ -166,15 +213,15 @@ export function replaySeries(state, cfg, series, { from = 210, result = {} } = {
 // The settings a coin can have its own value for. Sizing, risk and fees are
 // the account's and stay the same for every coin.
 export const RULE_KEYS = ['entryMode', 'momentumConfirm', 'trendFilter', 'atrStop', 'rMultiple', 'trailAtr', 'signalExitBars'];
-const merged = new WeakMap();
-/** The account's settings with this coin's own rules on top, if it has any. */
+/**
+ * The account's settings with this coin's own rules on top, if it has any.
+ * Worked out once per replay, never cached across them: the Trading page
+ * changes its settings object in place (Save, the self-review's filters).
+ */
 export function rulesFor(cfg, symbol) {
   const own = cfg.perCoin?.[symbol];
   if (!own) return cfg;
-  let bySym = merged.get(cfg);
-  if (!bySym) merged.set(cfg, (bySym = new Map()));
-  if (!bySym.has(symbol)) bySym.set(symbol, { ...cfg, ...Object.fromEntries(RULE_KEYS.filter((k) => k in own).map((k) => [k, own[k]])) });
-  return bySym.get(symbol);
+  return { ...cfg, ...Object.fromEntries(RULE_KEYS.filter((k) => k in own).map((k) => [k, own[k]])) };
 }
 
 // One closed candle of one coin: skip it if already seen, else trade it.
@@ -188,7 +235,7 @@ function advance(state, cfg, s, i, out) {
   if (!state.firstBarAt || c.t < state.firstBarAt) state.firstBarAt = c.t;
   const score = s.scores ? s.scores[i] : scoreAt(s.candles, s.ind, i).score;
   out.lastScore = score;
-  stepBar(state, rulesFor(cfg, s.symbol), s, i, score);
+  stepBar(state, cfg, s, i, score);
 }
 
 /**

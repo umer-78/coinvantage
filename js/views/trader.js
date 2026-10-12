@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PER_COIN_RULES, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -45,13 +45,18 @@ export async function render(el) {
   // so a strategy update never reached anyone who had once pressed Save. Only
   // the user's own choices — and, from v2, what the self-review learned — carry over.
   const savedCfg = load(CFG_KEY, {}) || {};
-  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe'];
+  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe', 'ownRules'];
   const LEARNED_KEYS = ['minAdx', 'maxEntryRsi', 'excluded', 'trendFilter'];
   const cfg = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(savedCfg).filter(([k]) => USER_KEYS.includes(k) || (savedCfg.v === 2 && LEARNED_KEYS.includes(k)))), v: 2 };
   // Risk per trade above 5% is a setting that wipes an account out in a short
   // losing run; older saves allowed 10.
   cfg.riskPct = Math.min(5, Math.max(0.1, +cfg.riskPct || DEFAULT_CONFIG.riskPct));
   let state = load(STATE_KEY, null);
+  // Each coin's own rules: offered on the daily chart, off unless chosen (see
+  // PER_COIN_RULES for what they made and what they risked in testing). It
+  // follows the chart the account RUNS on, which only changes on a Reset, not
+  // the chart picked in Settings.
+  const ownRulesOn = () => !!cfg.ownRules && (state?.interval || cfg.interval) === PER_COIN_RULES.interval;
 
   const applySession = (event) => {
     const next = sessionReducer(session, event);
@@ -143,7 +148,7 @@ export async function render(el) {
       <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested on</th><th>These rules</th><th>Worst drawdown</th><th>Best alternative</th><th>Buy &amp; hold</th><th>Trades</th></tr></thead><tbody>
         ${TFS.map((k) => { const x = AUTOTRADER_TESTED[k]; return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="${x.pickedReturn >= 0 ? 'up' : 'down'}">${sign(x.pickedReturn)}</td><td class="down">−${x.maxDrawdownPct}%</td><td class="${x.alt.ret >= 0 ? 'up' : 'down'}">${sign(x.alt.ret)} <small class="fine">(−${x.alt.dd}%)</small></td><td class="${x.buyHold >= 0 ? 'up' : 'down'}">${sign(x.buyHold)}</td><td>${x.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
-      <p class="fine mt">Current rules: buy when the score clears +${DEFAULT_CONFIG.entryScore} in an uptrend (price above its 200-bar average and the 50-bar above the 200-bar), stop ${DEFAULT_CONFIG.atrStop} ATR below entry, target ${DEFAULT_CONFIG.rMultiple}× the risk, and sell after ${DEFAULT_CONFIG.signalExitBars} candles of reversal. ${AUTOTRADER_TESTED.configs} other rule sets were tried — breakouts, buying dips, momentum confirmation, pausing while Bitcoin falls, other stops and exits. The best of them on the older data (${esc(AUTOTRADER_TESTED.altRules)}) did no better on the newer data, so these rules stay. On ${esc(iv)}, fees came to ${t.feeDragPct}% of the balance across ${t.trades} trades, and ${t.winRate}% of trades won.${iv === '15m' ? ` On 15m only ${t.madeMoney} of the ${AUTOTRADER_TESTED.configs} rule sets made money after fees — this chart is the hardest to profit from.` : ''}</p>
+      <p class="fine mt">Current rules: buy when the score clears +${DEFAULT_CONFIG.entryScore} in an uptrend (price above its 200-bar average and the 50-bar above the 200-bar), stop ${DEFAULT_CONFIG.atrStop} ATR below entry, target ${DEFAULT_CONFIG.rMultiple}× the risk, and sell after ${DEFAULT_CONFIG.signalExitBars} candles of reversal. ${AUTOTRADER_TESTED.configs} other rule sets were tried — breakouts, buying dips, momentum confirmation, pausing while Bitcoin falls, other stops and exits. The best of them on the older data (${esc(AUTOTRADER_TESTED.altRules)}) did no better on the newer data, so these rules stay. On ${esc(iv)}, fees came to ${t.feeDragPct}% of the balance across ${t.trades} trades, and ${t.winRate}% of trades won.${iv === '15m' ? ` On 15m only ${t.madeMoney} of the ${AUTOTRADER_TESTED.configs} rule sets made money after fees — this chart is the hardest to profit from.` : ''}${ownRulesText()}${ownRulesOn() ? ` Tested that way on ${PER_COIN_RULES.coins} coins: ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% and ${PER_COIN_RULES.tested.standard.dd}% for the standard rules alone.` : ''}</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
     </div>`;
   }
@@ -223,12 +228,22 @@ export async function render(el) {
   function startCard() {
     return `<div class="card empty">
       <h3>Run the strategy on simulated money</h3>
-      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. ${entryRule(cfg)} It sizes each position so a stop-out costs at most ${cfg.riskPct}% of the balance, with no more than ${cfg.maxPositionPct}% of it in one coin and never more cash than the account has, and sells at ${cfg.trailAtr ? `a stop that trails ${cfg.trailAtr} ATR under the highest price since it bought` : `the target (${cfg.rMultiple}R)`}, the stop (${cfg.atrStop} ATR)${cfg.signalExitBars ? ` or ${cfg.entryMode === 'pullback' ? 'once the bounce has come' : 'a signal reversal'}` : ''}. Every trade is logged with the fee it would have paid.</p>
+      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. ${entryRule(cfg)} It sizes each position so a stop-out costs at most ${cfg.riskPct}% of the balance, with no more than ${cfg.maxPositionPct}% of it in one coin and never more cash than the account has, and sells at ${cfg.trailAtr ? `a stop that trails ${cfg.trailAtr} ATR under the highest price since it bought` : `the target (${cfg.rMultiple}R)`}, the stop (${cfg.atrStop} ATR)${cfg.signalExitBars ? ` or ${cfg.entryMode === 'pullback' ? 'once the bounce has come' : 'a signal reversal'}` : ''}.${ownRulesText()} Every trade is logged with the fee it would have paid.</p>
       <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
     </div>${learningCard()}`;
   }
 
   // The rule that opens a trade, in words, for whichever entry mode is set.
+  // Which of the watched coins trade their own rules, in a sentence.
+  function ownRulesText() {
+    if (!ownRulesOn()) return '';
+    const own = cfg.universe.filter((s) => PER_COIN_RULES.rules[s]);
+    if (!own.length) return ' None of the watched coins has rules of its own, so all of them use these.';
+    if (own.length === cfg.universe.length) return ' Each coin trades rules chosen on its own daily history instead of these.';
+    if (own.length === 1) return ` ${own[0]} trades rules chosen on its own daily history instead; the other coins use these.`;
+    return ` ${own.length} of the ${cfg.universe.length} coins (${own.join(', ')}) trade rules chosen on their own daily history instead; the rest use these.`;
+  }
+
   function entryRule(c) {
     const extra = `${c.momentumConfirm ? ' while the short-term trend and momentum also point up' : ''}${c.marketFilter ? ', and only while Bitcoin itself is in an uptrend' : ''}`;
     if (c.entryMode === 'pullback') return `When a coin in an uptrend dips until the score falls to −${c.entryScore} or lower, it buys the dip${extra}.`;
@@ -249,7 +264,7 @@ export async function render(el) {
     // would mix two strategies in one balance, so the account keeps its own
     // timeframe. Older saved accounts adopt the current setting once.
     if (!state.interval) state.interval = cfg.interval;
-    const runCfg = { ...cfg, interval: state.interval };
+    const runCfg = { ...cfg, interval: state.interval, perCoin: ownRulesOn() ? PER_COIN_RULES.rules : null };
 
     let processed = 0;
     const failed = [], noExchange = [];
@@ -850,6 +865,7 @@ export async function render(el) {
         </div>
         <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => { const x = AUTOTRADER_TESTED[i]; return `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${i} — tested ${x.pickedReturn >= 0 ? '+' : '−'}${Math.abs(x.pickedReturn)}% (holding ${x.buyHold >= 0 ? '+' : '−'}${Math.abs(x.buyHold)}%)</option>`; }).join('')}</select></label>
         <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
+        <label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" name="ownRules" ${cfg.ownRules ? 'checked' : ''} style="margin-top:3px"><span>Let each coin trade its own rules <span class="fine">(daily chart only)</span><br><span class="fine">Chosen on each coin's own daily history for ${PER_COIN_RULES.coins} large coins; others keep the standard rules. In a test on ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)} data they were not chosen on, they made ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% for the standard rules, but the worst drop was deeper: ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%. Holding the same coins made ${PER_COIN_RULES.tested.hold >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.hold)}%.</span></span></label>
         <p class="fine">Available: ${esc(tradable.filter((c) => c.binance).slice(0, 24).map((c) => c.symbol).join(', '))}… The AI only trades coins with real exchange candles.</p>
         <button class="btn primary">Save settings</button>
       </form>`);
@@ -864,6 +880,7 @@ export async function render(el) {
         maxPositions: Math.min(10, Math.max(1, +f.maxPositions.value)),
         interval: f.interval.value,
         universe: uni.slice(0, 12),
+        ownRules: f.ownRules.checked,
       });
       save(CFG_KEY, cfg);
       m.close();
