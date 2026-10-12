@@ -1,10 +1,11 @@
 // AI learning: how the AI grades its own calls and changes its own decisions.
 import { $, $$, icon, toast, bindSeg } from '../ui.js';
-import { esc, dateTime, ago } from '../format.js';
+import { esc, dateTime, ago, horizonText } from '../format.js';
 import { load } from '../store.js';
 import { INDICATORS, LEARN_TESTED, SWITCH_MIN, SWITCH_GAP, liveScores } from '../lib/learncenter.js';
 import { learningPass, loadLearn } from '../lib/learnpass.js';
 import { DEFAULT_CONFIG, AUTOTRADER_TESTED } from '../lib/autotrader.js';
+import { DEFAULT_HORIZON } from '../ai/context.js';
 import { activeLessons, reviewTrades } from '../lib/tradelearn.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
 import { learningStatus, loadLedger, learnedTrust, MIN_GRADED_FOR_TRUST } from '../lib/selfimprove.js';
@@ -101,7 +102,7 @@ export async function render(el) {
 
       <div class="card mt">
         <div class="card-h"><h3>${icon('chart', 16)} Indicators, graded (${esc(st.interval)})</h3><span class="fine">${voting.length ? `voting now: ${esc(voting.join(', '))}` : 'no indicator has earned a vote on this timeframe'}</span></div>
-        <p class="fine" style="margin-top:0">Each indicator's reading is turned into a call (for example, RSI under 30 means "up"), then checked against the price ${esc(st.interval)} candles later. <b>Recent history</b> is measured on the last 500 candles of the trader's coins during each pass. <b>Live</b> counts only calls this device logged before the outcome was known. A reading needs 30+ calls and a 95% range clear of 50% to earn a vote. Live evidence takes over from history as it builds up.</p>
+        <p class="fine" style="margin-top:0">Each indicator's reading is turned into a call (for example, RSI under 30 means "up"), then checked against the price ${esc(horizonText(st.interval, DEFAULT_HORIZON[st.interval] || 12))} later (the same horizon the forecast uses on ${esc(st.interval)} charts). <b>Recent history</b> is measured on the last 500 candles of the trader's coins during each pass. <b>Live</b> counts only calls this device logged before the outcome was known. A reading needs 30+ calls and a 95% range clear of 50% to earn a vote. Live evidence takes over from history as it builds up.</p>
         ${hist ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Indicator</th><th class="l">Rule</th><th>Recent history</th><th>Live here</th><th>Tested alone</th><th>Weight now</th></tr></thead><tbody>
           ${Object.entries(INDICATORS).map(([k, d]) => `<tr><td class="l"><b>${esc(d.name)}</b></td><td class="l fine">${esc(d.rule)}</td>
             <td>${hist[k] ? `${hist[k].rate ?? '—'}% <span class="fine">(${hist[k].n})</span>` : '—'}</td>
