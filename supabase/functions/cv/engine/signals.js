@@ -250,10 +250,44 @@ export function scoreAt(candles, ind, i) {
   return { score, parts };
 }
 
+// Decimal places that keep a price readable. Fixed decimals erased sub-cent
+// coins: at 8 places a 0.0000000015 price (Baby Doge scale) rounded to 0, so the
+// entry, stop and every target read 0. Below 0.00001 keep about four significant
+// figures; at or above it the result is exactly what it always was.
+function decimalsFor(p) {
+  const a = Math.abs(p);
+  if (a >= 1000) return 2;
+  if (a >= 1) return 4;
+  if (a >= 0.01) return 6;
+  if (!(a > 0) || a >= 1e-5) return 8;
+  return Math.min(20, Math.ceil(-Math.log10(a)) + 3);
+}
+
 function round(v, price) {
   if (v === null || v === undefined || !isFinite(v)) return null;
-  const dp = price >= 1000 ? 2 : price >= 1 ? 4 : price >= 0.01 ? 6 : 8;
-  return Number(v.toFixed(dp));
+  const r = Number(v.toFixed(decimalsFor(price)));
+  // Never round a real level away to zero: keep four significant figures instead.
+  return r === 0 && v !== 0 ? Number(v.toPrecision(4)) : r;
+}
+
+// A short gains at most the whole price, so a target placed k × risk below the
+// entry lands at or under zero when the stop is far away relative to the price
+// (very volatile coins). Those used to be clamped and shown as $0 — a level the
+// price cannot trade at. Each reachable target is kept exactly as measured; an
+// unreachable one repeats the previous step's percentage fall instead, so the
+// plan keeps three falling, positive targets (the page, alerts and the track
+// record all read three). Plans whose targets are all above zero — every normal
+// plan — come out unchanged. Returns [] when even the first target is out of
+// reach, and the caller drops the plan.
+function shortTargets(price, raw) {
+  const out = [];
+  for (const v of raw) {
+    if (v > 0) { out.push(v); continue; }
+    if (!out.length) return [];
+    const prev = out[out.length - 1], before = out.length > 1 ? out[out.length - 2] : price;
+    out.push(prev * (prev / before));
+  }
+  return out;
 }
 
 // Full signal for the latest candle, including a trade plan.
@@ -306,7 +340,7 @@ export function generateSignal(candles, { interval = '' } = {}) {
       entry: round(price, price),
       entryZone: [round(price, price), round(Math.min(price + 0.5 * atrV, r1 ?? Infinity), price)],
       stopLoss: round(stop, price),
-      takeProfits: [price - geo.rr * 0.6 * risk, price - geo.rr * risk, tp3Candidate ?? price - geo.rr * 1.6 * risk].map((v) => round(Math.max(v, 0), price)),
+      takeProfits: shortTargets(price, [price - geo.rr * 0.6 * risk, price - geo.rr * risk, tp3Candidate ?? price - geo.rr * 1.6 * risk]).map((v) => round(v, price)),
       riskPct: +((risk / price) * 100).toFixed(2),
       rewardRisk: geo.rr,
       expectancyR: geo.ev,
@@ -326,6 +360,12 @@ export function generateSignal(candles, { interval = '' } = {}) {
   // cannot pay. 0.3% is roughly two round trips at a typical 0.1% taker fee.
   const MIN_TRADEABLE_MOVE = 0.003;
   let noEdgeReason = null;
+  // The opposite failure: swings so wide that the setup's stop, or even its first
+  // target, would need the price to reach zero. No level like that can be traded.
+  if (plan && (!(plan.stopLoss > 0) || plan.takeProfits.length < 3)) {
+    noEdgeReason = `Price is swinging too hard on this chart for the tested ${plan.side} setup: its levels would need the price to fall to zero, which it cannot trade at. Treat the reading as a warning rather than a setup, or use a different chart.`;
+    plan = null;
+  }
   if (plan) {
     const target = plan.takeProfits[0];
     const move = Math.abs(target - price) / price;
@@ -389,8 +429,7 @@ function entryStop(atrStop, levelStop, side, price, atrV) {
 function num(v) { return v === null || v === undefined || !isFinite(v) ? null : +v.toPrecision(8); }
 export function fmtNum(v) {
   if (v === null || v === undefined || !isFinite(v)) return '—';
-  const a = Math.abs(v);
-  const dp = a >= 1000 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 6 : 8;
+  const dp = decimalsFor(v);   // same scale as the plan's own rounding (see decimalsFor)
   return Number(v.toFixed(dp)).toLocaleString('en-US', { maximumFractionDigits: dp });
 }
 

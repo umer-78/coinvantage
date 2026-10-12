@@ -67,7 +67,10 @@ export async function render(el) {
     $('#hz', el).textContent = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);
     if (!rows.length) {
       const noDirection = (f === 'aiup' || f === 'aidown') && !reliable;
-      const trusted = Object.keys(TESTED_ACCURACY.directionTrust).filter(directionReliable).join(', ');
+      // filter((k) => directionReliable(k)) — NOT filter(directionReliable): passing
+      // the function directly hands Array's index in as the trust argument, so the
+      // list would come from positions, not measured trust.
+      const trusted = Object.keys(TESTED_ACCURACY.directionTrust).filter((k) => directionReliable(k)).join(', ');
       $('#tbl', el).innerHTML = st.rows.length
         ? `<div class="empty">${noDirection ? `The forecast has no reliable direction on ${esc(st.interval)} charts, so no coin is marked likely up or down. It has one on ${trusted}.` : 'No coins match this filter right now.'}</div>`
         : skeleton(10, 26);

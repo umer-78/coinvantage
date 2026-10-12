@@ -314,6 +314,13 @@ const EX_FETCH = { gate: gateCandles, htx: htxCandles, okx: okxCandles };
  * turn and keeps the first whose latest close is within 10% of the coin's
  * market price — so a different token that happens to share the ticker is never
  * charted — and whose newest candle is recent.
+ *
+ * The 10% proximity check guards *discovery* (only === null): it stops a
+ * different token that shares the ticker from being charted. When a specific
+ * already-validated source is requested (only === <ex>, e.g. the coin page
+ * catching up after a dropped socket), the check is skipped — otherwise a
+ * legitimate move of more than 10% while the socket is down would reject every
+ * poll from the known-good exchange and silently freeze the chart.
  */
 export async function exchangeCandles(coin, interval, total = 500, only = null) {
   const sym = String(coin?.symbol || '').toUpperCase();
@@ -327,7 +334,7 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
       if (rows.length < (only ? 1 : 50)) continue;
       const last = rows[rows.length - 1];
       if (now() - last.t > step * 3 + 2 * 864e5) continue;
-      if (Number.isFinite(coin.price) && coin.price > 0 && Math.abs(last.c / coin.price - 1) > 0.1) continue;
+      if (!only && Number.isFinite(coin.price) && coin.price > 0 && Math.abs(last.c / coin.price - 1) > 0.1) continue;
       markLive();
       return { candles: rows.slice(-total), source: ex, venue: `${EX_NAME[ex]} ${sym}/USDT`, pair: null };
     } catch { /* next exchange */ }
