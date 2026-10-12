@@ -465,7 +465,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261012-111656";
+export const BUILD = "20261012-114731";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
@@ -606,7 +606,8 @@ if (location.protocol === 'https:') {
         case 'signal': {
           const c = await findCoin(arg || 'BTC');
           if (!c) return `No coin found for "${arg}". Try /signal BTC.`;
-          const { candles } = await getCandles(c, '1h', 300);
+          const { candles, source } = await getCandles(c, '1h', 300);
+          if (source === 'demo') return `Live prices are not loading right now, so there is no real ${c.symbol} signal to show. Try again in a minute.`;
           const s = generateSignal(candles, { interval: '1h' });
           if (!s.ok) return `${c.symbol}: ${s.reason}`;
           const rsi = Number.isFinite(s.indicators?.rsi) ? s.indicators.rsi.toFixed(1) : '—';

@@ -1,4 +1,4 @@
-import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, isTestedSource, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
+import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, isTestedSource, isStable, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { streamCandles } from '../api/exstream.js';
@@ -51,6 +51,9 @@ export async function render(el, [symParam]) {
   st.horizon = DEFAULT_HORIZON[st.interval] || 12;
   const pair = coin.binance;
 
+  // A coin pegged to $1 has nothing to forecast: no setups are logged for it.
+  const stable = isStable(coin.symbol);
+
   el.innerHTML = `
     <div class="coin-head">
       ${coinLogo(coin, 44)}
@@ -65,6 +68,7 @@ export async function render(el, [symParam]) {
         <a class="btn primary" id="askAi" href="#/ai/${esc(coin.symbol)}">${icon('ai', 16)} Ask AI about ${esc(coin.symbol)}</a>
       </div>
     </div>
+    ${stable ? `<div class="card" style="border-color:var(--warn);margin-bottom:14px"><p style="margin:0"><b>${esc(coin.symbol)} is a stablecoin</b>, designed to stay worth $1. Forecasts and buy or sell setups are not meaningful for it, so the readings below are for reference only and nothing from this page is logged to your forecast record or the AI's learning.</p></div>` : ''}
     <div class="grid g4" style="margin-bottom:14px">
       <div class="card stat"><span class="k">Market cap</span><span class="v">${compact(coin.marketCap)}</span></div>
       <div class="card stat"><span class="k">Volume 24h</span><span class="v">${compact(coin.volume24h)}</span></div>
@@ -613,7 +617,7 @@ export async function render(el, [symParam]) {
     // forecast against them would teach the device's learning made-up outcomes.
     try {
       let ledger = loadLedger();
-      if (st.tested) {
+      if (st.tested && !stable) {
         ledger = resolveDueLedger(ledger, st.candles, { symbol: coin.symbol, interval: iv });
         if (fc.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
           ledger = recordForecast(ledger, {
@@ -628,9 +632,9 @@ export async function render(el, [symParam]) {
       st.anomalies = anomalyFlags(st.candles);
     } catch { /* ledger is a convenience, never load-bearing */ }
     // AI learning center: this chart's readings and forecast are logged for grading.
-    st.learned = st.tested ? learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null }) : null;
+    st.learned = st.tested && !stable ? learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null }) : null;
 
-    if (fc.ok && st.tested) {
+    if (fc.ok && st.tested && !stable) {
       // Logged before the outcome is known, so "your hit rate" is honest. Never
       // for demo prices: this goes to the account's record on the server.
       logForecastShown({

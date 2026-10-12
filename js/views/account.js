@@ -4,7 +4,7 @@ import { esc, money } from '../format.js';
 import { load, settings } from '../store.js';
 import { myActivity, myForecasts, forecastScore, resolveDueForecasts, clearMyActivity } from '../api/activity.js';
 import { changePassword, signOutEverywhere } from '../api/security.js';
-import { getCandles, findCoin } from '../api/market.js';
+import { getCandles, findCoin, isTestedSource } from '../api/market.js';
 import { dateTime, pct, ago } from '../format.js';
 import { auth, sb, isPremium, isAdmin, callFn, updateProfile, refreshProfile, signOut } from '../api/backend.js';
 import { openAuth } from './auth.js';
@@ -242,6 +242,9 @@ export async function render(el, [flag]) {
       if (!coin) return NaN;
       r = await getCandles(coin, interval, 500);
     } catch { return NaN; }
+    // A forecast is graded against exchange candles only. Demo prices are
+    // invented, and the grade is saved to your record on the server.
+    if (!isTestedSource(r)) return NaN;
     let best = NaN, bestGap = Infinity;
     for (const c of r.candles) {
       const gap = Math.abs(c.t - atMs);
