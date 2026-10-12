@@ -66,17 +66,17 @@ export const GLOSSARY = [
   { id: 'volume', title: 'Volume', re: /\bvolumes?\b/i,
     text: 'The value traded in a period. Moves on high volume are more trustworthy than moves on thin volume; the indicator readout compares the latest candle\'s volume with its 20-candle average.' },
   { id: 'fng', title: 'Fear & Greed index', re: /\bfear (and|&) greed\b|\bfear ?greed\b/i,
-    text: 'A 0–100 gauge of crypto market mood published by alternative.me, built from volatility, momentum and volume, social media and Bitcoin\'s share of the market. Extremes are contrarian context — extreme greed has often come before pullbacks and extreme fear before bounces — but not reliably enough to trade on alone.' },
+    text: 'A 0–100 gauge of crypto market mood published by alternative.me, built from inputs including volatility, momentum and volume, social media and Bitcoin\'s share of the market. Extremes are contrarian context — extreme greed has often come before pullbacks and extreme fear before bounces — but not reliably enough to trade on alone.' },
   { id: 'score', title: 'Chart score (indicator agreement)', re: /\b(indicator agreement|chart score|signal score|the score|score)\b/i,
     text: `A number from −100 to +100 that adds up how far the indicators on one chart lean up or down. It describes where price sits, not where it goes next: across ${SCORE_BUCKETS_TESTED.bars.toLocaleString('en-US')} tested candles on ${SCORE_BUCKETS_TESTED.coins} coins, high readings were not followed by more rises than low ones. That is why the verdict weights every reading by how accurate it has actually been.` },
   { id: 'verdict', title: 'Verdict and conviction', re: /\b(verdict|conviction|accumulate|no edge)\b/i,
-    text: 'The verdict (BUY, ACCUMULATE, WAIT or AVOID; for coins you hold, ADD, HOLD, TRIM or SELL) combines the chart, the forecast and history, each weighted by its measured accuracy. Conviction (0–100) is how strongly they agree after that weighting. A reading with no proven edge counts for nothing, so WAIT is the most common answer — and a fair one.' },
+    text: 'The verdict (BUY, ACCUMULATE, WAIT or AVOID; for coins you hold, ADD, HOLD, TRIM or SELL; LEANS UP or LEANS DOWN when the evidence is too thin to act on) combines the chart, the forecast and history, each weighted by its measured accuracy. Conviction (0–100) is how strongly they agree after that weighting. A reading with no proven edge counts for nothing, so WAIT is the most common answer — and a fair one.' },
   { id: 'forecastterms', title: 'Backtest, walk-forward and baseline', re: /\b(backtests?|backtesting|walk[- ]forward|baseline|out[- ]of[- ]sample|unseen data|overfit(ting)?)\b/i,
     text: 'A backtest replays a rule on past prices. The forecast here is tested walk-forward: trained only on data from before each test point, then scored on what happened next. The baseline is always calling the more common direction — a forecast that cannot beat it has no edge, however good its accuracy sounds.' },
   { id: 'candle', title: 'Candles and timeframes', re: /\b(candles?(sticks?)?|time ?frames?|interval)\b/i,
     text: 'Each candle shows the open, high, low and close for one period — from 1 second to 1 week on the coin page. The timeframe changes the answer: a 15-minute chart can be falling inside a daily uptrend, which is why readings are shown on four timeframes.' },
   { id: 'spread', title: 'Fees, spread and slippage', re: /\b(spread|slippage|trading fees?|maker|taker)\b/i,
-    text: 'The spread is the gap between the best buy and sell price; slippage is getting a worse price than expected on a fast market or a large order. Together with fees (about 0.1% a side on major exchanges) they are why very small moves cannot be traded at a profit.' },
+    text: 'The spread is the gap between the best buy and sell price; slippage is getting a worse price than expected on a fast market or a large order. Together with fees (about 0.1% a side on Binance, often more elsewhere) they are why very small moves cannot be traded at a profit.' },
   { id: 'orders', title: 'Market and limit orders', re: /\b(limit orders?|market orders?|stop[- ]limit|oco)\b/i,
     text: 'A market order fills immediately at the best price available; a limit order waits until the price reaches yours and may never fill. A stop order turns into a market order when its trigger price is hit — that is how a stop-loss is placed on an exchange.' },
   { id: 'stable', title: 'Stablecoin', re: /\bstable ?coins?\b/i,
@@ -157,8 +157,8 @@ function methodAnswer() {
   const t = TESTED_ACCURACY;
   return `**How the assistant answers**
 
-1. **Live data** — candles from Binance (Gate.io, HTX or OKX for coins Binance doesn't list), coin list and market caps from CoinGecko, futures funding and open interest from Binance, Bybit or OKX, and the Fear & Greed index from alternative.me.
-2. **Chart reading** — RSI, MACD, EMAs, Bollinger Bands, ADX, ATR, Supertrend and more on four timeframes, summed into a score from −100 to +100. Support and resistance come from recent swing highs and lows.
+1. **Live data** — candles from Binance (Gate.io, HTX or OKX for coins Binance doesn't list), coin list and market caps from CoinGecko, the Fear & Greed index from alternative.me, and recent headlines from five crypto news outlets (background only: the forecast reads prices, not news). Futures funding and open interest are on the Futures page, not in these answers.
+2. **Chart reading** — the 20, 50 and 200 EMAs, MACD, RSI, Stochastic RSI, Bollinger Bands, volume and ADX on four timeframes, summed into a score from −100 to +100. ATR sets how far away stops go, and support and resistance come from recent swing highs and lows.
 3. **Forecast** — seven models (chart-pattern matching against history, similar past moves, gradient-boosted trees, a neural network, logistic regression, nearest neighbours and a trend model), each weighted by how accurate it was on recent data it never saw. It gives a direction lean plus 50% and 80% price ranges.
 4. **History** — what this coin did after the times its chart looked like today, across years of daily data.
 5. **Verdict** — every reading is weighted by its measured accuracy, so one with no proven edge counts for nothing.
@@ -175,7 +175,7 @@ function siteLegitAnswer() {
 - **Trading** runs on simulated money. The real-trade journal only records trades you place yourself on your own exchange — it never places an order or holds a key.
 - The analysis is free. Premium is an optional paid plan for alerts and tracking that run on a server while your browser is closed.
 - The forecast's accuracy is measured on data it never saw and published, including where it does **not** beat a simple baseline — see [Track record](#/track).
-- An account is optional; it only syncs your watchlist, portfolio, trades and alerts between your devices.
+- An account is optional. It keeps your watchlist, portfolio, trades, alerts and settings the same on all your devices, and lets the server send your alerts while your browser is closed.
 
 Treat every signal here as one input, not an instruction. Anyone promising guaranteed returns — in this site's name or any other — is running a scam.`;
 }
