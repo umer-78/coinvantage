@@ -130,7 +130,9 @@ for (const iv of IVS) {
     const byRisk = {};
     for (const risk of RISKS) byRisk[risk] = { own: pack(account(pick, test, WARM, { riskPct: risk })), standard: pack(account({}, test, WARM, { riskPct: risk })) };
     const sig = { own: signalRecord(pick, test, WARM, HZ[iv]), standard: signalRecord({}, test, WARM, HZ[iv]) };
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length, byRisk, sig });
+    // the same block with volatility-scaled risk (DEFAULT_CONFIG.volScale)
+    const vol = { own: pack(account(pick, test, WARM, { volScale: true })), standard: pack(account({}, test, WARM, { volScale: true })) };
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length, byRisk, sig, vol });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
@@ -157,6 +159,24 @@ for (const iv of IVS) {
     console.log(`  each buy on its own (${k} rules): ${sg.n} buys, ${sg.winPct}% won, average ${sg.avgR}R (wins ${sg.avgWinR}R, losses ${sg.avgLossR}R), ${sg.avgPct}% a trade against ${sg.randPct}% for a random buy held as long, median hold ${sg.holdMedian} candles; higher ${sg.H} candles later ${sg.fwdUpPct}% (95% ${sg.fwdLo}–${sg.fwdHi}%) against ${sg.baseUpPct}% from any candle`);
   }
   for (const x of folds) delete x.sig;
+  // Volatility-scaled risk, A/B on the rules this chart ships (SHIPPED, not this
+  // run's adopt flag, which has flipped on 15m between runs). Decided before the
+  // run: on for a chart only if, block by block, it improves return − ½·worst
+  // drop (the objective the rules were picked by) in at least 2 of 3 blocks, by
+  // at least 1 point on average, with an average return no more than 1 point
+  // below the same rules without it.
+  const SHIPPED = { '15m': 'standard', '1h': 'own', '4h': 'standard', '1d': 'own' };
+  const sw = SHIPPED[iv] || which;
+  const baseOf = (x) => (sw === 'own' ? x.own : x.current);
+  const obj = (m) => m.ret - 0.5 * m.dd;
+  const vb = folds.filter((x) => obj(x.vol[sw]) > obj(baseOf(x))).length;
+  const vMean = (f) => r2(folds.reduce((a, x) => a + f(x), 0) / folds.length);
+  const gain = vMean((x) => obj(x.vol[sw]) - obj(baseOf(x)));
+  const retDiff = vMean((x) => x.vol[sw].ret - baseOf(x).ret);
+  entry.volScale = { rules: sw, better: vb, objGain: gain, retDiff, ddDiff: vMean((x) => x.vol[sw].dd - baseOf(x).dd), adopt: vb >= 2 && gain >= 1 && retDiff >= -1,
+    folds: folds.map((x) => ({ without: { ret: baseOf(x).ret, dd: baseOf(x).dd }, with: { ret: x.vol[sw].ret, dd: x.vol[sw].dd } })) };
+  console.log(`  volatility-scaled risk (${sw} rules): better in ${vb} of 3; return ${retDiff >= 0 ? '+' : ''}${retDiff} pts, worst drop ${entry.volScale.ddDiff >= 0 ? '+' : ''}${entry.volScale.ddDiff} pts, objective ${gain >= 0 ? '+' : ''}${gain} → ${entry.volScale.adopt ? 'ADOPT' : 'KEEP OFF'}`);
+  for (const x of folds) delete x.vol;
   if (adopt) {
     // what this chart would get: the same pick on the full history
     const full = withRegime(coins.map((s) => prep(s, all[s])));

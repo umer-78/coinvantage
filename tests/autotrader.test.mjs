@@ -275,3 +275,26 @@ test('the AI signal is the chart\'s published rule replayed on the coin, with th
     assert.ok(r.n > 100 && r.fwdLo <= r.baseUpPct, `${iv}: the record is published as measured`);
   }
 });
+
+test('volatility-scaled risk only ever buys less, and only while a coin is unusually volatile', async () => {
+  const { volRatio, replaySymbol } = await import('../js/lib/autotrader.js');
+  const calm = Array.from({ length: 900 }, (_, i) => ({ c: 100 * Math.exp(Math.sin(i * 1.7) * 0.006) }));
+  const r = volRatio(calm);
+  assert.equal(r[199], null, 'nothing before there is enough history');
+  assert.ok(Math.abs(r[800] - 1) < 0.2, 'about 1 in a steady market');
+  const wild = calm.map((c, i) => ({ c: i > 850 ? 100 * Math.exp(Math.sin(i * 1.7) * 0.03) : c.c }));
+  assert.ok(volRatio(wild)[899] > 1.5, 'above 1 once it turns wild');
+  // the same entries, never a bigger position
+  const wavy = [];
+  for (let i = 0, prev = 100; i < 700; i++) {
+    const c = 100 * 1.002 ** i * (1 + (i > 400 ? 0.05 : 0.01) * Math.sin(i / 5));
+    wavy.push({ t: T0 + i * H, o: prev, h: Math.max(prev, c) * 1.002, l: Math.min(prev, c) * 0.998, c, v: 1000 });
+    prev = c;
+  }
+  const run = (volScale) => { const cfg = { ...DEFAULT_CONFIG, trendFilter: false, volScale, maxPositions: 1, universe: ['W'] }; const st = newState(cfg); replaySymbol(st, cfg, 'W', wavy); return [...st.closed, ...Object.values(st.open)]; };
+  const off = run(false), on = run(true);
+  assert.ok(off.length > 2);
+  assert.deepEqual(on.map((t) => t.openedAt), off.map((t) => t.openedAt), 'the rules decide when; the scaling only how much');
+  assert.ok(on.every((t, k) => t.notional <= off[k].notional + 1e-6));
+  assert.ok(on.some((t, k) => t.notional < off[k].notional - 1e-6), 'smaller somewhere in the wild stretch');
+});

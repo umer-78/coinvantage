@@ -293,6 +293,10 @@ export const DEFAULT_CONFIG = {
   // both cost money if they are wrong, so they are settings now and the grid in
   // tools/evaluate-autotrader.mjs tests them.
   breakEvenAtR: null,    // measured: moving the stop to entry cost money, so it is off
+  // Buy less while a coin is unusually volatile: the position × max(0.5, 1 / ratio),
+  // the ratio being its 100-candle volatility over its own long-run normal. Off until
+  // tools/evaluate-trader-folds.mjs shows it helps on a chart (see CHART_RULES).
+  volScale: false,
   signalExitBars: 2,     // close after this many consecutive reversal bars; null = never
   // Two risk rules added 2026-09-26 and measured with tools/evaluate-autotrader.mjs
   // before being switched on or left off (see AUTOTRADER_TESTED):
@@ -525,6 +529,27 @@ export function aiSignal(candles, interval, symbol = 'COIN') {
   return { ...base, action: 'wait', code, why: code ? blockerText(code, cfg, score) : 'the rule found no entry on it', last: t ? { exitAt: t.exitAt, pnlPct: t.pnlPct, why: t.reason } : null };
 }
 
+/**
+ * A coin's volatility now against its own normal, candle by candle: the
+ * standard deviation of the last 100 log returns (the one the forecast's
+ * ranges use) over a slow average of that same figure (about 500 candles).
+ * Only past candles go into each value; null until there is enough history.
+ */
+export function volRatio(candles) {
+  const n = candles.length, out = new Array(n).fill(null);
+  const S1 = [0], S2 = [0];
+  for (let i = 0; i < n; i++) { const r = i ? Math.log(candles[i].c / candles[i - 1].c) : 0; S1.push(S1[i] + r); S2.push(S2[i] + r * r); }
+  const k = 2 / (500 + 1);
+  let normal = null;
+  for (let i = 100; i < n; i++) {
+    const a = i - 99, m = 100, mu = (S1[i + 1] - S1[a]) / m;
+    const sd = Math.sqrt(Math.max((S2[i + 1] - S2[a]) / m - mu * mu, 1e-12));
+    normal = normal === null ? sd : normal + k * (sd - normal);
+    if (i >= 200) out[i] = sd / normal;
+  }
+  return out;
+}
+
 function stepBar(state, cfg, s, i, score) {
   const { symbol, candles, ind } = s;
   const atrArr = s.atr;
@@ -583,6 +608,12 @@ function stepBar(state, cfg, s, i, score) {
   let notional = (riskCash / riskPerUnit) * entry;
   // the fee is paid from the same cash
   notional = Math.min(notional, state.balance * (cfg.maxPositionPct / 100), freeCash(state) / (1 + cfg.feePct / 100));
+  // after the caps, which on short charts bind before the risk setting does
+  if (cfg.volScale) {
+    s.volr ||= volRatio(candles);
+    const r = s.volr[i];
+    if (r > 1) notional *= Math.max(0.5, 1 / r);
+  }
   if (notional < 1) return;
 
   const qty = notional / entry;
