@@ -27,16 +27,16 @@ computers alike.
 | **Futures** | Funding rate, annualised funding, basis, open interest and its 12h change, long/short account ratios, top-trader positioning, plus a live liquidation feed |
 | **Order book & trades** | Live Binance depth and recent trades |
 | **Exchanges** | Same coin on 10 exchanges (Binance, Coinbase, Kraken, OKX, Bybit, Gate.io, Bitget, HTX, Gemini, Crypto.com): price, spread, volume, best buy/sell venue |
-| **Signal scanner** | Ranks the top 20/30/50 coins by signal score and the same full forecast as the coin page, on the same 1,500 candles; filters for rising, falling, oversold and overbought. Coins Binance does not list are read from Gate.io, HTX or OKX; coins with only CoinGecko or demo data are skipped and counted |
+| **Signal scanner** | Ranks the top 20/30/50 coins by signal score and the same full forecast as the coin page, on the same 1,500 candles; filters for rising, falling, oversold and overbought, and a sortable 80% range column (where price should end 8 times in 10 — the part of the forecast that tested accurate). Coins Binance does not list are read from Gate.io, HTX or OKX; coins with only CoinGecko or demo data are skipped and counted |
 | **Compare** | Up to 6 coins: normalised performance, volatility, max drawdown, return/risk, correlation matrix |
 | **Tools** | Coin ↔ currency converter (PKR and 15 more), a “what if I had bought regularly” DCA backtest on real daily closes vs a lump sum, and a position-size calculator from your stop-loss (risk %, fees, reward:risk). Calculators only, no trading |
-| **Trading** | Three accounts side by side: demo trades you place yourself from any coin page, real trades you record (or import from a Binance trade-history CSV), and an AI running a tested strategy on simulated money with fees counted. The page states that strategy's measured result against buy-and-hold first, and the AI reviews its own trade log to switch filters on or off. Nothing here places an order |
+| **Trading** | Three accounts side by side: demo trades you place yourself from any coin page, real trades you record (or import from a Binance trade-history CSV), and an AI running a tested strategy on simulated money with fees counted. The page states that strategy's measured result against buy-and-hold first, and the AI reviews its own trade log to switch filters on or off. A "What drove the result" panel explains any account's result in numbers: how trades ended, the win rate needed to break even, fees, the coins that cost most, and whether positions ever added up to more than the account. Nothing here places an order |
 | **AI learning** | Grades every indicator reading, the forecast and the trader against what the market did next. An indicator only earns a vote after 30+ calls with a 95% range clear of 50% |
 | **Wallet** | Holdings with live P&L, allocation donut, per-coin hold/exit hints; watch-only BTC, ETH, BNB Chain, Polygon and Solana addresses |
 | **Price alerts** | Browser notifications while the site is open, plus server-side alerts by e-mail and Telegram while it is closed |
 | **Track record** | Public page scoring every signal the server logged *before* the outcome was known, against the hit rate of always calling the more common outcome. A live check fits the same trust the coin page uses to the graded rows, counting coins on one candle as one observation, and says whether the live record supports showing a direction on each timeframe |
 | **News** | Headlines from 5 crypto outlets, tagged by coin, refreshed every 20 minutes |
-| **AI Assistant** | Chat about any coin. Answers are grounded in live data, signals, backtest, the forecast and the multi-year history study |
+| **AI Assistant** | Chat about any coin. Answers are grounded in live data, signals, backtest, the forecast and the multi-year history study. It also explains about 40 trading terms ("what is RSI?"), how its own method works, and how to check whether a coin is a scam |
 | **Accounts** | Optional sign-in keeps the watchlist, holdings, wallet addresses, chart drawings, settings and all three Trading accounts the same on every device |
 | **Premium** | One-off payment for server-side alerts, VIP trade ideas and the full track record (Stripe or manual activation) |
 | **Admin panel** | Traffic, users, premium grants, trade-idea publishing, site settings, API keys and manual job runs |
@@ -90,6 +90,8 @@ computers alike.
 - Treat forecasts as probabilities and always use stop-losses.
 
 Re-run it yourself: `node tools/fetch-klines.mjs klines.json` then `node tools/evaluate-engine.mjs klines.json 0 1 out.json`.
+
+The AI trader's rules are re-tested the same way: `node tools/evaluate-trader-rules.mjs klines.json` tries 432 rule sets, picks one on the older half of every coin's history and reports it on the newer half. The **Evaluate** workflow (Actions → Evaluate → Run workflow) runs it on fresh Binance candles; the latest result (2026-10-12) is on the Trading page and in `AUTOTRADER_TESTED` in `js/lib/autotrader.js`.
 
 ## Run locally
 
