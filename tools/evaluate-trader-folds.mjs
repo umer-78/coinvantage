@@ -149,9 +149,13 @@ for (const iv of IVS) {
     return [risk, { ret: r2(rs.reduce((a, m) => a + m.ret, 0) / rs.length), lo: r2(Math.min(...rs.map((m) => m.ret))), hi: r2(Math.max(...rs.map((m) => m.ret))), dd: r2(rs.reduce((a, m) => a + m.dd, 0) / rs.length) }];
   }));
   console.log(`  by risk per trade (${which} rules): ${RISKS.map((risk) => `${risk}% → ${entry.byRisk[risk].ret}% (worst block ${entry.byRisk[risk].lo}%, drop ${entry.byRisk[risk].dd}%)`).join(' · ')}`);
-  entry.signals = mergeSignals(folds.map((x) => x.sig[which]), HZ[iv]);
-  const sg = entry.signals;
-  console.log(`  each buy on its own (${which} rules): ${sg.n} buys, ${sg.winPct}% won, average ${sg.avgR}R (wins ${sg.avgWinR}R, losses ${sg.avgLossR}R), ${sg.avgPct}% a trade against ${sg.randPct}% for a random buy held as long, median hold ${sg.holdMedian} candles; higher ${sg.H} candles later ${sg.fwdUpPct}% (95% ${sg.fwdLo}–${sg.fwdHi}%) against ${sg.baseUpPct}% from any candle`);
+  // both, so the record of whichever rules the app ships exists even when a
+  // re-run decides the other way (15m has flipped between runs)
+  entry.signals = Object.fromEntries(['own', 'standard'].map((k) => [k, mergeSignals(folds.map((x) => x.sig[k]), HZ[iv])]));
+  for (const k of ['own', 'standard']) {
+    const sg = entry.signals[k];
+    console.log(`  each buy on its own (${k} rules): ${sg.n} buys, ${sg.winPct}% won, average ${sg.avgR}R (wins ${sg.avgWinR}R, losses ${sg.avgLossR}R), ${sg.avgPct}% a trade against ${sg.randPct}% for a random buy held as long, median hold ${sg.holdMedian} candles; higher ${sg.H} candles later ${sg.fwdUpPct}% (95% ${sg.fwdLo}–${sg.fwdHi}%) against ${sg.baseUpPct}% from any candle`);
+  }
   for (const x of folds) delete x.sig;
   if (adopt) {
     // what this chart would get: the same pick on the full history
