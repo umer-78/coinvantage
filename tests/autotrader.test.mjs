@@ -158,3 +158,30 @@ test('the rules an account trades: its chart\'s own, then the self-review\'s lat
   assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'trend', at: 1 }, { lens: 'trend', at: 2, undo: true }]).trendFilter, false, 'then unlearned');
   assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'adx', at: 1 }]).trendFilter, false, 'other lessons leave it alone');
 });
+
+test('the coin page\'s "would it buy?" is the trader\'s own decision, candle by candle', async () => {
+  const { entryBlocker, blockerText } = await import('../js/lib/autotrader.js');
+  const candles = climb(320);
+  const scoreAt = (i) => (i % 7 === 0 ? 40 : i % 11 === 0 ? -40 : 5);
+  for (const rules of [cfgWith({ signalExitBars: 1, rMultiple: 1.2, atrStop: 2 }), cfgWith({ entryMode: 'breakout', momentumConfirm: true, trendFilter: false, signalExitBars: 1, rMultiple: 1.2, atrStop: 2 })]) {
+    const s = prepared('A', candles, scoreAt);
+    const st = newState(rules);
+    const seen = { bought: 0, passed: 0 };
+    for (let n = 221; n <= candles.length; n++) {
+      const i = n - 1;
+      const flat = !st.open.A;
+      replaySymbol(st, rules, 'A', candles.slice(0, n), s);
+      if (!flat) continue;
+      const opened = st.open.A?.openedAt === candles[i].t;
+      assert.equal(opened, entryBlocker(rules, s, i, s.scores[i]) === null, `${rules.entryMode} candle ${i}`);
+      seen[opened ? 'bought' : 'passed']++;
+    }
+    assert.ok(seen.bought >= 3 && seen.passed >= 10, `both outcomes were checked: ${JSON.stringify(seen)}`);
+  }
+  const s = prepared('A', candles, () => 0);
+  assert.equal(entryBlocker(cfgWith({}), s, 300, 0), 'signal');
+  assert.match(blockerText('signal', cfgWith({}), 0), /the score is 0, the rule needs \+18 or more/);
+  assert.equal(entryBlocker(cfgWith({ excluded: ['A'] }), s, 300, 40), 'excluded');
+  const falling = prepared('B', climb(320).map((c) => ({ ...c, o: 10000 / c.o, h: 10000 / c.l, l: 10000 / c.h, c: 10000 / c.c })), () => 40);
+  assert.equal(entryBlocker(cfgWith({}), falling, 300, 40), 'trend', 'no buying a downtrend with the trend filter on');
+});

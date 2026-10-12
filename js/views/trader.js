@@ -253,7 +253,8 @@ export async function render(el) {
   }
 
   // How the rules buy and sell, in words.
-  const rulesText = rulesInWords;
+  // a function declaration, not a const: startCard() runs during the first render, above this line
+  function rulesText(c) { return rulesInWords(c); }
 
   function startCard() {
     const e = effective();

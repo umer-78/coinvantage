@@ -2,7 +2,7 @@ import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTra
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { streamCandles } from '../api/exstream.js';
-import { generateSignal, confluence, geometryFor, upRateFor } from '../lib/signals.js';
+import { generateSignal, confluence, geometryFor, upRateFor, scoreAt } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
 import { computeAll } from '../lib/indicators.js';
@@ -18,7 +18,7 @@ import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
 import { tradeSummary } from '../lib/summary.js';
-import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE } from '../lib/autotrader.js';
+import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE, rulesForChart, rulesFor, rulesInWords, entryBlocker, blockerText, PER_COIN_RULES } from '../lib/autotrader.js';
 import { fx } from '../api/fx.js';
 import {
   loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger, directionTrustFor, MIN_GRADED_FOR_TRUST,
@@ -516,6 +516,44 @@ export async function render(el, [symParam]) {
     }
   }
 
+  // What the AI trader does with this coin: whether it holds it, the rules it
+  // uses for it, and on the chart it trades, whether its buy rule is met on
+  // the last closed candle — asked of the same engine function the trader
+  // uses, so this page cannot promise a buy the trader would not make.
+  let aiNote = { key: '', html: '' };
+  function aiTraderHtml(sig) {
+    const saved = load('traderCfg', {}) || {};
+    const state = load('traderState', null);
+    const lessons = load('traderLessons', []) || [];
+    const chart = state?.interval || saved.interval || DEFAULT_CONFIG.interval;
+    const universe = saved.universe || DEFAULT_CONFIG.universe;
+    const base = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => ['minAdx', 'maxEntryRsi', 'excluded'].includes(k))) };
+    const perCoin = !saved.ownRulesOff && chart === PER_COIN_RULES.interval ? PER_COIN_RULES.rules : null;
+    const rules = rulesFor({ ...rulesForChart(base, chart, lessons), perCoin }, coin.symbol);
+    const pos = state?.open?.[coin.symbol];
+    const closed = st.candles.slice(0, -1); // the trader decides on closed candles only
+    const longSetup = sig?.plan?.side === 'long';
+    const key = JSON.stringify([chart, st.interval, closed.at(-1)?.t, !!pos, universe.includes(coin.symbol), rules, longSetup]);
+    if (key === aiNote.key) return aiNote.html;
+    const sym = coin.symbol;
+    let status;
+    if (pos) status = `It holds ${sym}: bought ${new Date(pos.openedAt).toISOString().slice(0, 10)} at ${money(pos.entry, { dp: st.dp })}, stop ${money(pos.stop, { dp: st.dp })}, ${pos.tp ? `target ${money(pos.tp, { dp: st.dp })}` : 'trailing stop'}.`;
+    else if (!universe.includes(sym)) status = `${sym} is not on its list of coins; add it in Trading → Settings to let it trade this one.`;
+    else if (st.interval !== chart) status = `It trades the ${chart} chart; switch this page to ${chart} to see whether its buy rule is met now.`;
+    else if (closed.length < 220) status = 'There is not enough history on this chart for its rules yet.';
+    else {
+      const ind = computeAll(closed), i = closed.length - 1;
+      const score = scoreAt(closed, ind, i).score;
+      const code = entryBlocker(rules, { symbol: sym, candles: closed, ind, regime: null }, i, score);
+      status = code ? `On the last closed ${chart} candle it would not buy: ${blockerText(code, rules, score)}.${longSetup ? ' The long setup above comes from the chart score; the trader buys only on its own tested rule.' : ''}`
+        : `On the last closed ${chart} candle its buy rule is met${rules.marketFilter ? ' (its Bitcoin-trend filter is checked on the Trading page)' : ''}; it buys at its next check if it has a free slot and the cash.${longSetup ? '' : ' The chart score shows no long setup above; the trader follows its own tested rule, not the score.'}`;
+    }
+    const html = `<div class="mt" style="border-top:1px solid var(--border);padding-top:10px"><div class="row spread"><b>AI trader on ${esc(sym)}</b><a class="fine" href="#/trader">Trading →</a></div>
+      <p class="fine" style="margin:6px 0 0">${esc(status)} ${perCoin?.[sym] ? 'It trades rules chosen on this coin\'s own daily history: ' : `Its rules on ${esc(chart)}: `}${esc(rulesInWords(rules))} Simulated money only.</p></div>`;
+    aiNote = { key, html };
+    return html;
+  }
+
   function drawSignal(sig, conf) {
     const card = $('#signalCard', el);
     // The plain-English summary is a long read, so it sits under the chart at
@@ -566,6 +604,7 @@ export async function render(el, [symParam]) {
         </div>
         <ul class="reasons mt">${plan.exitRules.map((r) => `<li class="s">${esc(r)}</li>`).join('')}</ul>`
       : `<h3 class="mt" style="margin-bottom:8px">No trade — wait for a trigger</h3><ul class="reasons">${sig.waitFor.map((w) => `<li class="b">${esc(w)}</li>`).join('')}</ul>`}
+      ${aiTraderHtml(sig)}
       <details class="mt"><summary class="fine" style="cursor:pointer">Why this signal (${sig.reasons.bullish.length} bullish · ${sig.reasons.bearish.length} bearish)</summary>
         <ul class="reasons mt">${sig.reasons.bullish.map((r) => `<li class="b">${esc(r)}</li>`).join('')}${sig.reasons.bearish.map((r) => `<li class="s">${esc(r)}</li>`).join('')}</ul>
       </details>`;

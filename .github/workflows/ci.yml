@@ -18,3 +18,27 @@ jobs:
 
       - name: Unit tests
         run: node --test tests/*.test.mjs
+
+  # Every page in a real browser: fails on any page error, failed import or a
+  # page that renders nothing. Unit tests cannot see a view that throws while
+  # rendering; this would have caught the Trading page breaking for anyone
+  # without an AI account yet.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install a browser
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Every page loads without an error
+        run: |
+          python3 -m http.server 8099 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 1
+          node tools/smoke.mjs http://127.0.0.1:8099/

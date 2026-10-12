@@ -322,6 +322,43 @@ function wantsEntry(cfg, score, ind, i, c) {
 }
 const wantsExit = (cfg, score) => (cfg.entryMode === 'pullback' ? score >= -cfg.exitScore : score <= cfg.exitScore);
 
+/**
+ * Why these rules would not buy this coin on candle i (a short code), or null
+ * when they would. The trader and the coin page both ask this, so the page
+ * cannot say "it would buy" when the trader would not. Codes, not sentences,
+ * because the trader asks it on every candle of every replay.
+ */
+export function entryBlocker(cfg, s, i, score) {
+  const { ind } = s, c = s.candles[i];
+  if (!wantsEntry(cfg, score, ind, i, c)) return 'signal';
+  if ((cfg.trendFilter || cfg.entryMode === 'pullback') && !(ind.ema200[i] && c.c > ind.ema200[i] && ind.ema50[i] > ind.ema200[i])) return 'trend';
+  // The chart score adds oversold readings as reasons to buy, so early in a
+  // fall it can still read high. Confirmation asks for the short-term trend
+  // and momentum to be pointing up as well.
+  if (cfg.momentumConfirm && !(c.c > ind.ema20[i] && ind.ema20[i] > ind.ema50[i] && ind.macd.hist[i] > 0)) return 'momentum';
+  // Most coins fall together: no new buys while Bitcoin itself is in a downtrend.
+  if (s.regime && s.regime.get(c.t) === false) return 'market';
+  if (cfg.minAdx && !(ind.adx.adx[i] >= cfg.minAdx)) return 'adx';
+  if (cfg.maxEntryRsi && ind.rsi[i] !== null && ind.rsi[i] > cfg.maxEntryRsi) return 'rsi';
+  if (cfg.excluded?.includes(s.symbol)) return 'excluded';
+  return null;
+}
+
+/** An entryBlocker code in words. */
+export function blockerText(code, cfg, score) {
+  return {
+    signal: cfg.entryMode === 'breakout' ? 'it has not closed above its highest price of the previous 20 candles'
+      : cfg.entryMode === 'pullback' ? `there is no dip: the score is ${score}, the rule needs −${cfg.entryScore} or lower`
+        : `the score is ${score > 0 ? '+' : ''}${score}, the rule needs +${cfg.entryScore} or more`,
+    trend: 'it is not in an uptrend (price and the 50-candle average above the 200-candle average)',
+    momentum: 'the short-term trend and momentum are not both pointing up',
+    market: 'Bitcoin itself is in a downtrend',
+    adx: `the trend is weak (ADX under ${cfg.minAdx})`,
+    rsi: `RSI is above ${cfg.maxEntryRsi}`,
+    excluded: 'its self-review stopped trading this coin after a run of losses',
+  }[code] || code;
+}
+
 function stepBar(state, cfg, s, i, score) {
   const { symbol, candles, ind } = s;
   const atrArr = s.atr;
@@ -366,18 +403,8 @@ function stepBar(state, cfg, s, i, score) {
   }
 
   // ---- look for an entry
-  if (!wantsEntry(cfg, score, ind, i, c)) return;
   if (Object.keys(state.open).length >= cfg.maxPositions) return;
-  if ((cfg.trendFilter || cfg.entryMode === 'pullback') && !(ind.ema200[i] && c.c > ind.ema200[i] && ind.ema50[i] > ind.ema200[i])) return;
-  // The chart score adds oversold readings as reasons to buy, so early in a
-  // fall it can still read high. Confirmation asks for the short-term trend
-  // and momentum to be pointing up as well.
-  if (cfg.momentumConfirm && !(c.c > ind.ema20[i] && ind.ema20[i] > ind.ema50[i] && ind.macd.hist[i] > 0)) return;
-  // Most coins fall together: no new buys while Bitcoin itself is in a downtrend.
-  if (s.regime && s.regime.get(c.t) === false) return;
-  if (cfg.minAdx && !(ind.adx.adx[i] >= cfg.minAdx)) return;
-  if (cfg.maxEntryRsi && ind.rsi[i] !== null && ind.rsi[i] > cfg.maxEntryRsi) return;
-  if (cfg.excluded?.includes(symbol)) return;
+  if (entryBlocker(cfg, s, i, score) !== null) return;
   const a = atrArr[i];
   if (!a) return;
 
