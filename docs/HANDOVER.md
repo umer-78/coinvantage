@@ -244,6 +244,12 @@ A short-side test has not been run.
   CSV import. Keep it that way.
 
 ## Measured numbers currently published (do not change without re-measuring)
+- **Forecast direction, re-checked 2026-10-12** (`TESTED_ACCURACY.recheck`, Evaluate job `engine`,
+  1,440 fresh forecasts): 1m 54.2% vs 66.3% baseline (trust 0.05), 5m 52.1% vs 65.0% (0),
+  15m 47.1% vs 57.9% (0), 1h 50.8% vs 59.6%, 4h 51.2% vs 52.5%, 1d 43.3% vs 52.1%. Each
+  chart keeps the smaller of its release-test and fresh trust (set before the run), so 5m and
+  15m no longer show a direction and 1m only ~51/49. Ranges still roughly hold (80% band
+  72–84%).
 - **AI trader (Trading page, 2026-10-12):** `CHART_TESTED` (walk-forward block averages per
   chart, 24 coins) and `PER_COIN_RULES.tested` (daily account, per-coin rules on) in
   `js/lib/autotrader.js`. Re-measure with the Evaluate workflow, jobs `trader-folds` and

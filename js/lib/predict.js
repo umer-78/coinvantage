@@ -845,7 +845,22 @@ export const TESTED_ACCURACY = {
   // calibrated probUp on these same 1,440 tests (shown = sigmoid(s·logit p)).
   // 0 means the lean carried no information on that chart. Charts that were
   // never tested (1s, 5s, 10s, 1w) are absent, and absent counts as 0.
-  directionTrust: { '1m': 0.90, '5m': 0.41, '15m': 0.38, '1h': 0, '4h': 0, '1d': 0 },
+  // The release test gave 1m 0.90, 5m 0.41, 15m 0.38. A re-run on fresh
+  // candles (recheck, below) found almost nothing on those three, and each
+  // chart keeps the smaller of the two, as set before the re-run.
+  directionTrust: { '1m': 0.05, '5m': 0, '15m': 0, '1h': 0, '4h': 0, '1d': 0 },
+  // The same test re-run on fresh candles (tools/evaluate-engine.mjs and
+  // tools/report-engine.mjs, Evaluate workflow job "engine"): 1,440 forecasts,
+  // 12 coins, 240 per chart. hit/baseline in %, trust as above.
+  recheck: {
+    measuredOn: '2026-10-12', tests: 1440,
+    '1m': { hit: 54.2, baseline: 66.3, trust: 0.05, band50: 50.0, band80: 73.8 },
+    '5m': { hit: 52.1, baseline: 65.0, trust: 0, band50: 45.0, band80: 78.8 },
+    '15m': { hit: 47.1, baseline: 57.9, trust: 0, band50: 42.9, band80: 77.9 },
+    '1h': { hit: 50.8, baseline: 59.6, trust: 0.2, band50: 51.2, band80: 82.9 },
+    '4h': { hit: 51.2, baseline: 52.5, trust: 0, band50: 61.7, band80: 84.2 },
+    '1d': { hit: 43.3, baseline: 52.1, trust: 0, band50: 48.8, band80: 72.1 },
+  },
   // Timeframes where the model scored at or below the do-nothing baseline.
   noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
   beatsBaselineOverall: false,

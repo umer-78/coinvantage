@@ -9,14 +9,17 @@ import { demoCandles } from '../js/lib/demo.js';
 
 test('the shown chance of a rise is the raw one shrunk by its measured trust', () => {
   const logit = (p) => Math.log(p / (1 - p));
-  const expected = 1 / (1 + Math.exp(-0.9 * logit(0.7)));
+  const s = TESTED_ACCURACY.directionTrust['1m'];
+  assert.ok(s > 0, 'the one chart that keeps some trust');
+  const expected = 1 / (1 + Math.exp(-s * logit(0.7)));
   assert.ok(Math.abs(shownProbUp(0.7, '1m') - expected) < 1e-12);
-  // less trust, closer to 50%, and never past the raw value or across 50%
-  assert.ok(0.5 < shownProbUp(0.7, '15m') && shownProbUp(0.7, '15m') < shownProbUp(0.7, '5m'));
-  assert.ok(shownProbUp(0.7, '5m') < shownProbUp(0.7, '1m') && shownProbUp(0.7, '1m') < 0.7);
+  // shrunk toward 50%, never past the raw value or across 50%
+  assert.ok(0.5 < shownProbUp(0.7, '1m') && shownProbUp(0.7, '1m') < 0.7);
+  // a trust given as an argument (what the device learned) is used instead
+  assert.ok(shownProbUp(0.7, '1m', 0.5) > shownProbUp(0.7, '1m', 0.1));
   assert.ok(Math.abs(shownProbUp(0.3, '1m') + shownProbUp(0.7, '1m') - 1) < 1e-12, 'up and down are treated alike');
-  // no trust, or never tested: the page says nothing about direction
-  for (const iv of ['1h', '4h', '1d', '1s', '10s', '1w', null]) assert.equal(shownProbUp(0.83, iv), 0.5, `${iv}`);
+  // no trust (the fresh re-run found none on 5m and 15m), or never tested: nothing about direction
+  for (const iv of ['5m', '15m', '1h', '4h', '1d', '1s', '10s', '1w', null]) assert.equal(shownProbUp(0.83, iv), 0.5, `${iv}`);
 });
 
 test('every tested timeframe has a trust between 0 and 1', () => {
@@ -126,13 +129,14 @@ test('a device with too few graded forecasts uses the release test as it is', ()
 });
 
 test('leans that keep coming true raise the trust, leans that do not lower it, both only partly', () => {
-  const prior = TESTED_ACCURACY.directionTrust['15m'];
+  const prior = TESTED_ACCURACY.directionTrust['1m'];
+  assert.ok(prior > 0);
   // the price rose exactly when the model leaned up
-  const right = learnedTrust(graded('15m', 120, 0.7, (i) => i % 2 === 1), '15m');
+  const right = learnedTrust(graded('1m', 120, 0.7, (i) => i % 2 === 1), '1m');
   assert.equal(right.local, 1);
   assert.ok(right.trust > prior && right.trust < 1, `${right.trust}`);
   // the price rose half the time whatever the model said
-  const noise = learnedTrust(graded('15m', 120, 0.7, (i) => Math.floor(i / 2) % 2 === 0), '15m');
+  const noise = learnedTrust(graded('1m', 120, 0.7, (i) => Math.floor(i / 2) % 2 === 0), '1m');
   assert.equal(noise.local, 0);
   assert.ok(noise.trust < prior && noise.trust > 0, `${noise.trust}`);
   // 240 release-test forecasts against 120 of this device's: the blend sits a third of the way

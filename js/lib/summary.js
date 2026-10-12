@@ -342,7 +342,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   }
 
   if (forecast && !conflict && forecast.directionReliable === false) {
-    const why = interval in TESTED_ACCURACY.directionTrust ? 'in the release test the model\'s leans here carried no information' : 'the model was never tested on this chart';
+    const why = TESTED_ACCURACY.recheck?.[interval] ? `in a re-run of the release test on fresh candles (${TESTED_ACCURACY.recheck.measuredOn}) its calls were right ${TESTED_ACCURACY.recheck[interval].hit}% of the time against ${TESTED_ACCURACY.recheck[interval].baseline}% for always naming the commoner direction` : interval in TESTED_ACCURACY.directionTrust ? 'in the release test the model\'s leans here carried no information' : 'the model was never tested on this chart';
     steps.push({ label: 'What the model adds', text: `No reliable direction on the ${interval} chart: ${why}, so its raw ${forecast.rawProbUpPct}% up is not a chance of anything. Its price range is the useful part: ${fmt(forecast.wideRange[0])} – ${fmt(forecast.wideRange[1])} over ${horizonText || 'the forecast horizon'}, a range of the kind that held ${TESTED_ACCURACY.bandsAll.band80}% of outcomes in testing.` });
   } else if (forecast && !conflict) {
     const dir = forecast.probUpPct >= 50 ? 'up' : 'down';
