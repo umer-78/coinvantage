@@ -191,6 +191,10 @@ export async function render(el, [symParam]) {
     } catch { return null; }
   };
   const paperCfg = () => ({ ...DEFAULT_CONFIG, ...load(PAPER_CFG, {}) });
+  // Demo prices are invented; a trade at one would sit in the account (and sync
+  // to every device) as if it had happened at a real price.
+  const onDemoPrices = () => st.source === 'demo' || (!st.source && coin.source === 'demo');
+  const DEMO_PRICE_MSG = 'Live prices are not loading right now, so the page is showing demo data. Demo trades need a real price — try again once live prices are back.';
   const paperState = () => load(PAPER_STATE, null) || newState(paperCfg());
 
   function paperBlock() {
@@ -199,7 +203,11 @@ export async function render(el, [symParam]) {
     const pos = state.open[coin.symbol];
     const px = st.lastPrice ?? coin.price;
     const bal = equity(state, { [coin.symbol]: px });
-    const suggested = Math.max(1, Math.round(state.balance * 0.1));
+    // in the visitor's currency, like the box it fills (it was a USD number
+    // shown as rupees, so the suggestion was off by the exchange rate)
+    const suggested = Math.max(1, Math.round(state.balance * 0.1 * (fx.rate || 1)));
+    // A sell-side plan's stop sits above the price, which a demo buy cannot use.
+    const planStop = st.signal?.ok && st.signal.plan && st.signal.plan.side !== 'short' && st.signal.plan.stopLoss < px ? st.signal.plan.stopLoss : null;
     if (pos) {
       const pnl = (px - pos.entry) * pos.qty;
       return `<div class="plan mt">
@@ -216,7 +224,7 @@ export async function render(el, [symParam]) {
         <label class="fld" style="flex:1">Amount to put in (${esc(fx.code)})<input class="inp" name="amt" type="number" min="1" step="1" value="${suggested}"></label>
         <button class="btn primary">Buy (demo)</button>
       </form>
-      <p class="fine">Demo balance ${money(bal)}. ${st.signal?.ok && st.signal.plan ? `A stop-loss at ${money(st.signal.plan.stopLoss, { dp: st.dp })} is set for you, matching the signal.` : 'A 5% stop-loss is set for you.'}</p>
+      <p class="fine">Demo balance ${money(bal)}. ${planStop !== null ? `A stop-loss at ${money(planStop, { dp: st.dp })} is set for you, matching the signal.` : 'A 5% stop-loss is set for you.'}</p>
       <p class="fine" id="paperMsg"></p>
       <p class="fine">${esc(DEMO_NOTICE)}</p>`;
   }
@@ -236,12 +244,13 @@ export async function render(el, [symParam]) {
       const cfg = paperCfg();
       const state = paperState();
       const px = st.lastPrice ?? coin.price;
+      if (onDemoPrices()) { const m = msg(); if (m) { m.textContent = DEMO_PRICE_MSG; m.className = 'fine down'; } return; }
       // The box is in the visitor's currency; the account is kept in USD.
       const usdAmount = (+form.amt.value || 0) / (fx.rate || 1);
       const r = openManual(state, cfg, coin.symbol, px, {
         notional: usdAmount,
-        stopPrice: st.signal?.ok ? st.signal.plan?.stopLoss : undefined,
-        targetPrice: st.signal?.ok ? st.signal.plan?.takeProfits?.[0] : undefined,
+        stopPrice: st.signal?.ok && st.signal.plan?.side !== 'short' ? st.signal.plan?.stopLoss : undefined,
+        targetPrice: st.signal?.ok && st.signal.plan?.side !== 'short' ? st.signal.plan?.takeProfits?.[0] : undefined,
         ctx: buyContext(),
       });
       if (!r.ok) { const m = msg(); if (m) { m.textContent = r.error; m.className = 'fine down'; } return; }
@@ -254,6 +263,7 @@ export async function render(el, [symParam]) {
       const cfg = paperCfg();
       const state = paperState();
       const px = st.lastPrice ?? coin.price;
+      if (onDemoPrices()) { const m = msg(); if (m) { m.textContent = DEMO_PRICE_MSG; m.className = 'fine down'; } return; }
       const r = closeManual(state, cfg, coin.symbol, px);
       if (!r.ok) { const m = msg(); if (m) { m.textContent = r.error; m.className = 'fine down'; } return; }
       save(PAPER_STATE, state);

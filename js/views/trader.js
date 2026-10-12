@@ -1,5 +1,5 @@
 // The automatic AI trader, running on simulated money.
-import { markets, getCandles, isStable, findCoin, INTERVAL_MS } from '../api/market.js';
+import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
 import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
@@ -73,6 +73,34 @@ export async function render(el) {
   }
 
   const all = await markets().catch(() => []);
+  // The best real price this page has for a coin: a live tick, the latest
+  // candle, or the market list (refreshed every minute). Never the entry price:
+  // Sell and Close used to fall back to it before the first tick arrived, or
+  // for a coin with no live stream, and recorded a 0% trade that never happened.
+  const priceOf = (sym) => {
+    if (Number.isFinite(st.prices[sym])) return st.prices[sym];
+    const c = all.find((x) => x.symbol === sym && x.source !== 'demo');
+    return Number.isFinite(c?.price) && c.price > 0 ? c.price : null;
+  };
+  // A fresh exchange price for one coin, from its latest 1-minute candle, for
+  // when the live stream is blocked or has not delivered this coin yet.
+  async function fetchPrice(sym) {
+    const coin = all.find((c) => c.symbol === sym);
+    if (!coin) return null;
+    try {
+      const r = await getCandles(coin, '1m', 3);
+      const px = r.candles.at(-1)?.c;
+      if (!isTestedSource(r) || !Number.isFinite(px)) return null;
+      if (st.priceFrom[sym] !== 'live') { st.prices[sym] = px; st.priceFrom[sym] = 'candle'; }
+      return px;
+    } catch { return null; }
+  }
+  // Prices to mark every account with: the list prices, overridden by live ones.
+  const marks = () => {
+    const m = {};
+    for (const c of all) if (c.source !== 'demo' && Number.isFinite(c.price)) m[c.symbol] = c.price;
+    return { ...m, ...st.prices };
+  };
   const tradable = all.filter((c) => !isStable(c.symbol)).slice(0, 60);
 
   el.innerHTML = `
@@ -289,7 +317,8 @@ export async function render(el) {
     btn.disabled = false;
     btn.innerHTML = old;
     if (failed.length) toast(`No data for ${failed.join(', ')} — skipped.`, 'info');
-    if (noExchange.length) toast(`${noExchange.join(', ')} ${noExchange.length > 1 ? 'have' : 'has'} no exchange candles, so the AI does not trade ${noExchange.length > 1 ? 'them' : 'it'}. Take ${noExchange.length > 1 ? 'them' : 'it'} off its list in Settings.`, 'info');
+    // once per visit: it would otherwise repeat on every five-minute check
+    if (noExchange.length && !st.warnedNoExchange) st.warnedNoExchange = true, toast(`${noExchange.join(', ')} ${noExchange.length > 1 ? 'have' : 'has'} no exchange candles, so the AI does not trade ${noExchange.length > 1 ? 'them' : 'it'}. Take ${noExchange.length > 1 ? 'them' : 'it'} off its list in Settings.`, 'info');
     draw();
     if (processed) toast(`Checked ${processed.toLocaleString('en-US')} new candle${processed === 1 ? '' : 's'}.`, 'up');
     learnFrom(forecastInputs, runCfg.interval);
@@ -434,7 +463,7 @@ export async function render(el) {
   function realCard() {
     const rs = realState();
     const has = rs && (Object.keys(rs.open).length || rs.closed.length);
-    const s3 = has ? stats(rs, st.prices) : null;
+    const s3 = has ? stats(rs, marks()) : null;
     const open = has ? Object.entries(rs.open) : [];
     const closed = has ? [...rs.closed].reverse().slice(0, 25) : [];
     return `<div class="card mt">
@@ -473,11 +502,11 @@ export async function render(el) {
 
       ${open.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Side</th><th>In at</th><th>Now</th><th>Size</th><th>Open P&amp;L</th><th></th></tr></thead><tbody>
         ${open.map(([sym, p]) => {
-          const px = st.prices[sym] ?? p.entry;
-          const pnl = (p.side === 'short' ? (p.entry - px) : (px - p.entry)) * p.qty;
-          return `<tr><td class="l"><b>${esc(sym)}</b></td><td>${p.side === 'short' ? 'Short' : 'Long'}</td><td>${money(p.entry)}</td><td>${money(px)}</td><td>${money(p.notional)}</td>
-            <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b></td>
-            <td><button class="btn sm" data-realclose="${esc(sym)}">Close at live price</button></td></tr>`;
+          const px = priceOf(sym);
+          const pnl = px === null ? null : (p.side === 'short' ? (p.entry - px) : (px - p.entry)) * p.qty;
+          return `<tr><td class="l"><b>${esc(sym)}</b></td><td>${p.side === 'short' ? 'Short' : 'Long'}</td><td>${money(p.entry)}</td><td>${px === null ? '<span class="muted">no price yet</span>' : money(px)}</td><td>${money(p.notional)}</td>
+            <td class="${pnl === null ? 'muted' : pnl >= 0 ? 'up' : 'down'}">${pnl === null ? '—' : `<b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b>`}</td>
+            <td><button class="btn sm" data-realclose="${esc(sym)}">Record the sale…</button></td></tr>`;
         }).join('')}</tbody></table></div>` : ''}
 
       ${closed.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Closed</th><th>In</th><th>Out</th><th>Result</th></tr></thead><tbody>
@@ -547,7 +576,7 @@ export async function render(el) {
       const isAi = b.dataset.report === 'ai';
       const src = isAi ? state : realState();
       if (!src) { toast('Nothing to report on yet.', 'info'); return; }
-      const s2 = stats(src, st.prices);
+      const s2 = stats(src, marks());
       const notes = isAi
         ? ['<b>Simulated money.</b> These trades were never placed on an exchange. Fees are modelled, slippage is not.']
         : ['<b>Recorded by hand or imported.</b> These are trades placed on an exchange; this app did not place them.'];
@@ -627,15 +656,34 @@ export async function render(el) {
       toast(r.trade ? `Recorded: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.` : `Open ${f3.sym.value} trade recorded.`, r.trade && r.trade.pnl < 0 ? 'down' : 'up');
       draw();
     });
-    $$('[data-realclose]', el).forEach((b) => b.addEventListener('click', () => {
+    // A real trade closes at the price it was actually sold at on the exchange,
+    // so ask for it, with the current price filled in as a starting point.
+    $$('[data-realclose]', el).forEach((b) => b.addEventListener('click', async () => {
       const sym = b.dataset.realclose;
-      const rs = realState();
-      const px = st.prices[sym] ?? rs.open[sym]?.entry;
-      const r = closeManual(rs, cfg, sym, px);
-      if (!r.ok) { toast(r.error, 'down'); return; }
-      save(REAL_KEY, rs);
-      toast(`${sym} closed at ${money(px)}: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.`, r.trade.pnl >= 0 ? 'up' : 'down');
-      draw();
+      const now = priceOf(sym) ?? await fetchPrice(sym);
+      const m = modal(`<h3>Record the sale of ${esc(sym)}</h3>
+        <p class="fine">Enter the price you sold at on your exchange. CoinVantage only records it: no order is placed.</p>
+        <form class="stack mt" style="gap:10px" id="rcf">
+          <label class="fld">Price sold at (${esc(fx.code)})<input class="inp" name="px" type="number" step="any" min="0" required value="${now === null ? '' : esc(String(+(now * (fx.rate || 1)).toPrecision(8)))}"></label>
+          <label class="fld">Fee paid on the sale (${esc(fx.code)})<input class="inp" name="fee" type="number" step="any" min="0" value="${now === null ? '0' : esc(String(+(now * (realState()?.open[sym]?.qty || 0) * (cfg.feePct / 100) * (fx.rate || 1)).toPrecision(4)))}"><small class="fine">Filled in at the usual ${cfg.feePct}%; change it to what your exchange charged.</small></label>
+          <p class="fine down" id="rcfErr" hidden></p>
+          <button class="btn primary">Record the sale</button>
+        </form>`);
+      $('#rcf', m.el).addEventListener('submit', (e) => {
+        e.preventDefault();
+        const f = e.target;
+        const rate = fx.rate || 1;
+        const px = +f.px.value / rate;
+        const rs = realState();
+        const pos = rs?.open[sym];
+        if (pos) pos.feePaid = (pos.feePaid || 0) + Math.max(0, +f.fee.value || 0) / rate;
+        const r = rs ? closeManual(rs, { ...cfg, feePct: 0 }, sym, px, Date.now(), 'recorded by you') : { ok: false, error: 'This trade is no longer open.' };
+        if (!r.ok) { const err = $('#rcfErr', m.el); err.textContent = r.error; err.hidden = false; return; }
+        save(REAL_KEY, rs);
+        m.close();
+        toast(`${sym} sale recorded: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.`, r.trade.pnl >= 0 ? 'up' : 'down');
+        draw();
+      });
     }));
     $('#realReset', el)?.addEventListener('click', () => {
       save(REAL_KEY, newState(cfg));
@@ -655,7 +703,7 @@ export async function render(el) {
       return `<div class="card"><div class="card-h"><h3>Your own demo trades</h3><span class="chip">Separate account</span></div>
         <p class="fine">Nothing here yet. Open any coin, press <b>Trade</b>, and use <b>Buy (demo)</b> to place a demo trade yourself at the live price. It is kept apart from the AI's account below, so your experiments never distort the strategy's record.</p></div>`;
     }
-    const s2 = stats(ms, st.prices);
+    const s2 = stats(ms, marks());
     const open = Object.entries(ms.open);
     const closed = [...ms.closed].reverse().slice(0, 20);
     return `<div class="card">
@@ -668,10 +716,10 @@ export async function render(el) {
       </div>
       ${open.length ? `<div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Bought at</th><th>Now</th><th>Size</th><th>Open P&amp;L</th><th></th></tr></thead><tbody>
         ${open.map(([sym, p]) => {
-          const px = st.prices[sym] ?? p.entry;
-          const pnl = (px - p.entry) * p.qty;
-          return `<tr><td class="l"><b>${esc(sym)}</b></td><td>${money(p.entry)}</td><td>${money(px)}</td><td>${money(p.notional)}</td>
-            <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b> <small>${pct((px / p.entry - 1) * 100)}</small></td>
+          const px = priceOf(sym);
+          const pnl = px === null ? null : (px - p.entry) * p.qty;
+          return `<tr><td class="l"><b>${esc(sym)}</b></td><td>${money(p.entry)}</td><td>${px === null ? '<span class="muted">no price yet</span>' : money(px)}</td><td>${money(p.notional)}</td>
+            <td class="${pnl === null ? 'muted' : pnl >= 0 ? 'up' : 'down'}">${pnl === null ? '—' : `<b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b> <small>${pct((px / p.entry - 1) * 100)}</small>`}</td>
             <td><button class="btn sm" data-mysell="${esc(sym)}">Sell</button></td></tr>`;
         }).join('')}
       </tbody></table></div>` : ''}
@@ -689,10 +737,11 @@ export async function render(el) {
       toast('Your demo account is back to its starting balance.', 'info');
       draw();
     });
-    $$('[data-mysell]', el).forEach((b) => b.addEventListener('click', () => {
+    $$('[data-mysell]', el).forEach((b) => b.addEventListener('click', async () => {
       const sym = b.dataset.mysell;
       const ms = myState();
-      const px = st.prices[sym] ?? ms.open[sym]?.entry;
+      const px = priceOf(sym) ?? await fetchPrice(sym);
+      if (px === null) { toast(`No price for ${sym} right now — try again in a moment.`, 'info'); return; }
       const r = closeManual(ms, cfg, sym, px);
       if (!r.ok) { toast(r.error, 'down'); return; }
       save(MY_KEY, ms);
@@ -703,7 +752,7 @@ export async function render(el) {
 
   function draw() {
     if (!state) { $('#body', el).innerHTML = `${backupCard()}${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${startCard()}`; wireBackup(); wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
-    const s = stats(state, st.prices);
+    const s = stats(state, marks());
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
 
@@ -919,6 +968,14 @@ export async function render(el) {
   draw();
   syncRunButtons();
   syncSessionChip();
+  // Your demo and real positions in coins the AI does not watch get a price
+  // here, so their open profit shows without waiting for the live stream.
+  (async () => {
+    const need = [...new Set([...Object.keys(myState()?.open || {}), ...Object.keys(realState()?.open || {})])].filter((sym) => !Number.isFinite(st.prices[sym]));
+    let got = 0;
+    for (const sym of need) { if (st.disposed) return; if ((await fetchPrice(sym)) !== null) got++; }
+    if (got && !st.disposed) draw();
+  })();
   if (state && autoOn) catchUp();
   // First visit: run the play-money account once on its own, so the page opens
   // on a replayed record instead of an empty start card. Only ever automatic
