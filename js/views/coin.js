@@ -698,7 +698,7 @@ export async function render(el, [symParam]) {
     $('#fcCard', el).innerHTML = `
       <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${conf === 'High' ? 'up' : conf === 'Moderate' ? 'warn' : ''}" title="${esc(confWhy)}">${conf} confidence</span></div>
       <dl class="kv">
-        <dt>80% range · next ${horizonText(st.interval, fc.horizon)}</dt><dd><b>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</b> <span class="fine">${coverage('band80')}</span></dd>
+        <dt>80% range · next ${horizonText(st.interval, fc.horizon).replace(/^1 /, '')}</dt><dd><b>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</b> <span class="fine">${coverage('band80')}</span></dd>
         ${fc.range.p05 ? `<dt>90% range</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="fine">${coverage('band90')}</span></dd>` : ''}
       </dl>
       <div class="prob mt">${ring(reliable ? shown : null)}
@@ -882,7 +882,7 @@ export async function render(el, [symParam]) {
       body.innerHTML = `
         <div class="grid fc-grid">
           <div>
-            <h3 style="margin-bottom:6px">Price path forecast · next ${horizonText(st.interval, fc.horizon)}</h3>
+            <h3 style="margin-bottom:6px">Price path forecast · next ${horizonText(st.interval, fc.horizon).replace(/^1 /, '')}</h3>
             <div id="fcChart"></div>
             <p class="fine">Solid line = actual price. Dashed = AI median forecast. Shaded = 50% and 80% likely ranges.</p>
           </div>

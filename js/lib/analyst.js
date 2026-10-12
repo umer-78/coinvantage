@@ -16,6 +16,8 @@ const fmtNum = (v) => (v === null || v === undefined || !Number.isFinite(v) ? fm
 const DISCLAIMER = '_Signals are technical indicators, not financial advice. Always use a stop-loss and only risk what you can afford to lose._';
 
 const money = (v) => Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+// "the next 1 day" reads as "the next day"
+const nextSpan = (h) => `next ${String(h).replace(/^1 /, '')}`;
 
 function parseAccount(q) {
   const s = String(q || '').replace(/,/g, '');
@@ -28,7 +30,9 @@ function parseAccount(q) {
 
 function pct(v) {
   if (v === null || v === undefined || !isFinite(v)) return '—';
-  return `${v > 0 ? '+' : ''}${Number(v).toFixed(2)}%`;
+  // Same style as the rest of the site: a true minus, no sign on 0.00%.
+  const t = Math.abs(Number(v)).toFixed(2);
+  return +t === 0 ? `${t}%` : `${v < 0 ? '−' : '+'}${t}%`;
 }
 
 // Tickers and names common enough that mentioning one makes the question
@@ -117,8 +121,8 @@ function forecastBlock(f, ctx) {
   const acc = f.validatedAccuracyPct !== null ? `${f.validatedAccuracyPct}% direction accuracy on recent unseen data (naive baseline ${f.baselineAccuracyPct}%)` : 'accuracy not measured';
   const lines = [
     f.directionReliable === false
-      ? `**AI forecast (next ${horizon}):** no reliable direction on this chart (raw model lean ${f.rawProbUpPct}% up, not a chance of anything) · the ranges below are the useful part`
-      : `**AI forecast (next ${horizon}):** ${f.probUpPct}% chance of going up → leans **${dirWord}** · confidence ${f.confidence}`,
+      ? `**AI forecast (${nextSpan(horizon)}):** no reliable direction on this chart (raw model lean ${f.rawProbUpPct}% up, not a chance of anything) · the ranges below are the useful part`
+      : `**AI forecast (${nextSpan(horizon)}):** ${f.probUpPct}% chance of going up → leans **${dirWord}** · confidence ${f.confidence}`,
     `- Expected move: ${pct(f.expectedMovePct)} → target ≈ ${fmtNum(f.targetPrice)}`,
     `- Likely range (50%): ${fmtNum(f.likelyRange[0])} – ${fmtNum(f.likelyRange[1])}; wide range (80%): ${fmtNum(f.wideRange[0])} – ${fmtNum(f.wideRange[1])}`,
     `- Track record: ${acc}${f.accuracyWhenConfidentPct !== null ? `; ${f.accuracyWhenConfidentPct}% when the models agreed strongly` : ''}`,
@@ -134,9 +138,13 @@ function forecastBlock(f, ctx) {
 // What the coin's own multi-year history says about a chart shaped like today's.
 function historyBlock(h) {
   if (!h) return '';
-  const dir = h.verdict === 'UP' ? 'higher' : h.verdict === 'DOWN' ? 'lower' : 'mixed';
+  // Count the cases that went the way the word says: it gave the number that rose
+  // even when it said "lower" ("lower in 1/4 cases" when 3 of 4 were lower).
+  const [up, total] = String(h.wentUpAfter || '').split('/').map(Number);
+  const fell = h.verdict === 'DOWN';
+  const count = Number.isFinite(up) && Number.isFinite(total) ? `**${fell ? total - up : up} of ${total}**` : `**${h.wentUpAfter}**`;
   const lines = [
-    `**Previous years (daily chart):** the last ${h.similarPastCases} times ${h.windowDays} days of price looked like today, price was ${dir} ${h.horizonDays} days later in **${h.wentUpAfter}** cases — median ${pct(h.medianMovePct)} (best ${pct(h.bestCasePct)}, worst ${pct(h.worstCasePct)}).`,
+    `**Previous years (daily chart):** the last ${h.similarPastCases} times ${h.windowDays} days of price looked like today, price was ${fell ? 'lower' : 'higher'} ${h.horizonDays} days later in ${count} cases — median ${pct(h.medianMovePct)} (best ${pct(h.bestCasePct)}, worst ${pct(h.worstCasePct)}).`,
   ];
   if (h.examples?.length) lines.push(`- Closest matches (date the chart matched → move over the following ${h.horizonDays} days): ${h.examples.map((e) => `${e.date}, ${e.similarityPct}% similar → ${pct(e.thenMovedPct)}`).join('; ')}`);
   if (h.thisMonthHistoricalAvgPct !== null && h.thisMonthHistoricalAvgPct !== undefined) lines.push(`- Seasonality: this calendar month has averaged ${pct(h.thisMonthHistoricalAvgPct)} for this coin across its history.`);
@@ -185,7 +193,9 @@ function marketMultiBlock(m) {
   for (const fr of m.frames) {
     out.push(`\n### ${fr.label} — ${fr.interval} chart (${fr.horizonText} ahead)`);
     if (!fr.buys.length) {
-      out.push(`  - Nothing clears the bar on this timeframe. ${fr.waitingCount} coins read as "no edge — wait", and sitting out is a position.`);
+      out.push(fr.waitingCount
+        ? `  - Nothing clears the bar on this timeframe. ${fr.waitingCount} coin${fr.waitingCount === 1 ? '' : 's'} read as "no edge — wait", and sitting out is a position.`
+        : '  - No coin could be read on this timeframe: the exchanges returned no candles. Try again in a minute.');
     } else {
       for (const b of fr.buys.slice(0, 4)) out.push(frameLines(b, fr.interval));
     }
@@ -215,7 +225,8 @@ function marketBlock(m) {
   if (!m) return '';
   const out = [`**Market scan — ${m.scanned} coins on the ${m.interval} chart**${m.skipped ? ` (${m.skipped} more skipped: no exchange candles)` : ''}\n`];
   if (!m.buys.length) {
-    out.push(`Nothing currently clears the bar to buy. ${m.waitingCount} coins came back as "no edge — wait", which is the honest answer more often than not. Sitting out is a position.`);
+    if (!m.waitingCount) out.push('No coin could be read: the exchanges returned no candles. Try again in a minute.');
+    else out.push(`Nothing currently clears the bar to buy. ${m.waitingCount} coin${m.waitingCount === 1 ? '' : 's'} came back as "no edge — wait", which is the honest answer more often than not. Sitting out is a position.`);
   } else {
     out.push('**Worth buying now**\n');
     m.buys.forEach((b, i) => {
@@ -321,7 +332,7 @@ function conflictBlock(ctx) {
   const signalWord = c.side === 'long' ? 'up' : 'down';
   const modelWord = c.forecastSide === 'long' ? 'up' : 'down';
   const lines = [
-    `⚠️ **The two readings disagree — treat this as no clear edge.** The chart reading leans **${signalWord}**, but the AI forecast puts the next ${horizon} at **${c.probUp}% up**, which leans **${modelWord}**.`,
+    `⚠️ **The two readings disagree — treat this as no clear edge.** The chart reading leans **${signalWord}**, but the AI forecast puts the ${nextSpan(horizon)} at **${c.probUp}% up**, which leans **${modelWord}**.`,
   ];
   lines.push(c.forecastIsWeak
     ? `On this coin and timeframe the forecast has ${c.acc === null || c.acc === undefined ? 'no measured accuracy yet' : `only scored ${c.acc}% on recent unseen data`}, so it is the weaker of the two — but it is still pointing the other way, and that is a reason to take a smaller position, not a bigger one.`
@@ -454,8 +465,8 @@ export function ruleBasedAnswer(question, ctx = {}) {
       out.push(mtfBlock(ctx));
       if (ctx.forecast) {
         out.push(ctx.forecast.directionReliable === false
-          ? `**AI forecast:** no reliable direction on this chart (raw lean ${ctx.forecast.rawProbUpPct}% up); its 80% range over the next ${ctx.horizonText || ctx.forecast.horizonBars + ' candles'} is ${fmtNum(ctx.forecast.wideRange[0])} – ${fmtNum(ctx.forecast.wideRange[1])}.`
-          : `**AI forecast:** ${ctx.forecast.probUpPct}% chance up over the next ${ctx.horizonText || ctx.forecast.horizonBars + ' candles'} (confidence ${ctx.forecast.confidence}).`);
+          ? `**AI forecast:** no reliable direction on this chart (raw lean ${ctx.forecast.rawProbUpPct}% up); its 80% range over the ${nextSpan(ctx.horizonText || ctx.forecast.horizonBars + ' candles')} is ${fmtNum(ctx.forecast.wideRange[0])} – ${fmtNum(ctx.forecast.wideRange[1])}.`
+          : `**AI forecast:** ${ctx.forecast.probUpPct}% chance up over the ${nextSpan(ctx.horizonText || ctx.forecast.horizonBars + ' candles')} (confidence ${ctx.forecast.confidence}).`);
       }
       break;
     }
@@ -470,10 +481,17 @@ export function ruleBasedAnswer(question, ctx = {}) {
         out.push(`\nNo exit signal yet — the structure still holds. Keep a stop in place.`);
       }
       out.push(timingBlock(ctx));
-      const res = sig.levels.resistances.slice(0, 3).map(fmtNum).join(' / ');
-      const sup = sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ');
-      out.push(`\n**Exit plan**\n- Take-profit targets (resistance): ${res || '—'}\n- Protective stop: below ${sup ? sup.split(' / ')[0] : fmtNum(sig.price - 1.5 * (sig.indicators.atr || 0))}${sig.indicators.ema50 ? `\n- Trend exit: daily close below the 50 EMA (${fmtNum(sig.indicators.ema50)})` : ''}`);
-      if (sig.plan?.exitRules?.length) out.push(sig.plan.exitRules.map((r) => `- ${r}`).join('\n'));
+      // One exit plan. It used to list the chart's own levels and then the trade
+      // plan's rules beneath them: two different stops, the trend exit twice
+      // (once as a "daily close" on a 4h chart) and targets that did not match
+      // the ones in the sizing answer.
+      if (sig.plan?.side === 'long' && sig.plan.exitRules?.length) {
+        out.push(`\n**Exit plan** (the ${ctx.interval} trade plan)\n- Take-profit targets: ${sig.plan.takeProfits.map(fmtNum).join(' / ')}\n${sig.plan.exitRules.map((r) => `- ${r}`).join('\n')}`);
+      } else {
+        const res = sig.levels.resistances.slice(0, 3).map(fmtNum).join(' / ');
+        const sup = sig.levels.supports.slice(0, 2).map(fmtNum).join(' / ');
+        out.push(`\n**Exit plan**\n- Take-profit levels (resistance): ${res || '—'}\n- Protective stop: below ${sup ? sup.split(' / ')[0] : fmtNum(sig.price - 1.5 * (sig.indicators.atr || 0))}${sig.indicators.ema50 ? `\n- Trend exit: a ${ctx.interval} close below the 50 EMA (${fmtNum(sig.indicators.ema50)})` : ''}`);
+      }
       break;
     }
     case 'risk': {
@@ -494,7 +512,10 @@ export function ruleBasedAnswer(question, ctx = {}) {
         const r1 = account * 0.01, r2 = account * 0.02;
         const p1 = Math.min(account, r1 / (stopDistPct / 100)), p2 = Math.min(account, r2 / (stopDistPct / 100));
         out.push(`\nFor a **$${money(account)}** account:\n- Careful (1% risk = $${money(r1)}): buy ≈ **$${money(p1)}** of ${ctx.coin?.symbol || 'the coin'} (≈ ${fmtNum(p1 / sig.price)} ${ctx.coin?.symbol || ''})\n- Aggressive (2% risk = $${money(r2)}): buy ≈ **$${money(p2)}** (≈ ${fmtNum(p2 / sig.price)} ${ctx.coin?.symbol || ''})`);
-        out.push(`\nIf the stop is hit you lose about $${money(r1)}–$${money(r2)}, not your whole account. No leverage.`);
+        // Capped at the whole balance (a tight stop), the loss at the stop is smaller
+        // than the risk budget; it used to quote the budget either way.
+        const l1 = p1 * (stopDistPct / 100), l2 = p2 * (stopDistPct / 100);
+        out.push(`\nIf the stop is hit you lose about $${money(l1)}${Math.abs(l2 - l1) > 0.005 ? `–$${money(l2)}` : ''}, not your whole account.${p2 >= account ? ' With a stop this close the size is capped at your whole balance.' : ''} No leverage.`);
       } else {
         out.push(`\nTell me your account size (e.g. "I have $1,000") and I'll calculate the exact amount.`);
       }

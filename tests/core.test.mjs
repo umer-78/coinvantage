@@ -161,10 +161,22 @@ test('analyst quotes the multi-year history when it is supplied', () => {
     forecast: { probUpPct: 56, direction: 'UP', confidence: 'Moderate', expectedMovePct: 1.8, targetPrice: sig.price * 1.018, likelyRange: [1, 2], wideRange: [1, 3], horizonBars: 12, validatedAccuracyPct: 55, baselineAccuracyPct: 51, accuracyWhenConfidentPct: 58 },
     history: { similarPastCases: 6, windowDays: 45, horizonDays: 30, wentUpAfter: '4/6', medianMovePct: 7.4, bestCasePct: 22, worstCasePct: -9, methodAccuracyPct: 52, thisMonthHistoricalAvgPct: 3.1, examples: [{ date: '2021-07-20', similarityPct: 91, thenMovedPct: 12.3 }], verdict: 'UP' },
   });
-  assert.match(answer, /4\/6/);
+  assert.match(answer, /price was higher 30 days later in \*\*4 of 6\*\* cases/);
   assert.match(answer, /2021-07-20/);
   assert.match(answer, /52%/);
   assert.match(answer, /coin flip/i); // 52% must be flagged as weak, not sold as an edge
+});
+
+test('the multi-year history counts the cases that went the way it says', () => {
+  const candles = demoCandles('ethereum', '4h', 700);
+  const sig = generateSignal(candles, { interval: '4h' });
+  const answer = ruleBasedAnswer('will eth go up next week?', {
+    coin: { name: 'Ethereum', symbol: 'ETH', price: sig.price, change24h: 1.2 }, interval: '4h', signal: sig, horizonText: '1 day',
+    forecast: { probUpPct: 56, direction: 'UP', confidence: 'Moderate', expectedMovePct: 1.8, targetPrice: sig.price * 1.018, likelyRange: [1, 2], wideRange: [1, 3], horizonBars: 6, validatedAccuracyPct: 55, baselineAccuracyPct: 51, accuracyWhenConfidentPct: 58 },
+    history: { similarPastCases: 4, windowDays: 45, horizonDays: 30, wentUpAfter: '1/4', medianMovePct: -0.85, bestCasePct: 13.6, worstCasePct: -7.6, methodAccuracyPct: 46, examples: [], verdict: 'DOWN' },
+  });
+  // it used to say "lower 30 days later in 1/4 cases" when three of the four fell
+  assert.match(answer, /price was lower 30 days later in \*\*3 of 4\*\* cases/);
 });
 
 

@@ -143,13 +143,15 @@ export function timingText(t, fmtDuration, fmtMoney) {
       ? `Past look-alikes drifted up steadily rather than spiking — no clear peak-and-drop pattern within this horizon.`
       : `Past look-alikes drifted down steadily — no clear dip-and-bounce pattern within this horizon.`;
   }
+  // "+0.7%", "−1.0%", and no sign on a move that rounds to zero ("-0.0%").
+  const sp = (v) => { const a = Math.abs(v).toFixed(1); return +a === 0 ? '0.0%' : `${v < 0 ? '−' : '+'}${a}%`; };
   const parts = [];
   if (t.rising && t.peak) {
-    parts.push(`Strength usually lasts about **${fmtDuration(t.peak.bar)}**, peaking near **${fmtMoney(t.peak.price)}** (${t.peak.pct >= 0 ? '+' : ''}${t.peak.pct.toFixed(1)}%)`);
-    if (t.turn) parts.push(`then gives most of it back by **${fmtDuration(t.turn.bar)}** from now (${t.turn.pct >= 0 ? '+' : ''}${t.turn.pct.toFixed(1)}%)`);
+    parts.push(`Strength usually lasts about **${fmtDuration(t.peak.bar)}**, peaking near **${fmtMoney(t.peak.price)}** (${sp(t.peak.pct)})`);
+    if (t.turn) parts.push(`then gives most of it back by **${fmtDuration(t.turn.bar)}** from now (${sp(t.turn.pct)})`);
     else parts.push(`and holds rather than reversing inside this horizon`);
   } else if (t.falling && t.trough) {
-    parts.push(`Weakness usually runs about **${fmtDuration(t.trough.bar)}**, bottoming near **${fmtMoney(t.trough.price)}** (${t.trough.pct.toFixed(1)}%)`);
+    parts.push(`Weakness usually runs about **${fmtDuration(t.trough.bar)}**, bottoming near **${fmtMoney(t.trough.price)}** (${sp(t.trough.pct)})`);
     if (t.recover) parts.push(`with a bounce starting in about **${fmtDuration(t.recover.bar)}**`);
     else parts.push(`with no clear bounce inside this horizon`);
   }

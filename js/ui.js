@@ -114,9 +114,28 @@ export function markdown(src) {
     .replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
     .replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
   const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  // Tables: the assistant's coin comparison is one, and it used to come out as
+  // a column of loose "| BTC | ETH |" lines.
+  let table = null;
+  const cells = (l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  const cell = (tag, c, i) => `<${tag}${i === 0 ? ' class="l"' : ''}>${inline(c)}</${tag}>`;
+  const closeTable = () => {
+    if (!table) return;
+    const head = table.head ? `<thead><tr>${table.head.map((c, i) => cell('th', c, i)).join('')}</tr></thead>` : '';
+    out.push(`<div class="tbl-wrap"><table class="tbl">${head}<tbody>${table.rows.map((r) => `<tr>${r.map((c, i) => cell('td', c, i)).join('')}</tr>`).join('')}</tbody></table></div>`);
+    table = null;
+  };
   for (const raw of lines) {
     const line = raw.trimEnd();
     let m;
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      closeList();
+      if (!table) table = { head: null, rows: [] };
+      if (/^\s*\|?(\s*:?-{3,}:?\s*\|)+\s*$/.test(line)) { if (!table.head && table.rows.length) table.head = table.rows.shift(); }
+      else table.rows.push(cells(line));
+      continue;
+    }
+    closeTable();
     if ((m = /^\s*[-*•]\s+(.*)/.exec(line))) {
       if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
       out.push(`<li>${inline(m[1])}</li>`);
@@ -132,6 +151,7 @@ export function markdown(src) {
     }
   }
   closeList();
+  closeTable();
   return out.join('');
 }
 
