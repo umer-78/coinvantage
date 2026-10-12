@@ -55,6 +55,52 @@ function account(rules, series, from, extra = {}) {
   return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length, win: st.closed.length ? (wins / st.closed.length) * 100 : 0, fees: (fees / cfg.startingBalance) * 100 };
 }
 const objective = (m) => (m.trades < 10 ? -Infinity : m.ret - 0.5 * m.dd);
+
+// What followed each buy signal on its own: every coin run alone with one
+// position at a time, so no signal is skipped for want of cash. R is the
+// result over the risk taken at entry (fees included); `fwd` asks whether the
+// price was higher H candles after the buy, `base` the same from every candle
+// of the block; `rand` is a buy at a random candle of the block held as long.
+const HZ = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+function signalRecord(rules, series, from, H) {
+  const o = { n: 0, wins: 0, sumR: 0, winR: 0, lossR: 0, holds: [], sumPct: 0, sumRand: 0, fwdUp: 0, fwdN: 0, baseUp: 0, baseN: 0 };
+  for (const x of series) {
+    const cfg = { ...DEFAULT_CONFIG, ...rules, excluded: [], universe: [x.symbol], maxPositions: 1, maxPositionPct: 100, startingBalance: 1e6 };
+    const st = newState(cfg);
+    st.cursor[x.symbol] = x.candles[from - 1].t;
+    replaySeries(st, cfg, [{ ...x, regime: cfg.marketFilter ? x.regime : null }], { from });
+    const c = x.candles, at = new Map(c.map((k, i) => [k.t, i]));
+    for (let i = from; i + H < c.length; i++) { o.baseN++; if (c[i + H].c > c[i].c) o.baseUp++; }
+    for (const t of st.closed) {
+      const i = at.get(t.openedAt), j = at.get(t.exitAt);
+      if (i === undefined || j === undefined) continue;
+      const R = t.riskCash > 0 ? t.pnl / t.riskCash : 0;
+      o.n++; o.sumR += R; o.sumPct += t.pnlPct;
+      if (t.pnl > 0) { o.wins++; o.winR += R; } else o.lossR += R;
+      o.holds.push(j - i);
+      if (i + H < c.length) { o.fwdN++; if (c[i + H].c > c[i].c) o.fwdUp++; }
+      let sum = 0, k = 0;
+      for (let a = from; a + (j - i) < c.length; a++) { sum += c[a + (j - i)].c / c[a].c - 1; k++; }
+      o.sumRand += k ? (sum / k) * 100 : 0;
+    }
+  }
+  return o;
+}
+function mergeSignals(list, H) {
+  const o = list.reduce((a, x) => ({ n: a.n + x.n, wins: a.wins + x.wins, sumR: a.sumR + x.sumR, winR: a.winR + x.winR, lossR: a.lossR + x.lossR, holds: a.holds.concat(x.holds), sumPct: a.sumPct + x.sumPct, sumRand: a.sumRand + x.sumRand, fwdUp: a.fwdUp + x.fwdUp, fwdN: a.fwdN + x.fwdN, baseUp: a.baseUp + x.baseUp, baseN: a.baseN + x.baseN }));
+  const h = [...o.holds].sort((a, b) => a - b);
+  const losses = o.n - o.wins;
+  // 95% Wilson range of the share of buys followed by a higher price
+  const z = 1.96, p = o.fwdN ? o.fwdUp / o.fwdN : 0, d = 1 + (z * z) / Math.max(1, o.fwdN);
+  const mid = (p + (z * z) / (2 * Math.max(1, o.fwdN))) / d, half = (z * Math.sqrt((p * (1 - p)) / Math.max(1, o.fwdN) + (z * z) / (4 * Math.max(1, o.fwdN) ** 2))) / d;
+  return {
+    n: o.n, winPct: r2(o.n ? (o.wins / o.n) * 100 : 0), avgR: r2(o.n ? o.sumR / o.n : 0),
+    avgWinR: r2(o.wins ? o.winR / o.wins : 0), avgLossR: r2(losses ? o.lossR / losses : 0),
+    holdMedian: h.length ? h[Math.floor(h.length / 2)] : null,
+    avgPct: r2(o.n ? o.sumPct / o.n : 0), randPct: r2(o.n ? o.sumRand / o.n : 0),
+    H, fwdN: o.fwdN, fwdUpPct: r2(p * 100), fwdLo: r2((mid - half) * 100), fwdHi: r2((mid + half) * 100), baseUpPct: r2(o.baseN ? (o.baseUp / o.baseN) * 100 : 0),
+  };
+}
 const RISKS = [0.5, 1, 1.5, 2, 3, 5];
 const r2 = (v) => +v.toFixed(2);
 
@@ -83,7 +129,8 @@ for (const iv of IVS) {
     // both the chart's own pick and the standard rules, so whichever ships has one
     const byRisk = {};
     for (const risk of RISKS) byRisk[risk] = { own: pack(account(pick, test, WARM, { riskPct: risk })), standard: pack(account({}, test, WARM, { riskPct: risk })) };
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length, byRisk });
+    const sig = { own: signalRecord(pick, test, WARM, HZ[iv]), standard: signalRecord({}, test, WARM, HZ[iv]) };
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length, byRisk, sig });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
@@ -102,6 +149,10 @@ for (const iv of IVS) {
     return [risk, { ret: r2(rs.reduce((a, m) => a + m.ret, 0) / rs.length), lo: r2(Math.min(...rs.map((m) => m.ret))), hi: r2(Math.max(...rs.map((m) => m.ret))), dd: r2(rs.reduce((a, m) => a + m.dd, 0) / rs.length) }];
   }));
   console.log(`  by risk per trade (${which} rules): ${RISKS.map((risk) => `${risk}% → ${entry.byRisk[risk].ret}% (worst block ${entry.byRisk[risk].lo}%, drop ${entry.byRisk[risk].dd}%)`).join(' · ')}`);
+  entry.signals = mergeSignals(folds.map((x) => x.sig[which]), HZ[iv]);
+  const sg = entry.signals;
+  console.log(`  each buy on its own (${which} rules): ${sg.n} buys, ${sg.winPct}% won, average ${sg.avgR}R (wins ${sg.avgWinR}R, losses ${sg.avgLossR}R), ${sg.avgPct}% a trade against ${sg.randPct}% for a random buy held as long, median hold ${sg.holdMedian} candles; higher ${sg.H} candles later ${sg.fwdUpPct}% (95% ${sg.fwdLo}–${sg.fwdHi}%) against ${sg.baseUpPct}% from any candle`);
+  for (const x of folds) delete x.sig;
   if (adopt) {
     // what this chart would get: the same pick on the full history
     const full = withRegime(coins.map((s) => prep(s, all[s])));

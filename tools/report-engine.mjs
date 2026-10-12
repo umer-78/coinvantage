@@ -25,5 +25,33 @@ for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
   };
   const x = out.byInterval[iv];
   console.log(`${iv.padEnd(4)} n ${String(x.n).padStart(4)}  hit ${x.hitPct}% vs baseline ${x.baselinePct}%  trust ${x.trust} (published ${published}) → kept ${x.kept}  in 50% band ${x.band50}%, 80% band ${x.band80}%`);
+  // The move-size call: bigger than usual when today's volatility is above
+  // the coin's typical, judged on whether the move that followed was bigger
+  // than its typical move. Baseline: always naming the commoner outcome.
+  const mv = r.filter((z) => z.move);
+  if (mv.length) {
+    const big = mv.filter((z) => z.move.absRet > z.move.usual).length / mv.length;
+    const hitMv = mv.filter((z) => (z.move.vNow > z.move.sigMed) === (z.move.absRet > z.move.usual)).length / mv.length;
+    // rank correlation of volatility now (against the coin's own) with the move that followed (against the coin's usual)
+    const rank = (xs) => { const idx = xs.map((v, i) => [v, i]).sort((a, b) => a[0] - b[0]); const rk = new Array(xs.length); idx.forEach(([, i], k) => { rk[i] = k; }); return rk; };
+    const a = rank(mv.map((z) => z.move.vNow / z.move.sigMed)), b = rank(mv.map((z) => z.move.absRet / z.move.usual));
+    const m = (a.length - 1) / 2; let num = 0, da = 0, db = 0;
+    for (let i = 0; i < a.length; i++) { num += (a[i] - m) * (b[i] - m); da += (a[i] - m) ** 2; db += (b[i] - m) ** 2; }
+    // and how much bigger the move was when the call said bigger
+    const mean = (xs) => xs.reduce((s2, v) => s2 + v, 0) / Math.max(1, xs.length);
+    const callBig = mv.filter((z) => z.move.vNow > z.move.sigMed), callSmall = mv.filter((z) => z.move.vNow <= z.move.sigMed);
+    x.move = { n: mv.length, hitPct: pct(hitMv), baselinePct: pct(Math.max(big, 1 - big)), spearman: +(num / Math.sqrt(da * db)).toFixed(3),
+      bigCalls: callBig.length, sizeWhenBig: +mean(callBig.map((z) => z.move.absRet / z.move.usual)).toFixed(2), sizeWhenSmall: +mean(callSmall.map((z) => z.move.absRet / z.move.usual)).toFixed(2) };
+    console.log(`     move size: call right ${x.move.hitPct}% vs ${x.move.baselinePct}% baseline (n ${mv.length}), rank correlation ${x.move.spearman}; the move was ${x.move.sizeWhenBig}× usual after "bigger" calls and ${x.move.sizeWhenSmall}× after "smaller"`);
+  }
+  // Does the per-coin check the coin page shows ("tested accuracy ... on N
+  // unseen cases") tell which forecasts will be right?
+  const va = r.filter((z) => Number.isFinite(z.valAcc));
+  if (va.length) {
+    const hitOf = (rows) => (rows.length ? pct(rows.filter((z) => (z.p >= 0.5 ? 1 : 0) === z.y).length / rows.length) : null);
+    const hi = va.filter((z) => z.valAcc >= 0.6), lo = va.filter((z) => z.valAcc < 0.6);
+    x.valCheck = { n: va.length, medianValAcc: pct([...va.map((z) => z.valAcc)].sort((p, q) => p - q)[Math.floor(va.length / 2)]), highN: hi.length, highHitPct: hitOf(hi), lowN: lo.length, lowHitPct: hitOf(lo) };
+    console.log(`     per-coin check: median ${x.valCheck.medianValAcc}%; when it read 60%+ the forecast was right ${x.valCheck.highHitPct}% (n ${hi.length}), otherwise ${x.valCheck.lowHitPct}% (n ${lo.length})`);
+  }
 }
 console.log(`\nJSON ${JSON.stringify(out)}`);
