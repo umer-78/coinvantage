@@ -88,6 +88,15 @@ export const CHART_TESTED = {
  * setting cannot tell a learned value from an old default, and trusting it
  * would quietly put the old default back over a chart's measured rules.
  */
+/** How a set of rules buys and sells, in words: the Trading page and the assistant both use it. */
+export function rulesInWords(c) {
+  const extra = `${c.momentumConfirm ? ' while the short-term trend and momentum also point up' : ''}${c.marketFilter ? ', and only while Bitcoin itself is in an uptrend' : ''}`;
+  const buy = c.entryMode === 'pullback' ? `When a coin in an uptrend dips until the score falls to −${c.entryScore} or lower, it buys the dip${extra}.`
+    : c.entryMode === 'breakout' ? `When a coin closes above its highest price of the previous 20 candles${c.trendFilter ? ' in an uptrend' : ''}, it buys${extra}.`
+      : `When the score clears +${c.entryScore}${c.trendFilter ? ' in an uptrend' : ''} it buys${extra}.`;
+  return `${buy} It sells at ${c.trailAtr ? `a stop that trails ${c.trailAtr} ATR under the highest price since it bought` : `the target (${c.rMultiple}R)`}, the stop (${c.atrStop} ATR below entry)${c.signalExitBars ? ` or ${c.entryMode === 'pullback' ? 'once the bounce has come' : `after ${c.signalExitBars} candles of signal reversal`}` : ''}.`;
+}
+
 export function rulesForChart(cfg, interval, lessons = []) {
   const trend = [...(lessons || [])].reverse().find((h) => h.lens === 'trend');
   return { ...cfg, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), interval };

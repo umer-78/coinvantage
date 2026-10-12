@@ -5,10 +5,11 @@ import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, s
 import { ruleBasedAnswer, isMarketWide, detectCompare, namedCoins, SELL_ALL, AI_SYSTEM_PROMPT } from '../lib/analyst.js';
 import { unsupportedFigures, materialFigures } from '../lib/grounding.js';
 import { conversationalAnswer, termsIn } from '../lib/glossary.js';
+import { traderAnswer, TRADER_Q } from '../lib/traderchat.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, customState, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
-import { settings } from '../store.js';
+import { settings, load } from '../store.js';
 
 export const title = 'Assistant';
 const history = []; // survives navigation within the session
@@ -174,7 +175,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
       const detected = found && termsIn(found).length && !namedCoins(question).includes(found) ? null : found;
       // Greetings, definitions, "how does it work" and "is it a scam" need no
       // chart: answer at once instead of fetching and reading one.
-      const plain = conversationalAnswer(question, { symbol: st.symbol, named: detected ? [detected] : namedCoins(question) });
+      const plain = !TRADER_Q.test(question) && conversationalAnswer(question, { symbol: st.symbol, named: detected ? [detected] : namedCoins(question) });
       if (plain) {
         const src = '<span>Built-in answer (instant)</span>';
         history.push({ role: 'assistant', content: plain, meta: src });
@@ -188,9 +189,15 @@ Every answer is built from live prices, signals across four timeframes, a backte
       history.lastSymbol = st.symbol;
       const portfolio = await portfolioSummary();
 
+      // A question about the AI trader is answered from the user's own account,
+      // not from a market scan of the coin in focus.
+      const trader = traderAnswer(question, { state: load('traderState', null), saved: load('traderCfg', {}), lessons: load('traderLessons', []), symbol: detected, fmt: (v) => money(v) });
+
       let analysis = null, market = null, marketFrames = null, compare = null;
-      const wantsCompare = detectCompare(question);
-      if (wantsCompare) {
+      const wantsCompare = !trader && detectCompare(question);
+      if (trader) {
+        // nothing to fetch: the account is on this device
+      } else if (wantsCompare) {
         step(`Comparing ${wantsCompare.join(', ')}…`);
         compare = await compareCoins(wantsCompare, { interval: st.interval, onStep: step });
       } else if (wantsMarket) {
@@ -204,7 +211,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
       const ctx = analysis
         ? { ...analystContext(analysis, portfolio), market, marketFrames, compare, compareInterval: st.interval }
         : { portfolio, market, marketFrames, compare, compareInterval: st.interval, interval: st.interval };
-      const facts = ruleBasedAnswer(question, ctx);
+      const facts = trader ? trader.text : ruleBasedAnswer(question, ctx);
       const meta = (src) => `<span>${esc(src)}</span>${marketFrames ? `<span>· scanned ${marketFrames.scanned} coins on ${esc(marketFrames.intervals.join(', '))}</span>` : market ? `<span>· scanned ${market.scanned} coins on ${esc(market.interval)}</span>` : ''}${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
       let finalText = facts, source = 'Rule-based analyst (instant)';
       if (localReady() || customReady()) {
@@ -212,7 +219,7 @@ Every answer is built from live prices, signals across four timeframes, a backte
         const ac = new AbortController(); st.abort = ac;
         $('#assistantStop', el).disabled = false;
         try {
-          const data = analysis ? llmData(analysis) : {};
+          const data = trader ? trader.data : analysis ? llmData(analysis) : {};
           if (compare) data.comparison = compare;
           if (marketFrames) data.marketByTimeframe = marketFrames;
           else if (market) data.marketPicks = market;

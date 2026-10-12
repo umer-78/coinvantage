@@ -94,6 +94,7 @@ export const DEPS = {
     'format.js',
     'lib/advice.js',
     'lib/analyst.js',
+    'lib/autotrader.js',
     'lib/barrier.js',
     'lib/compute.js',
     'lib/demo.js',
@@ -107,6 +108,7 @@ export const DEPS = {
     'lib/signals.js',
     'lib/tickers.js',
     'lib/timing.js',
+    'lib/traderchat.js',
     'store.js',
     'ui.js'
   ],

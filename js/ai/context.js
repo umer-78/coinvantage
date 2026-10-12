@@ -311,7 +311,9 @@ export async function detectSymbol(text) {
     const typedAsTicker = w.startsWith('$') || (w === w.toUpperCase() && /[A-Z]/.test(w));
     if (!typedAsTicker && !(COMMON_COINS.test(w.toLowerCase()) && isTickerMention(w, raw, at))) continue;
     const t = w.replace(/^\$/, '').toUpperCase();
-    if (t.length < 2 || ['I', 'A', 'AN', 'IS', 'IT', 'TO', 'OR', 'ON', 'AT', 'BE', 'MY', 'ME', 'DO', 'SO', 'UP', 'IN', 'OF', 'THE', 'AND', 'FOR', 'NOW', 'BUY', 'SELL', 'CAN', 'WILL', 'GO', 'NEXT', 'HOW', 'WHAT', 'WHEN', 'SHOULD', 'ONE', 'ANY', 'ALL', 'NEW', 'OUT', 'GET', 'PUT', 'TOP'].includes(t)) continue;
+    // English words in capitals are not tickers, nor is "AI" in a question to
+    // an AI assistant ("how is my AI trader doing?") — unless typed as $AI.
+    if (t.length < 2 || (!w.startsWith('$') && ['I', 'A', 'AN', 'IS', 'IT', 'TO', 'OR', 'ON', 'AT', 'BE', 'MY', 'ME', 'DO', 'SO', 'UP', 'IN', 'OF', 'THE', 'AND', 'FOR', 'NOW', 'BUY', 'SELL', 'CAN', 'WILL', 'GO', 'NEXT', 'HOW', 'WHAT', 'WHEN', 'SHOULD', 'ONE', 'ANY', 'ALL', 'NEW', 'OUT', 'GET', 'PUT', 'TOP', 'AI', 'BOT'].includes(t))) continue;
     const bySym = list.find((c) => c.symbol === t && c.binance);
     if (bySym) return bySym.symbol;
   }

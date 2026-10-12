@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, PER_COIN_RULES, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -253,9 +253,7 @@ export async function render(el) {
   }
 
   // How the rules buy and sell, in words.
-  function rulesText(c) {
-    return `${entryRule(c)} It sells at ${c.trailAtr ? `a stop that trails ${c.trailAtr} ATR under the highest price since it bought` : `the target (${c.rMultiple}R)`}, the stop (${c.atrStop} ATR below entry)${c.signalExitBars ? ` or ${c.entryMode === 'pullback' ? 'once the bounce has come' : `after ${c.signalExitBars} candles of signal reversal`}` : ''}.`;
-  }
+  const rulesText = rulesInWords;
 
   function startCard() {
     const e = effective();
@@ -277,13 +275,6 @@ export async function render(el) {
     if (own.length === cfg.universe.length) return ' Each coin trades rules chosen on its own daily history instead of these.';
     if (own.length === 1) return ` ${own[0]} trades rules chosen on its own daily history instead; the other coins use these.`;
     return ` ${own.length} of the ${cfg.universe.length} coins (${own.join(', ')}) trade rules chosen on their own daily history instead; the rest use these.`;
-  }
-
-  function entryRule(c) {
-    const extra = `${c.momentumConfirm ? ' while the short-term trend and momentum also point up' : ''}${c.marketFilter ? ', and only while Bitcoin itself is in an uptrend' : ''}`;
-    if (c.entryMode === 'pullback') return `When a coin in an uptrend dips until the score falls to −${c.entryScore} or lower, it buys the dip${extra}.`;
-    if (c.entryMode === 'breakout') return `When a coin closes above its highest price of the previous 20 candles${c.trendFilter ? ' in an uptrend' : ''}, it buys${extra}.`;
-    return `When the score clears +${c.entryScore}${c.trendFilter ? ' in an uptrend' : ''} it buys${extra}.`;
   }
 
   // ---------------------------------------------------------------- engine
