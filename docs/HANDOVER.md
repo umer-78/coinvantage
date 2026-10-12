@@ -140,17 +140,32 @@ ones; each bar to adopt was written in the script before the run.
   the older daily half (14-day look-back, top 1, every 3 days, BTC filter) made +2,658%
   there and −43.8% on the newer half, against −24.0% for holding the same coins (4h:
   −6.7% against +32.9%). The module and its tests are kept; it is not offered.
-- **Per-coin AI-trader rules — offered on the daily chart as an opt-in, off by default.**
-  Walk-forward (each coin's history in four blocks, chosen and re-tested three times):
-  1d better in 3 of 3 periods, +2.94% against +1.32% a period, 40 of 72 coin-periods —
-  passed; 1h (1 of 3) and 4h (lead 0.95, under the 1-point bar) rejected. In the app's
-  own account (24 coins, shared cash, newer half 2023-10-09 → 2026-10-12): +66.45%,
-  worst drop 33.88%, against +53.89% and 24.23% for the standard rules; holding the
-  coins made +89.18%. The deeper drop broke the bar for switching it on for everyone
-  (no more than 5 points deeper), so it is a Settings checkbox with these numbers shown.
-  The table (`PER_COIN_RULES` in `js/lib/autotrader.js`) was chosen on each coin's full
-  history; a coin keeps the standard rules unless others did better on it. It follows
-  the chart the account runs on (changes only on Reset), never the one picked in Settings.
+- **Per-chart AI-trader rules — 1h and 1d adopted.** `tools/evaluate-trader-folds.mjs`
+  (job `trader-folds`): each chart's history in four blocks; three times the best of 432
+  rule sets on everything before a block (24 coins in one account, shared cash, fees)
+  runs on that block next to the standard rules. Bar, in the script: better in 2 of 3
+  blocks, by ≥1 point on average, average worst drop no more than 5 points deeper.
+  1h: +7.12% vs +1.27% a 6-week block (drop 12.86% vs 15.31%) — adopted. 1d: +16.97% vs
+  +13.03% an 18-month block (drop 14.22% vs 16.95%) — adopted. 4h: 0 of 3 — kept.
+  15m: cleared the bar on a first run, not on a re-run 20 minutes later (10-day blocks)
+  — kept. `CHART_RULES` holds the picks made the same way on the full history;
+  `CHART_TESTED` the block averages the Trading page shows. Never publish a result of
+  `CHART_RULES` on candles it was picked on: the daily pick scored +347% on the newer
+  half it had seen, against +17% a block out of sample. A test pins the shipped rules to
+  the bar (`tests/autotrader.test.mjs`).
+- The trend filter is no longer carried over from saved settings: `rulesForChart()` reads
+  the self-review's latest trend lesson instead, because a saved value cannot tell a
+  learned setting from an old default.
+- **Per-coin AI-trader rules — on for daily accounts, opt-out in Settings.** Walk-forward
+  (single-coin accounts): 1d better in 3 of 3 periods, +2.94% against +1.32% a period;
+  1h and 4h rejected. In the account (24 coins, newer half 2023-10-09 → 2026-10-12, every
+  rule — the daily standard included — chosen on the older half): +46.04%, worst drop
+  33.2%, against +36.95% and 29.25% for the daily rules alone; holding made +88.69%.
+  Inside the bar (no more than 5 points deeper), so on by default. (Against the old
+  standard rules it had been +66.45% vs +53.89% with a 9.7-point deeper drop, so it was
+  opt-in for an hour; the setting is stored as `ownRulesOff` so saves from that hour do
+  not count as opting out.) The table was chosen on each coin's full history against the
+  daily rules. It follows the chart the account runs on (changes only on Reset).
 - The 24 coins are today's survivors; that flatters every backtest that holds them.
 
 ### Backend deploy as it stands (2026-10-12)

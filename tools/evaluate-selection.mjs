@@ -18,7 +18,7 @@
 // the shared rule set on the newer half on at least two of three timeframes.
 import { readFileSync } from 'node:fs';
 import { alignSeries, rotationReplay, buyAndHold } from '../js/lib/rotation.js';
-import { replaySeries, newState, DEFAULT_CONFIG, equity } from '../js/lib/autotrader.js';
+import { replaySeries, newState, DEFAULT_CONFIG, CHART_RULES, marketRegime, equity } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 
@@ -185,16 +185,21 @@ if (!only || only === 'percoin') {
   }
 }
 // ---------------------------------------------------------------- the app's account, daily chart
-// Per-coin rules passed the walk-forward bar on the daily chart only. What the
-// app would publish is the ACCOUNT (all coins together, shared cash, the app's
-// own sizing): its own rules alone, against its own rules plus each coin's
-// rules where a coin's older half preferred different ones. Decided before the
-// run: per-coin rules are switched on for daily accounts only if the account
-// with them makes more on the newer half than without, with a worst drawdown
-// no more than 5 points deeper. Then the table the app ships is chosen the
-// same way on each coin's FULL history.
+// What the app would publish is the ACCOUNT (all coins together, shared cash,
+// the app's sizing): the daily standard rules alone, against them plus each
+// coin's own rules where a coin's older half preferred different ones.
+// Everything in the comparison is chosen on the OLDER half only, the standard
+// included: it is re-picked from the same 432 rule sets the way the shipped
+// daily rules were (tools/evaluate-trader-folds.mjs), because the shipped ones
+// were picked on all the history and would be scored on candles they had
+// already seen. Decided before the run: per-coin rules are switched on for
+// everyone only if the account with them makes more on the newer half, with a
+// worst drop no more than 5 points deeper; offered as an opt-in if they make
+// more at all; dropped otherwise. The shipped table is then chosen on each
+// coin's full history, against the shipped daily rules.
 if (!only || only === 'table') {
   const WARM = 260, iv = '1d';
+  const SHIPPED = CHART_RULES[iv] || {};
   const grid = [];
   for (const entryMode of ['trend', 'breakout', 'pullback'])
     for (const momentumConfirm of entryMode === 'pullback' ? [false] : [false, true])
@@ -203,14 +208,17 @@ if (!only || only === 'table') {
           for (const exit of ['r2', 'r3', 't3', 't4'])
             for (const signalExitBars of [2, null])
               grid.push({ entryMode, momentumConfirm, trendFilter, atrStop, rMultiple: exit[0] === 'r' ? +exit[1] : 3, trailAtr: exit[0] === 't' ? +exit[1] : null, signalExitBars });
+  // the standard's candidates also try the Bitcoin-trend filter, as the chart pick did
+  const stdGrid = grid.flatMap((g) => [{ ...g, marketFilter: false }, { ...g, marketFilter: true }]);
   const mk = (sym, c) => { const ind = computeAll(c); return { symbol: sym, candles: c, ind, atr: atr(c, 14), scores: c.map((_, i) => (i >= 210 ? scoreAt(c, ind, i).score : 0)) }; };
   const coins = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length > 2 * WARM + 200).map((k) => k.split(':')[0]);
   const prep = coins.map((sym) => { const all = candlesOf(`${sym}:${iv}`); const half = Math.floor(all.length / 2); return { sym, older: mk(sym, all.slice(0, half)), newer: mk(sym, all.slice(half - WARM)), full: mk(sym, all) }; });
-  const solo = (rules, x) => {
-    const cfg = { ...DEFAULT_CONFIG, ...rules, maxPositions: 1, excluded: [], universe: [x.symbol], interval: iv };
+  for (const key of ['older', 'newer', 'full']) { const reg = marketRegime(prep.find((p) => p.sym === 'BTC')?.[key].candles); for (const p of prep) p[key].regime = reg; }
+  const solo = (standard, rules, x) => {
+    const cfg = { ...DEFAULT_CONFIG, ...standard, ...rules, marketFilter: false, maxPositions: 1, excluded: [], universe: [x.symbol], interval: iv };
     const st = newState(cfg);
     st.cursor[x.symbol] = x.candles[209].t;
-    replaySeries(st, cfg, [x], { from: 210 });
+    replaySeries(st, cfg, [{ ...x, regime: null }], { from: 210 });
     const last = x.candles.at(-1).c;
     const eqEnd = equity(st, { [x.symbol]: last }) - Object.values(st.open).reduce((a, p) => a + (last * p.qty * cfg.feePct) / 100, 0);
     let eq = cfg.startingBalance, peak = eq, dd = 0;
@@ -218,23 +226,23 @@ if (!only || only === 'table') {
     dd = Math.max(dd, (peak - eqEnd) / peak);
     return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length };
   };
-  // a coin gets its own rules only where they beat the app's on the data given
-  const choose = (key) => {
+  // a coin gets its own rules only where they beat the standard on the data given
+  const choose = (key, standard) => {
     const table = {};
     for (const p of prep) {
-      const base = objective(solo({}, p[key]), 5);
-      let best = null, bv = base;
-      for (const g of grid) { const v = objective(solo(g, p[key]), 5); if (v > bv) { bv = v; best = g; } }
+      let best = null, bv = objective(solo(standard, {}, p[key]), 5);
+      for (const g of grid) { const v = objective(solo(standard, g, p[key]), 5); if (v > bv) { bv = v; best = g; } }
       if (best) table[p.sym] = best;
     }
     return table;
   };
-  const account = (perCoin) => {
-    const cfg = { ...DEFAULT_CONFIG, universe: coins, interval: iv, perCoin, excluded: [] };
+  const account = (key, standard, perCoin) => {
+    const from = key === 'newer' ? WARM : 210;
+    const cfg = { ...DEFAULT_CONFIG, ...standard, universe: coins, interval: iv, perCoin, excluded: [] };
     const st = newState(cfg);
-    const series = prep.map((p) => p.newer);
-    for (const x of series) st.cursor[x.symbol] = x.candles[WARM - 1].t;
-    replaySeries(st, cfg, series, { from: WARM });
+    const series = prep.map((p) => ({ ...p[key], regime: cfg.marketFilter ? p[key].regime : null }));
+    for (const x of series) st.cursor[x.symbol] = x.candles[from - 1].t;
+    replaySeries(st, cfg, series, { from });
     const last = Object.fromEntries(series.map((x) => [x.symbol, x.candles.at(-1).c]));
     const eqEnd = equity(st, last) - Object.values(st.open).reduce((a, p) => a + (last[p.symbol] * p.qty * cfg.feePct) / 100, 0);
     let eq = cfg.startingBalance, peak = eq, dd = 0;
@@ -243,17 +251,20 @@ if (!only || only === 'table') {
     const wins = st.closed.filter((t) => t.pnl > 0).length;
     return { ret: +((eqEnd / cfg.startingBalance - 1) * 100).toFixed(2), dd: +(dd * 100).toFixed(2), trades: st.closed.length, winRate: st.closed.length ? +((wins / st.closed.length) * 100).toFixed(1) : 0 };
   };
-  const olderTable = choose('older');
-  const without = account(null), withOwn = account(olderTable);
+  const stdOlder = stdGrid.map((g) => ({ g, m: account('older', g, null) })).sort((a, b) => (b.m.trades < 10 ? -Infinity : b.m.ret - 0.5 * b.m.dd) - (a.m.trades < 10 ? -Infinity : a.m.ret - 0.5 * a.m.dd))[0].g;
+  const olderTable = choose('older', stdOlder);
+  const without = account('newer', stdOlder, null), withOwn = account('newer', stdOlder, olderTable);
   const hold = +(prep.reduce((a, p) => a + (p.newer.candles.at(-1).c / p.newer.candles[WARM].c - 1), 0) / prep.length * 100).toFixed(2);
   const enable = withOwn.ret > without.ret && withOwn.dd <= without.dd + 5;
+  const offer = withOwn.ret > without.ret;
   const from = iso(prep[0].newer.candles[WARM].t), to = iso(prep[0].newer.candles.at(-1).t);
   console.log(`\n== ACCOUNT, DAILY CHART: ${coins.length} coins together, newer half ${from} → ${to}`);
-  console.log(`  app's rules:              ret ${without.ret}%  dd ${without.dd}%  trades ${without.trades}  won ${without.winRate}%`);
+  console.log(`  standard picked on the older half: ${JSON.stringify(stdOlder)}`);
+  console.log(`  standard rules alone:     ret ${without.ret}%  dd ${without.dd}%  trades ${without.trades}  won ${without.winRate}%`);
   console.log(`  + each coin's own rules:  ret ${withOwn.ret}%  dd ${withOwn.dd}%  trades ${withOwn.trades}  won ${withOwn.winRate}%   (${Object.keys(olderTable).length} of ${coins.length} coins had their own)`);
-  console.log(`  holding every coin: ${hold}%   → ${enable ? 'SWITCH ON for daily accounts' : 'LEAVE OFF'}`);
-  const fullTable = choose('full');
+  console.log(`  holding every coin: ${hold}%   → ${enable ? 'SWITCH ON for daily accounts' : offer ? 'OFFER AS AN OPT-IN' : 'DROP THE OPT-IN'}`);
+  const fullTable = choose('full', SHIPPED);
   console.log(`\nTABLE ${JSON.stringify(fullTable)}`);
-  out.account1d = { coins: coins.length, from, to, without, withOwn, hold, enable, own: Object.keys(olderTable).length, table: fullTable };
+  out.account1d = { coins: coins.length, from, to, standardOlder: stdOlder, without, withOwn, hold, enable, offer, own: Object.keys(olderTable).length, table: fullTable };
 }
 console.log(`\nJSON ${JSON.stringify(out)}`);

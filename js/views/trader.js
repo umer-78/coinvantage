@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PER_COIN_RULES, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, PER_COIN_RULES, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -45,18 +45,26 @@ export async function render(el) {
   // so a strategy update never reached anyone who had once pressed Save. Only
   // the user's own choices — and, from v2, what the self-review learned — carry over.
   const savedCfg = load(CFG_KEY, {}) || {};
-  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe', 'ownRules'];
-  const LEARNED_KEYS = ['minAdx', 'maxEntryRsi', 'excluded', 'trendFilter'];
+  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe', 'ownRulesOff'];
+  // The trend filter is not carried over from a save: whether the self-review
+  // switched it is read from its lessons (rulesForChart), since a saved value
+  // cannot tell a learned setting from an old default.
+  const LEARNED_KEYS = ['minAdx', 'maxEntryRsi', 'excluded'];
   const cfg = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(savedCfg).filter(([k]) => USER_KEYS.includes(k) || (savedCfg.v === 2 && LEARNED_KEYS.includes(k)))), v: 2 };
   // Risk per trade above 5% is a setting that wipes an account out in a short
   // losing run; older saves allowed 10.
   cfg.riskPct = Math.min(5, Math.max(0.1, +cfg.riskPct || DEFAULT_CONFIG.riskPct));
   let state = load(STATE_KEY, null);
-  // Each coin's own rules: offered on the daily chart, off unless chosen (see
+  // Each coin's own rules: on for daily accounts unless switched off (see
   // PER_COIN_RULES for what they made and what they risked in testing). It
   // follows the chart the account RUNS on, which only changes on a Reset, not
-  // the chart picked in Settings.
-  const ownRulesOn = () => !!cfg.ownRules && (state?.interval || cfg.interval) === PER_COIN_RULES.interval;
+  // the chart picked in Settings. Stored as an opt-out: for an hour they were
+  // opt-in, and a Save then stored "off" for anyone who never touched the box.
+  const ownRulesOn = () => !cfg.ownRulesOff && (state?.interval || cfg.interval) === PER_COIN_RULES.interval;
+  // What the account actually trades: the settings, the chart's own measured
+  // rules, the self-review's lessons. Everything that trades or describes the
+  // rules reads this, so the page cannot describe one strategy and run another.
+  const effective = (iv = state?.interval || cfg.interval) => rulesForChart(cfg, iv, load(LESSONS_KEY, []));
 
   const applySession = (event) => {
     const next = sessionReducer(session, event);
@@ -123,32 +131,33 @@ export async function render(el) {
     </div>
     <div id="body">${state ? skeleton(6, 26) : startCard()}</div>`;
 
-  // The measured result, stated before anyone starts it. This ruleset was run
-  // over 12 coins and 4,000 candles each at 108 different settings, tuned on the
-  // first half of history and scored on the second — and on the half it had
-  // never seen it did not beat simply owning the coins, on any timeframe. A
-  // feature that cannot beat buying and holding should say so on its own page.
+  // The measured result, stated before anyone starts it: each chart's rules
+  // were picked on older candles and run on newer ones they had never seen,
+  // three times, all coins in one account with fees. A feature that cannot
+  // beat buying and holding should say so on its own page.
   function verdictCard() {
     const iv = state?.interval || cfg.interval;
-    const t = AUTOTRADER_TESTED[iv];
+    const w = CHART_TESTED[iv];
     const TFS = ['15m', '1h', '4h', '1d'];
     // Showing one timeframe's numbers under another label would present a test
     // that was never run.
-    if (!t) {
+    if (!w) {
       return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} Not tested on the ${esc(iv)} chart</h3></div>
       <p class="fine">This strategy was measured on ${TFS.join(', ')} charts. Pick one of those in Settings to see its measured result.</p>
     </div>`;
     }
-    const sign = (v) => `${v >= 0 ? '+' : ''}${v}%`;
-    const beat = t.pickedReturn > t.buyHold;
+    const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+    const traded = (x) => (x.adopt ? x.own : x.standard);
+    const r = traded(w);
+    const e = effective(iv);
     return `<div class="card" style="border-color:var(--warn)">
-      <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(AUTOTRADER_TESTED.measuredOn || '')}, not estimated</span></div>
-      <p>Run candle by candle over ${AUTOTRADER_TESTED.coins} coins, with settings chosen on the first half of history and scored on the second half it had never seen, the ${esc(iv)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${sign(t.pickedReturn)}</b> with a worst drawdown of ${t.maxDrawdownPct}% — while buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${sign(t.buyHold)}</b> over the identical window. ${beat ? 'On this timeframe it did better than holding.' : 'On this timeframe holding did better.'}</p>
-      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested on</th><th>These rules</th><th>Worst drawdown</th><th>Best alternative</th><th>Buy &amp; hold</th><th>Trades</th></tr></thead><tbody>
-        ${TFS.map((k) => { const x = AUTOTRADER_TESTED[k]; return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="${x.pickedReturn >= 0 ? 'up' : 'down'}">${sign(x.pickedReturn)}</td><td class="down">−${x.maxDrawdownPct}%</td><td class="${x.alt.ret >= 0 ? 'up' : 'down'}">${sign(x.alt.ret)} <small class="fine">(−${x.alt.dd}%)</small></td><td class="${x.buyHold >= 0 ? 'up' : 'down'}">${sign(x.buyHold)}</td><td>${x.trades}</td></tr>`; }).join('')}
+      <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(CHART_TESTED.measuredOn)}, not estimated</span></div>
+      <p>Run candle by candle over ${CHART_TESTED.coins} coins in one account, fees included, in ${CHART_TESTED.blocks} back-to-back periods of about ${esc(w.block)} (${esc(w.from)} → ${esc(w.to)}). Before each period the rules were picked from ${CHART_TESTED.configs} rule sets on the history before it, then run on a period they had never seen. On ${esc(iv)} the rules it trades averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period with an average worst drop of ${r.dd}%, while holding the same coins averaged <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b>. ${r.ret > w.hold ? 'On this chart it did better than holding, over three periods; that is evidence, not a promise.' : 'On this chart holding did better.'}</p>
+      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested</th><th>Rules</th><th>Result a period</th><th>Worst drop</th><th>Standard rules</th><th>Holding</th><th>Trades</th></tr></thead><tbody>
+        ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="fine">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td>${t.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
-      <p class="fine mt">Current rules: buy when the score clears +${DEFAULT_CONFIG.entryScore} in an uptrend (price above its 200-bar average and the 50-bar above the 200-bar), stop ${DEFAULT_CONFIG.atrStop} ATR below entry, target ${DEFAULT_CONFIG.rMultiple}× the risk, and sell after ${DEFAULT_CONFIG.signalExitBars} candles of reversal. ${AUTOTRADER_TESTED.configs} other rule sets were tried — breakouts, buying dips, momentum confirmation, pausing while Bitcoin falls, other stops and exits. The best of them on the older data (${esc(AUTOTRADER_TESTED.altRules)}) did no better on the newer data, so these rules stay. On ${esc(iv)}, fees came to ${t.feeDragPct}% of the balance across ${t.trades} trades, and ${t.winRate}% of trades won.${iv === '15m' ? ` On 15m only ${t.madeMoney} of the ${AUTOTRADER_TESTED.configs} rule sets made money after fees — this chart is the hardest to profit from.` : ''}${ownRulesText()}${ownRulesOn() ? ` Tested that way on ${PER_COIN_RULES.coins} coins: ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% and ${PER_COIN_RULES.tested.standard.dd}% for the standard rules alone.` : ''}</p>
+      <p class="fine mt">Rules in force on ${esc(iv)}: ${esc(rulesText(e))} ${w.adopt ? `They are this chart's own pick: in the test, picking rules for the chart beat the standard rules in ${w.better} of ${CHART_TESTED.blocks} periods (${sign(w.own.ret)} against ${sign(w.standard.ret)} a period, worst drop ${w.own.dd}% against ${w.standard.dd}%), so they are re-picked the same way on all the history.` : `The chart's own pick did not beat the standard rules clearly enough (better in ${w.better} of ${CHART_TESTED.blocks} periods), so it keeps them.`} Fees came to ${r.fees}% of the balance a period, and ${r.win}% of trades won.${iv === '15m' ? ' A 15m period is only ten days, so these numbers swing a lot: one run picked different rules after twenty minutes of new candles.' : ''}${ownRulesText()}${ownRulesOn() ? ` Tested on ${PER_COIN_RULES.coins} coins over ${esc(PER_COIN_RULES.tested.from)} → ${esc(PER_COIN_RULES.tested.to)}, with every rule chosen on the years before: ${sign(PER_COIN_RULES.tested.own.ret)} with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${sign(PER_COIN_RULES.tested.standard.ret)} and ${PER_COIN_RULES.tested.standard.dd}% for the daily rules alone, and ${sign(PER_COIN_RULES.tested.hold)} for holding the coins. You can switch them off in Settings.` : ''}</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
     </div>`;
   }
@@ -225,11 +234,19 @@ export async function render(el) {
     $('#bkDrop', el)?.addEventListener('click', () => { remove('syncBackup'); draw(); });
   }
 
+  // How the rules buy and sell, in words.
+  function rulesText(c) {
+    return `${entryRule(c)} It sells at ${c.trailAtr ? `a stop that trails ${c.trailAtr} ATR under the highest price since it bought` : `the target (${c.rMultiple}R)`}, the stop (${c.atrStop} ATR below entry)${c.signalExitBars ? ` or ${c.entryMode === 'pullback' ? 'once the bounce has come' : `after ${c.signalExitBars} candles of signal reversal`}` : ''}.`;
+  }
+
   function startCard() {
+    const e = effective();
+    const w = CHART_TESTED[e.interval];
+    const r = w && (w.adopt ? w.own : w.standard);
     return `<div class="card empty">
       <h3>Run the strategy on simulated money</h3>
-      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. ${entryRule(cfg)} It sizes each position so a stop-out costs at most ${cfg.riskPct}% of the balance, with no more than ${cfg.maxPositionPct}% of it in one coin and never more cash than the account has, and sells at ${cfg.trailAtr ? `a stop that trails ${cfg.trailAtr} ATR under the highest price since it bought` : `the target (${cfg.rMultiple}R)`}, the stop (${cfg.atrStop} ATR)${cfg.signalExitBars ? ` or ${cfg.entryMode === 'pullback' ? 'once the bounce has come' : 'a signal reversal'}` : ''}.${ownRulesText()} Every trade is logged with the fee it would have paid.</p>
-      <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
+      <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(e.interval)} chart. ${rulesText(e)} It sizes each position so a stop-out costs at most ${cfg.riskPct}% of the balance, with no more than ${cfg.maxPositionPct}% of it in one coin and never more cash than the account has.${ownRulesText()} Every trade is logged with the fee it would have paid.</p>
+      <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it${r ? ` — on this chart ${r.ret > w.hold ? 'it did better than holding the same coins in that test, which is no promise it will again' : 'holding the same coins did better'}` : ''}. You can stop it at any time without resetting the account.</p>
     </div>${learningCard()}`;
   }
 
@@ -264,7 +281,7 @@ export async function render(el) {
     // would mix two strategies in one balance, so the account keeps its own
     // timeframe. Older saved accounts adopt the current setting once.
     if (!state.interval) state.interval = cfg.interval;
-    const runCfg = { ...cfg, interval: state.interval, perCoin: ownRulesOn() ? PER_COIN_RULES.rules : null };
+    const runCfg = { ...effective(state.interval), perCoin: ownRulesOn() ? PER_COIN_RULES.rules : null };
 
     let processed = 0;
     const failed = [], noExchange = [];
@@ -416,7 +433,7 @@ export async function render(el) {
     const review = reviewTrades(state.closed);
     if (auto && load(AUTOLEARN_KEY, true) === false) return { review, changes: [] };
     const lessons = load(LESSONS_KEY, []);
-    const { cfgPatch, changes } = decideChanges(review, cfg, lessons, state.closed);
+    const { cfgPatch, changes } = decideChanges(review, effective(), lessons, state.closed);
     if (changes.length) {
       Object.assign(cfg, cfgPatch);
       save(CFG_KEY, cfg);
@@ -437,7 +454,7 @@ export async function render(el) {
     if (!state) return '';
     const review = reviewTrades(state.closed);
     const lessons = load(LESSONS_KEY, []);
-    const active = activeLessons(cfg);
+    const active = activeLessons(effective());
     const autoLearn = load(AUTOLEARN_KEY, true) !== false;
     const o = review.overall;
     return `<div class="card mt" id="reviewCard">
@@ -863,9 +880,9 @@ export async function render(el) {
           <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="5" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
           <label class="fld">Max open<input class="inp" name="maxPositions" type="number" min="1" max="10" value="${cfg.maxPositions}" style="width:90px"></label>
         </div>
-        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => { const x = AUTOTRADER_TESTED[i]; return `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${i} — tested ${x.pickedReturn >= 0 ? '+' : '−'}${Math.abs(x.pickedReturn)}% (holding ${x.buyHold >= 0 ? '+' : '−'}${Math.abs(x.buyHold)}%)</option>`; }).join('')}</select></label>
+        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => { const x = CHART_TESTED[i], t = x.adopt ? x.own : x.standard; return `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${i} — tested ${t.ret >= 0 ? '+' : '−'}${Math.abs(t.ret)}% per ${x.block} (holding ${x.hold >= 0 ? '+' : '−'}${Math.abs(x.hold)}%)</option>`; }).join('')}</select></label>
         <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
-        <label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" name="ownRules" ${cfg.ownRules ? 'checked' : ''} style="margin-top:3px"><span>Let each coin trade its own rules <span class="fine">(daily chart only)</span><br><span class="fine">Chosen on each coin's own daily history for ${PER_COIN_RULES.coins} large coins; others keep the standard rules. In a test on ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)} data they were not chosen on, they made ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% for the standard rules, but the worst drop was deeper: ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%. Holding the same coins made ${PER_COIN_RULES.tested.hold >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.hold)}%.</span></span></label>
+        <label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" name="ownRules" ${cfg.ownRulesOff ? '' : 'checked'} style="margin-top:3px"><span>Let each coin trade its own rules <span class="fine">(daily chart only; on unless you untick it)</span><br><span class="fine">Chosen on each coin's own daily history for ${PER_COIN_RULES.coins} large coins; others keep the daily rules. In a test on ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)} data they were not chosen on, they made ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% for the daily rules alone, with a deeper worst drop: ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%. Holding the same coins made ${PER_COIN_RULES.tested.hold >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.hold)}%.</span></span></label>
         <p class="fine">Available: ${esc(tradable.filter((c) => c.binance).slice(0, 24).map((c) => c.symbol).join(', '))}… The AI only trades coins with real exchange candles.</p>
         <button class="btn primary">Save settings</button>
       </form>`);
@@ -880,7 +897,7 @@ export async function render(el) {
         maxPositions: Math.min(10, Math.max(1, +f.maxPositions.value)),
         interval: f.interval.value,
         universe: uni.slice(0, 12),
-        ownRules: f.ownRules.checked,
+        ownRulesOff: !f.ownRules.checked,
       });
       save(CFG_KEY, cfg);
       m.close();

@@ -91,7 +91,7 @@ computers alike.
 
 Re-run it yourself: `node tools/fetch-klines.mjs klines.json` then `node tools/evaluate-engine.mjs klines.json 0 1 out.json`.
 
-The AI trader's rules are re-tested the same way: `node tools/evaluate-trader-rules.mjs klines.json` tries 432 rule sets, picks one on the older half of every coin's history and reports it on the newer half. The **Evaluate** workflow (Actions → Evaluate → Run workflow) runs it on fresh Binance candles; the latest result (2026-10-12) is on the Trading page and in `AUTOTRADER_TESTED` in `js/lib/autotrader.js`.
+The AI trader's rules are re-tested the same way, walk-forward: `node tools/evaluate-trader-folds.mjs klines.json` cuts each chart's history into four blocks and three times picks the best of 432 rule sets on everything before a block, then runs it on that block next to the standard rules, all coins in one account with fees. 1h and 1d cleared the bar written in the script and trade their own picks (`CHART_RULES`); 15m and 4h keep the standard rules. On the daily chart each coin also trades its own rules (`PER_COIN_RULES`, from `tools/evaluate-selection.mjs`) unless switched off. The **Evaluate** workflow (Actions → Evaluate → Run workflow) runs both on fresh Binance candles for 24 coins; the latest results (2026-10-12) are on the Trading page and in `CHART_TESTED` and `PER_COIN_RULES` in `js/lib/autotrader.js`. Holding the same coins made more than the trader on 15m and 1h and in the daily per-coin test; the trader made more on 4h and in the daily walk-forward. It is a demonstration, not a reliable way to beat the market.
 
 ## Run locally
 
