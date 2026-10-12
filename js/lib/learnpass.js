@@ -3,7 +3,7 @@
 // the weights, log a fresh set of calls, and let the champion rule decide which
 // method makes the call. Shared by the AI learning page and the trader page, so
 // the system keeps learning whichever of them is open.
-import { markets, getCandles, INTERVAL_MS } from '../api/market.js';
+import { markets, getCandles, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { computeAll } from './indicators.js';
 import { runForecast } from './compute.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
@@ -40,7 +40,13 @@ export async function learningPass(interval, { symbols, onStep, candlesBySymbol 
     if (!candles) {
       const coin = all.find((c) => c.symbol === sym);
       if (!coin) continue;
-      try { candles = (await getCandles(coin, interval, 500)).candles.slice(0, -1); } catch { continue; }
+      try {
+        const r = await getCandles(coin, interval, 500);
+        // Learn only from real exchange candles: demo prices are invented and
+        // CoinGecko's hourly samples are not the candles the engine was tested on.
+        if (!isTestedSource(r)) continue;
+        candles = r.candles.slice(0, -1);
+      } catch { continue; }
     }
     if (!candles || candles.length < 260) continue;
     L = resolveCalls(L, candles, { symbol: sym, interval });

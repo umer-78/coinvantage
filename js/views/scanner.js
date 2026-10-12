@@ -28,8 +28,26 @@ export async function render(el) {
       </div>
       <div class="meter" id="meter" style="margin-bottom:10px"><i style="width:0%"></i></div>
       <div id="tbl">${skeleton(10, 26)}</div>
-      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across 244,000 bars, the share of bars that rose <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI up" is a fast version of the coin-page forecast for the next <span id="hz"></span>. "Move timing" is when that forecast expects the move to top out or bottom, from the shape of past look-alike charts. Open a coin for the full forecast with accuracy stats.</p>
+      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across 244,000 bars, the share of bars that rose <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI up" is a fast version of the coin-page forecast for the next <span id="hz"></span>. "80% range" is where price should end up 8 times in 10 by then — the part of the forecast that tested accurate (it held 78.5% of real outcomes); sort by it to find the coins that swing most. "Move timing" is when that forecast expects the move to top out or bottom, from the shape of past look-alike charts. Open a coin for the full forecast with accuracy stats.</p>
     </div>`;
+
+  // How far price may travel by the horizon: the forecast's 80% range, as a
+  // percentage of the price now. Unlike the direction, this part is measured to
+  // be right — the 80% range held 78.5% of real outcomes in the release test —
+  // so a wide range is a reliable warning that the coin swings hard.
+  const rangeOf = (r) => {
+    const f = r.fc;
+    if (!f?.ok || !f.range || !(f.lastPrice > 0)) return null;
+    return { lo: (f.range.p10 / f.lastPrice - 1) * 100, hi: (f.range.p90 / f.lastPrice - 1) * 100 };
+  };
+  const moveOf = (r) => { const g = rangeOf(r); return g ? g.hi - g.lo : null; };
+  const rangeCell = (r) => {
+    if (r.fc === undefined) return '<span class="spinner" style="width:12px;height:12px"></span>';
+    const g = rangeOf(r);
+    if (!g) return `<span class="muted" title="${esc(r.fc?.reason || 'No forecast on this chart, so there is no range to show.')}">—</span>`;
+    const f = (v) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)}%`;
+    return `<span title="8 times in 10, price should end the next ${esc(horizonText(st.interval, DEFAULT_HORIZON[st.interval]))} between ${money(r.fc.range.p10)} and ${money(r.fc.range.p90)}">${f(g.lo)} to ${f(g.hi)}</span>`;
+  };
 
   // "peaks in 4 hours" — the answer to "for how long does it go up?"
   const timingCell = (r) => {
@@ -62,7 +80,7 @@ export async function render(el) {
     const rsiOf = (r) => (Number.isFinite(r.signal.indicators.rsi) ? r.signal.indicators.rsi : null);
     if (f === 'oversold') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) < 32);
     if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 68);
-    const key = { score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0 }[st.sort];
+    const key = { score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0, move: (r) => moveOf(r) ?? -1 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
     // "for the next 1 day" → "for the next day"
     const hz = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);
@@ -79,7 +97,7 @@ export async function render(el) {
       return;
     }
     const th = (k, label) => `<th data-sort="${k}">${label}${st.sort === k ? ' ↓' : ''}</th>`;
-    $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('score', 'Score')}${th('ai', 'AI up')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
+    $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('score', 'Score')}${th('ai', 'AI up')}${th('move', '80% range')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
       ${rows.map((r) => {
         const s = r.signal;
         const trend = s.indicators.ema200 ? (s.price > s.indicators.ema200 ? '<span class="up">Above 200 EMA</span>' : '<span class="down">Below 200 EMA</span>') : '—';
@@ -91,7 +109,7 @@ export async function render(el) {
         return `<tr data-sym="${esc(r.coin.symbol)}"><td class="l"><div class="coin-cell">${coinLogo(r.coin, 24)}<b>${esc(r.coin.symbol)}</b><small class="hide-m">${esc(r.coin.name)}</small></div></td>
           <td>${money(s.price)}</td><td>${changeHtml(r.coin.change24h)}</td>
           <td class="l"><span class="chip ${s.tone === 'flat' ? '' : s.tone}">${s.text}</span></td>
-          <td class="${s.tone}"><b>${s.score > 0 ? '+' : ''}${s.score}</b></td><td>${ai}</td>
+          <td class="${s.tone}"><b>${s.score > 0 ? '+' : ''}${s.score}</b></td><td>${ai}</td><td class="fine">${rangeCell(r)}</td>
           <td class="l fine">${timingCell(r)}</td>
           <td class="${s.indicators.rsi < 30 ? 'up' : s.indicators.rsi > 70 ? 'down' : ''}">${s.indicators.rsi?.toFixed(0) ?? '—'}</td>
           <td class="hide-m">${trend}</td><td class="l hide-m muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(reason)}</td></tr>`;

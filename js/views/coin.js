@@ -1,4 +1,4 @@
-import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
+import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, isTestedSource, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { streamCandles } from '../api/exstream.js';
@@ -348,7 +348,7 @@ export async function render(el, [symParam]) {
       }
       const r = await getCandles(coin, iv, isSecondInterval(iv) ? (MAX_BARS[iv] || 600) : 1500);
       if (st.disposed || iv !== st.interval) return;
-      st.candles = r.candles; st.source = r.source;
+      st.candles = r.candles; st.source = r.source; st.tested = isTestedSource(r);
       $('#srcChip', el).textContent = r.source === 'binance' ? `● Live · Binance ${pair}` : r.venue ? `● ${r.venue} · updates every 20s` : r.source === 'demo' ? 'Demo data' : 'CoinGecko (delayed)';
       $('#srcChip', el).className = `chip ${r.source === 'binance' || r.venue ? 'up' : r.source === 'demo' ? 'warn' : ''}`;
       chart.setData(r.candles);
@@ -599,25 +599,30 @@ export async function render(el, [symParam]) {
 
     // Local self-improvement ledger: resolve forecasts whose horizon has passed
     // on this coin/interval, then record the new one before its outcome is known.
+    // Only on real exchange candles: demo prices are invented, and grading a
+    // forecast against them would teach the device's learning made-up outcomes.
     try {
       let ledger = loadLedger();
-      ledger = resolveDueLedger(ledger, st.candles, { symbol: coin.symbol, interval: iv });
-      if (fc.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
-        ledger = recordForecast(ledger, {
-          symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
-          horizonBars: fc.horizon, horizonAt: fc.path[fc.path.length - 1]?.t,
-        });
+      if (st.tested) {
+        ledger = resolveDueLedger(ledger, st.candles, { symbol: coin.symbol, interval: iv });
+        if (fc.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
+          ledger = recordForecast(ledger, {
+            symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
+            horizonBars: fc.horizon, horizonAt: fc.path[fc.path.length - 1]?.t,
+          });
+        }
+        saveLedger(ledger);
       }
-      saveLedger(ledger);
       st.ledger = ledger;
       st.ensemble3 = threeModelEnsemble(st.candles, { ledger, horizon: H });
       st.anomalies = anomalyFlags(st.candles);
     } catch { /* ledger is a convenience, never load-bearing */ }
     // AI learning center: this chart's readings and forecast are logged for grading.
-    st.learned = learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null });
+    st.learned = st.tested ? learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null }) : null;
 
-    if (fc.ok) {
-      // Logged before the outcome is known, so "your hit rate" is honest.
+    if (fc.ok && st.tested) {
+      // Logged before the outcome is known, so "your hit rate" is honest. Never
+      // for demo prices: this goes to the account's record on the server.
       logForecastShown({
         symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
         targetPrice: fc.targetPrice, horizonBars: fc.horizon,
