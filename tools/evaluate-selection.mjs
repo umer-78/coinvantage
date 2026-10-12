@@ -122,4 +122,66 @@ if (only !== 'rotation') {
     out.perCoin[iv] = { coins: prep.length, shared: grid[shared].tag, sharedRet: avg(sharedNew, 'ret'), sharedDd: avg(sharedNew, 'dd'), ownRet: avg(ownNew, 'ret'), ownDd: avg(ownNew, 'dd'), ownBeatShared: wins, hold: bh };
   }
 }
+// ---------------------------------------------------------------- per-coin rules, walk-forward
+// A second, stricter test of per-coin rules, added after the single split
+// above passed only narrowly. Each coin's history is cut into four blocks;
+// rules are chosen on everything before a block and tested on that block,
+// three times. Per-coin rules are adopted on a timeframe only if they beat the
+// shared rule set in at least two of the three folds there, by at least one
+// point on average, and on more than half of all coin-and-fold pairs. (The
+// first draft of this bar, two folds and any average lead, passed on random-
+// walk candles where no coin can have rules of its own, so it was tightened
+// before the real candles were run.)
+if (only !== 'rotation') {
+  out.perCoinFolds = {};
+  const WARM = 260;
+  const grid = [];
+  for (const entryMode of ['trend', 'breakout', 'pullback'])
+    for (const momentumConfirm of entryMode === 'pullback' ? [false] : [false, true])
+      for (const trendFilter of entryMode === 'pullback' ? [true] : [false, true])
+        for (const atrStop of [1.5, 2, 3])
+          for (const exit of ['r2', 'r3', 't3', 't4'])
+            for (const signalExitBars of [2, null])
+              grid.push({ ...DEFAULT_CONFIG, entryMode, momentumConfirm, trendFilter, marketFilter: false, atrStop, rMultiple: exit[0] === 'r' ? +exit[1] : 3, trailAtr: exit[0] === 't' ? +exit[1] : null, signalExitBars, maxPositions: 1, excluded: [], tag: `${entryMode}${momentumConfirm ? '+confirm' : ''} ${trendFilter ? 'TF' : '--'} ${atrStop}ATR ${exit} ${signalExitBars ? 'SX' : '--'}` });
+  const prepSlice = (s, c) => { const ind = computeAll(c); return { symbol: s, candles: c, ind, atr: atr(c, 14), scores: c.map((_, i) => (i >= 210 ? scoreAt(c, ind, i).score : 0)) }; };
+  const solo = (cfg, x, from) => {
+    const st = newState(cfg);
+    st.cursor[x.symbol] = x.candles[from - 1].t;
+    replaySeries(st, cfg, [x], { from });
+    const last = x.candles.at(-1).c;
+    const eqEnd = equity(st, { [x.symbol]: last }) - Object.values(st.open).reduce((a, p) => a + (last * p.qty * cfg.feePct) / 100, 0);
+    let eq = cfg.startingBalance, peak = eq, dd = 0;
+    for (const t of st.closed) { eq += t.pnl; peak = Math.max(peak, eq); dd = Math.max(dd, (peak - eq) / peak); }
+    dd = Math.max(dd, (peak - eqEnd) / peak);
+    return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length };
+  };
+  for (const iv of ivs(['1h', '4h', '1d'])) {
+    const coins = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length >= 1600).map((k) => k.split(':')[0]);
+    const folds = [];
+    for (const f of [1, 2, 3]) {
+      const sets = coins.map((s) => {
+        const all = candlesOf(`${s}:${iv}`);
+        const cut = (k) => Math.floor((all.length * k) / 4);
+        return { s, train: prepSlice(s, all.slice(0, cut(f))), test: prepSlice(s, all.slice(cut(f) - WARM, cut(f + 1))) };
+      });
+      const res = grid.map((cfg) => sets.map((x) => solo({ ...cfg, universe: [x.s], interval: iv }, x.train, 210)));
+      const shared = grid.map((_, j) => ({ j, v: res[j].reduce((a, m) => a + Math.max(-100, objective(m, 5)), 0) })).sort((a, b) => b.v - a.v)[0].j;
+      const own = sets.map((_, c) => { let best = shared, bs = objective(res[shared][c], 5); grid.forEach((_, j) => { const v = objective(res[j][c], 5); if (v > bs) { bs = v; best = j; } }); return best; });
+      const test = (j, c) => solo({ ...grid[j], universe: [sets[c].s], interval: iv }, sets[c].test, WARM);
+      const sh = sets.map((_, c) => test(shared, c)), ow = sets.map((_, c) => test(own[c], c));
+      const avg = (a) => +(a.reduce((x, m) => x + m.ret, 0) / a.length).toFixed(2);
+      const t0 = sets[0].test.candles[WARM].t, t1 = sets[0].test.candles.at(-1).t;
+      folds.push({ from: iso(t0), to: iso(t1), shared: avg(sh), own: avg(ow), ownWins: ow.filter((m, c) => m.ret > sh[c].ret).length, coins: sets.length });
+      console.error(`${iv} fold ${f} done`);
+    }
+    const better = folds.filter((x) => x.own > x.shared).length;
+    const mean = (k) => +(folds.reduce((a, x) => a + x[k], 0) / folds.length).toFixed(2);
+    const pairs = folds.reduce((a, x) => a + x.coins, 0), wins = folds.reduce((a, x) => a + x.ownWins, 0);
+    const adopt = better >= 2 && mean('own') - mean('shared') >= 1 && wins * 2 > pairs;
+    console.log(`\n== PER-COIN RULES, WALK-FORWARD ${iv} (${coins.length} coins)`);
+    for (const x of folds) console.log(`  test ${x.from} → ${x.to}: own ${String(x.own).padStart(7)}%  shared ${String(x.shared).padStart(7)}%  own better on ${x.ownWins} of ${x.coins} coins`);
+    console.log(`  own better in ${better} of 3 folds and on ${wins} of ${pairs} coin-folds; average own ${mean('own')}% vs shared ${mean('shared')}% → ${adopt ? 'ADOPT' : 'REJECT'}`);
+    out.perCoinFolds[iv] = { folds, better, wins, pairs, own: mean('own'), shared: mean('shared'), adopt };
+  }
+}
 console.log(`\nJSON ${JSON.stringify(out)}`);
