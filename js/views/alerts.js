@@ -184,7 +184,11 @@ export async function render(el, [preset]) {
     e.preventDefault();
     const btn = f.querySelector('button');
     const typed = parseFloat(f.price.value);
+    // "0" passed the form's own check and made an alert that could never fire.
+    if (!(typed > 0)) { toast('Enter a price above zero.', 'down'); return; }
     const entry = { symbol: f.sym.value, dir: f.dir.value, price: toUsd(typed), created: Date.now() };
+    const nowPx = coins.find((c) => c.symbol === entry.symbol)?.price;
+    const already = Number.isFinite(nowPx) && ((entry.dir === 'above' && nowPx >= entry.price) || (entry.dir === 'below' && nowPx <= entry.price));
     let where = 'It works while this site is open.';
     if (signedIn()) {
       btn.disabled = true;
@@ -197,7 +201,7 @@ export async function render(el, [preset]) {
     const alerts = load('alerts', []);
     alerts.unshift(entry);
     save('alerts', alerts);
-    toast(`Alert set: ${entry.symbol} ${entry.dir} ${money(entry.price)}. ${where}`, 'info');
+    toast(`Alert set: ${entry.symbol} ${entry.dir} ${money(entry.price)}. ${where}${already ? ` ${entry.symbol} is already ${entry.dir} that price, so it will go off straight away.` : ''}`, 'info');
     f.price.value = '';
   });
   $('#perm', el)?.addEventListener('click', async () => {

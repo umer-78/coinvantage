@@ -1,4 +1,4 @@
-import { markets, findCoin, getCandles, walletBalance, CHAINS, isStable } from '../api/market.js';
+import { markets, findCoin, getCandles, walletBalance, CHAINS, isStable, isTestedSource } from '../api/market.js';
 import { generateSignal, adviseHolding } from '../lib/signals.js';
 import { donut } from '../charts/small.js';
 import { $, $$, coinLogo, icon, toast, skeleton, modal } from '../ui.js';
@@ -100,7 +100,11 @@ export async function render(el) {
       if (disposed) return;
       try {
         const coin = await findCoin(h.symbol);
-        const { candles } = await getCandles(coin, '4h', 300);
+        const res = await getCandles(coin, '4h', 300);
+        // A hint is read from exchange candles only: demo prices are invented,
+        // and CoinGecko's samples are not the candles the signal was tested on.
+        if (!isTestedSource(res)) { advice.set(h.symbol, { text: res.source === 'demo' ? 'Live prices not loading — no hint' : 'No exchange chart, so no hint', tone: 'flat' }); if (!disposed) drawHoldings(); continue; }
+        const { candles } = res;
         const sig = generateSignal(candles, { interval: '4h' });
         advice.set(h.symbol, adviseHolding({ signal: sig, avgBuyPrice: h.avgBuy, price: candles[candles.length - 1].c }));
       } catch { advice.set(h.symbol, { text: 'No chart data', tone: 'flat' }); }
@@ -129,7 +133,14 @@ export async function render(el) {
     const coin = all.find((m) => m.symbol === sym);
     if (!coin) { toast(`${sym} not found in the top 250 coins`, 'down'); return; }
     const typedBuy = parseFloat(f.buy.value);
-    const amt = parseFloat(f.amt.value), buy = Number.isFinite(typedBuy) ? toUsd(typedBuy) : coin.price;
+    const amt = parseFloat(f.amt.value);
+    // Zero passed the form's own check, and adding zero twice made the average
+    // price 0 / 0.
+    if (!(amt > 0)) { toast('Enter an amount greater than zero.', 'down'); return; }
+    // Without a typed price the current one is the cost basis, which must not
+    // be an invented demo price.
+    if (!Number.isFinite(typedBuy) && coin.source === 'demo') { toast('Live prices are not loading, so enter the price you paid.', 'down'); return; }
+    const buy = Number.isFinite(typedBuy) ? toUsd(typedBuy) : coin.price;
     const holdings = load('holdings', []);
     const ex = holdings.find((h) => h.symbol === sym);
     if (ex) { const tot = ex.amount + amt; ex.avgBuy = (ex.avgBuy * ex.amount + buy * amt) / tot; ex.amount = tot; }
