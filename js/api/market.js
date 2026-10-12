@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { getJson, getJsonAny, peek, postJson, HttpError } from './http.js';
 import * as demo from '../lib/demo.js';
 import { syncClock, now } from './clock.js';
+import { load, save } from '../store.js';
 
 // ------------------------------------------------------------ status
 export const dataStatus = new EventTarget();
@@ -309,6 +310,22 @@ async function okxCandles(sym, bar, total, ttl) {
 }
 const EX_FETCH = { gate: gateCandles, htx: htxCandles, okx: okxCandles };
 
+// Which exchange had a coin last time, so a coin only OKX lists does not cost
+// two refused requests (and two console errors) on every visit. A miss on all
+// three is remembered briefly, so a blip does not hide a coin for long.
+const VENUE_KEY = 'exVenue';
+const VENUE_HIT_MS = 7 * 864e5, VENUE_MISS_MS = 3600e3;
+const venueMemo = () => load(VENUE_KEY, {}) || {};
+function rememberVenue(sym, ex) {
+  // a note to save time next visit: failing to write it must never cost the candles
+  try {
+    const m = venueMemo();
+    m[sym] = { ex, at: Date.now() };
+    // keep it small: the 200 most recent coins
+    save(VENUE_KEY, Object.fromEntries(Object.entries(m).sort((a, b) => b[1].at - a[1].at).slice(0, 200)));
+  } catch { /* storage unavailable */ }
+}
+
 /**
  * Real candles for a coin Binance does not list. Tries Gate.io, HTX and OKX in
  * turn and keeps the first whose latest close is within 10% of the coin's
@@ -327,7 +344,11 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
   const step = INTERVAL_MS[interval];
   if (!sym || !/^[A-Z0-9]{2,12}$/.test(sym) || !EX_BAR.gate[interval]) return null;
   const ttl = interval.endsWith('m') ? 15e3 : 60e3;
-  for (const ex of only ? [only] : ['gate', 'htx', 'okx']) {
+  const known = only ? null : venueMemo()[sym];
+  if (known && known.ex === null && Date.now() - known.at < VENUE_MISS_MS) return null;
+  const first = known?.ex && Date.now() - known.at < VENUE_HIT_MS ? known.ex : null;
+  const order = only ? [only] : [...new Set([first, 'gate', 'htx', 'okx'].filter(Boolean))];
+  for (const ex of order) {
     try {
       const rows = (await EX_FETCH[ex](sym, EX_BAR[ex][interval], total, ttl, step))
         .filter((c) => [c.o, c.h, c.l, c.c].every((x) => Number.isFinite(x) && x > 0));
@@ -336,9 +357,11 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
       if (now() - last.t > step * 3 + 2 * 864e5) continue;
       if (!only && Number.isFinite(coin.price) && coin.price > 0 && Math.abs(last.c / coin.price - 1) > 0.1) continue;
       markLive();
+      if (!only && first !== ex) rememberVenue(sym, ex);
       return { candles: rows.slice(-total), source: ex, venue: `${EX_NAME[ex]} ${sym}/USDT`, pair: null };
     } catch { /* next exchange */ }
   }
+  if (!only) rememberVenue(sym, null);
   return null;
 }
 

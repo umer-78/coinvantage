@@ -33,10 +33,12 @@ const ROUTES = [
 const IGNORE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED|fonts\.googleapis|429|403|backend unavailable|Failed to fetch|NetworkError|Load failed|ServiceWorker|sw\.js|WebSocket connection to/i;
 // Binance and Bybit geo-block some regions, and CoinGecko rate-limits; all three
 // answer those with no CORS header, so the browser logs a CORS error that the
-// app already handles by falling back. A CORS error from any OTHER host is still
-// reported — that is how a browser-unreadable endpoint gets caught.
+// app already handles by falling back. Gate.io, HTX and OKX are tried in turn
+// for coins Binance does not list, and one refusing a pair (or a datacenter IP,
+// as on CI) is the expected path to the next. A CORS error from any OTHER host
+// is still reported — that is how a browser-unreadable endpoint gets caught.
 const GEO_CORS = /blocked by CORS policy/i;
-const GEO_HOSTS = /(fapi\.binance\.com|api\.bybit\.com|api\.coingecko\.com)/i;
+const GEO_HOSTS = /(fapi\.binance\.com|api\.bybit\.com|api\.coingecko\.com|api\.gateio\.ws|api\.huobi\.pro|www\.okx\.com)/i;
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
