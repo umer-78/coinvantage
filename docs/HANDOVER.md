@@ -123,6 +123,29 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### AI trader settings and expected yield (2026-10-12)
+- Settings now take effect and say what they do: every chart in `TRADER_CHARTS`
+  (untested ones are labelled so), up to `MAX_COINS` (30) from the top 100, quick picks,
+  risk 0.1–5%, max open 1–20, max in one coin 5–100%, fee, tested rules or **your own
+  rules** (`strategy: 'custom'`, traded exactly as set: no chart rules, no trend lesson, no
+  per-coin rules). A chart change on an account with trades offers a fresh account at
+  once (default) instead of silently waiting for Reset. Every change is written to the
+  activity log ("Settings changed — …").
+- "What to do" box: best tested setup (`bestTestedChart()`: most test blocks with a gain,
+  then most above holding, then smallest drop → 1d), warnings (`settingsWarnings()`), and
+  **Expected yield** (`expectedYield()`): average, worst and best block, worst drop, blocks
+  up and trades a block at the chosen risk, read off `CHART_TESTED[chart].byRisk` (each
+  walk-forward block replayed at 0.5/1/1.5/2/3/5% risk, Evaluate job `trader-folds`). Null
+  for custom rules or untested charts — nothing measured, so nothing promised.
+- Measured by risk: past 2% a trade more risk made at most +0.4 points a block (15m) and
+  less on 1h, 4h and 1d. 15m and 1h about flat above ~1.5–2% (the 25%-a-coin cap binds first), 4h best at 0.5% and worse at every step up
+  (−11.3% a block at 5%), 1d best at 1–2% (+16.1 to +17.8%) and +9.4% at 3%. The risk
+  table is read off the test periods themselves, so it is labelled a guide; the default
+  (1.5%) was not changed on it.
+- "Test these settings" replays the exact settings on the last 1,000 candles of each
+  chosen coin with the live engine (`backtestSettings()`); labelled as in-sample.
+- The assistant answers "what can my AI trader make?" with the same `expectedYield()`.
+
 ### Track record plan scoring (2026-10-12)
 Plans are scored the way the long plan's own exit rules say to manage them
 (`js/lib/planscore.js`, mirrored to `supabase/functions/cv/engine/`): half closes
@@ -147,8 +170,10 @@ ones; each bar to adopt was written in the script before the run.
   rule sets on everything before a block (24 coins in one account, shared cash, fees)
   runs on that block next to the standard rules. Bar, in the script: better in 2 of 3
   blocks, by ≥1 point on average, average worst drop no more than 5 points deeper.
-  1h: +7.12% vs +1.27% a 6-week block (drop 12.86% vs 15.31%) — adopted. 1d: +16.97% vs
-  +13.03% an 18-month block (drop 14.22% vs 16.95%) — adopted. 4h: 0 of 3 — kept.
+  1h: +8.21% vs −0.19% a 6-week block (drop 12.09% vs 15.76%) — adopted. 1d: +16.64% vs
+  +12.72% an 18-month block (drop 14.22% vs 16.95%) — adopted. 4h: 0 of 3 — kept.
+  (Figures from the re-run that also measured six risk levels, below; the first run made
+  the same decisions and picks: 1h +7.12% vs +1.27%, 1d +16.97% vs +13.03%.)
   15m: cleared the bar on a first run, not on a re-run 20 minutes later (10-day blocks)
   — kept. `CHART_RULES` holds the picks made the same way on the full history;
   `CHART_TESTED` the block averages the Trading page shows. Never publish a result of

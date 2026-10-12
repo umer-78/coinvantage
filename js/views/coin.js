@@ -527,8 +527,9 @@ export async function render(el, [symParam]) {
     const lessons = load('traderLessons', []) || [];
     const chart = state?.interval || saved.interval || DEFAULT_CONFIG.interval;
     const universe = saved.universe || DEFAULT_CONFIG.universe;
-    const base = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => ['minAdx', 'maxEntryRsi', 'excluded'].includes(k))) };
-    const perCoin = !saved.ownRulesOff && chart === PER_COIN_RULES.interval ? PER_COIN_RULES.rules : null;
+    const customRules = saved.strategy === 'custom';
+    const base = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => ['minAdx', 'maxEntryRsi', 'excluded', 'strategy', 'custom'].includes(k))) };
+    const perCoin = !saved.ownRulesOff && saved.strategy !== 'custom' && chart === PER_COIN_RULES.interval ? PER_COIN_RULES.rules : null;
     const rules = rulesFor({ ...rulesForChart(base, chart, lessons), perCoin }, coin.symbol);
     const pos = state?.open?.[coin.symbol];
     const closed = st.candles.slice(0, -1); // the trader decides on closed candles only
@@ -549,7 +550,7 @@ export async function render(el, [symParam]) {
         : `On the last closed ${chart} candle its buy rule is met${rules.marketFilter ? ' (its Bitcoin-trend filter is checked on the Trading page)' : ''}; it buys at its next check if it has a free slot and the cash.${longSetup ? '' : ' The chart score shows no long setup above; the trader follows its own tested rule, not the score.'}`;
     }
     const html = `<div class="mt" style="border-top:1px solid var(--border);padding-top:10px"><div class="row spread"><b>AI trader on ${esc(sym)}</b><a class="fine" href="#/trader">Trading →</a></div>
-      <p class="fine" style="margin:6px 0 0">${esc(status)} ${perCoin?.[sym] ? 'It trades rules chosen on this coin\'s own daily history: ' : `Its rules on ${esc(chart)}: `}${esc(rulesInWords(rules))} Simulated money only.</p></div>`;
+      <p class="fine" style="margin:6px 0 0">${esc(status)} ${perCoin?.[sym] ? 'It trades rules chosen on this coin\'s own daily history: ' : customRules ? 'It trades your own rules: ' : `Its rules on ${esc(chart)}: `}${esc(rulesInWords(rules))} Simulated money only.</p></div>`;
     aiNote = { key, html };
     return html;
   }

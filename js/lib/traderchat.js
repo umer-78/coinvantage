@@ -2,7 +2,7 @@
 // the account itself, with the same rules and tested numbers the Trading page
 // shows. The chat used to know nothing about it, so "how is my AI trader
 // doing?" was answered with a market analysis of whatever coin was in focus.
-import { stats, rulesForChart, rulesInWords, CHART_TESTED, PER_COIN_RULES, DEFAULT_CONFIG } from './autotrader.js';
+import { stats, rulesForChart, rulesInWords, expectedYield, CHART_TESTED, PER_COIN_RULES, DEFAULT_CONFIG } from './autotrader.js';
 
 export const TRADER_Q = new RegExp([
   String.raw`\b(ai|auto|robo|bot)[ -]?trad(er|ers|ing|e)\b`, // AI trader, auto-trading, bot trade
@@ -13,6 +13,9 @@ export const TRADER_Q = new RegExp([
   String.raw`\b(rules?|profit|money|trades|positions?|balance)\b[^?.!]*\b(does|did|is|has) the (ai|bot) (use|make|made|making|trade|traded|trading|hold|holding|have|had|earn|earned|lose|lost)\b`,
   // "does the AI have any open positions?"
   String.raw`\b(does|did|is) the (ai|bot) (have|hold|holding|own)\b[^?.!]*\b(positions?|trades|coins)\b`,
+  // "what yield will my settings get?", "expected return of the bot"
+  String.raw`\b(yield|expected (return|profit))\b[^?.!]*\b(ai|bot|settings)\b`,
+  String.raw`\b(ai|bot|settings)\b[^?.!]*\b(yield|expected (return|profit))\b`,
 ].join('|'), 'i');
 
 const pct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
@@ -27,9 +30,9 @@ export function traderAnswer(question, { state = null, saved = {}, lessons = [],
   if (!TRADER_Q.test(String(question || ''))) return null;
   const s = saved || {};
   const interval = state?.interval || s.interval || DEFAULT_CONFIG.interval;
-  const base = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(s).filter(([k]) => ['universe', 'minAdx', 'maxEntryRsi', 'excluded'].includes(k))) };
+  const base = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(s).filter(([k]) => ['universe', 'minAdx', 'maxEntryRsi', 'excluded', 'strategy', 'custom'].includes(k))) };
   const rules = rulesForChart(base, interval, lessons);
-  const perCoin = !s.ownRulesOff && interval === PER_COIN_RULES.interval;
+  const perCoin = !s.ownRulesOff && s.strategy !== 'custom' && interval === PER_COIN_RULES.interval;
   const tested = CHART_TESTED[interval];
   const traded = tested && (tested.adopt ? tested.own : tested.standard);
   const lines = [];
@@ -49,7 +52,7 @@ export function traderAnswer(question, { state = null, saved = {}, lessons = [],
     Object.assign(data, { equity: st.equity, startingBalance: st.startingBalance, returnPct: st.returnPct, closedTrades: st.trades, wins: st.wins, winRatePct: st.winRate, feesPaid: st.feesPaid, worstDropPct: st.maxDrawdownPct, open: open.map((p) => ({ coin: p.symbol, entry: p.entry, stop: p.stop, target: p.tp })) });
   }
 
-  lines.push(`- Rules on this chart: ${rulesInWords(rules)}${perCoin ? ' On the daily chart each coin with rules of its own trades those instead.' : ''}`);
+  lines.push(`- ${s.strategy === 'custom' ? 'Your own rules (no published test)' : 'Rules on this chart'}: ${rulesInWords(rules)}${perCoin ? ' On the daily chart each coin with rules of its own trades those instead.' : ''}`);
   if (symbol) {
     const own = perCoin && PER_COIN_RULES.rules[symbol];
     const done = (state?.closed || []).filter((t) => t.symbol === symbol);
@@ -59,9 +62,13 @@ export function traderAnswer(question, { state = null, saved = {}, lessons = [],
   }
   const last = [...(lessons || [])].reverse().find((l) => l.text);
   if (last) lines.push(`- Last change by its self-review (${day(last.at)}): ${last.text}`);
-  if (traded) {
-    lines.push(`- Tested on ${CHART_TESTED.coins} coins over ${tested.from} → ${tested.to}, rules picked on earlier data each time: ${pct(traded.ret)} per ${tested.block} against ${pct(tested.hold)} for holding the same coins.${perCoin ? ` With each coin's own rules, ${pct(PER_COIN_RULES.tested.own.ret)} against ${pct(PER_COIN_RULES.tested.hold)} for holding over ${PER_COIN_RULES.tested.from} → ${PER_COIN_RULES.tested.to}.` : ''}`);
-    data.tested = { perPeriodPct: traded.ret, holdingPct: tested.hold, period: tested.block };
+  // what to expect: the walk-forward test of these rules at the saved risk
+  const y = traded && expectedYield({ ...base, ...Object.fromEntries(Object.entries(s).filter(([k]) => ['riskPct', 'maxPositions', 'maxPositionPct'].includes(k))), interval });
+  if (y) {
+    lines.push(`- What to expect: tested on ${y.coins} coins over ${tested.from} → ${tested.to}, rules picked on earlier data each time, at ${y.risk}% a trade it made ${pct(y.ret)} per ${y.block} on average (${pct(y.lo)} in the worst of ${y.periods} periods, ${pct(y.hi)} in the best, a worst drop near ${y.dd}%) against ${pct(y.hold)} for holding the same coins.${y.capsDiffer ? ' Your caps on open trades or on one coin differ from the test\'s, so treat it as rougher.' : ''}${perCoin ? ` With each coin's own rules, ${pct(PER_COIN_RULES.tested.own.ret)} against ${pct(PER_COIN_RULES.tested.hold)} for holding over ${PER_COIN_RULES.tested.from} → ${PER_COIN_RULES.tested.to}.` : ''} Settings on the Trading page shows this for every risk level.`);
+    data.tested = { perPeriodPct: y.ret, worstPeriodPct: y.lo, bestPeriodPct: y.hi, worstDropPct: y.dd, riskPct: y.risk, holdingPct: y.hold, period: y.block };
+  } else if (s.strategy === 'custom' || !tested) {
+    lines.push(`- What to expect: nothing measured — ${s.strategy === 'custom' ? 'your own rules' : `the ${interval} chart`} ${s.strategy === 'custom' ? 'have' : 'has'} no published test. "Test these settings" in Settings on the Trading page replays them on recent candles.`);
   }
   lines.push('', '_Simulated money: it places no orders. A tested result is not a promise. Not financial advice._');
   return { text: lines.join('\n'), data: { aiTrader: data } };

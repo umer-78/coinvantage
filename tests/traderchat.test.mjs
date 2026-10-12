@@ -46,3 +46,15 @@ test('with an account it reports the account, the rules and a named coin', () =>
   const off = traderAnswer('what rules does the AI use for BTC?', { state, saved: { interval: '1d', ownRulesOff: true }, symbol: 'BTC', fmt });
   assert.match(off.text, /BTC: trades the rules above/);
 });
+
+test('it says what the settings can be expected to make, from the same test as the Trading page', async () => {
+  const { expectedYield } = await import('../js/lib/autotrader.js');
+  assert.ok(TRADER_Q.test('what yield will my settings get?') && TRADER_Q.test('expected return of the bot'));
+  const a = traderAnswer('What can my AI trader make?', { saved: { interval: '1d', riskPct: 1 } });
+  const y = expectedYield({ ...DEFAULT_CONFIG, interval: '1d', riskPct: 1 });
+  assert.match(a.text, new RegExp(`at 1% a trade it made \\+${y.ret}% per 18 months on average`));
+  assert.equal(a.data.aiTrader.tested.perPeriodPct, y.ret);
+  const own = traderAnswer('What can my AI trader make?', { saved: { interval: '1d', strategy: 'custom' } });
+  assert.match(own.text, /nothing measured — your own rules have no published test/);
+  assert.match(traderAnswer('What can my AI trader make?', { saved: { interval: '30m' } }).text, /the 30m chart has no published test/);
+});

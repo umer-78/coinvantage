@@ -55,7 +55,7 @@ export async function render(el) {
     const saved = load('traderCfg', {}) || {};
     const lessons = load('traderLessons', []) || [];
     const traderIv = load('traderState', null)?.interval || saved.interval || DEFAULT_CONFIG.interval;
-    const cfg = rulesForChart({ ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => ['universe', 'minAdx', 'maxEntryRsi', 'excluded'].includes(k))) }, traderIv, lessons);
+    const cfg = rulesForChart({ ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => ['universe', 'minAdx', 'maxEntryRsi', 'excluded', 'strategy', 'custom'].includes(k))) }, traderIv, lessons);
     const ledger = loadLedger();
     const fl = learningStatus(ledger);
     const tested = LEARN_TESTED.byInterval[st.interval];

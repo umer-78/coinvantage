@@ -185,3 +185,45 @@ test('the coin page\'s "would it buy?" is the trader\'s own decision, candle by 
   const falling = prepared('B', climb(320).map((c) => ({ ...c, o: 10000 / c.o, h: 10000 / c.l, l: 10000 / c.h, c: 10000 / c.c })), () => 40);
   assert.equal(entryBlocker(cfgWith({}), falling, 300, 40), 'trend', 'no buying a downtrend with the trend filter on');
 });
+
+test('your own rules are traded as you set them; the best tested chart and the warnings', async () => {
+  const { rulesForChart, CUSTOM_DEFAULT, bestTestedChart, settingsWarnings, backtestSettings, CHART_TESTED } = await import('../js/lib/autotrader.js');
+  const mine = { ...DEFAULT_CONFIG, strategy: 'custom', custom: { entryMode: 'pullback', atrStop: 1.5, trendFilter: false } };
+  const r = rulesForChart(mine, '1d', [{ lens: 'trend', at: 1 }]);
+  assert.equal(r.entryMode, 'pullback');
+  assert.equal(r.atrStop, 1.5);
+  assert.equal(r.trendFilter, false, 'the self-review\'s trend lesson does not override your own choice');
+  assert.equal(r.signalExitBars, CUSTOM_DEFAULT.signalExitBars, 'unset rules start at the defaults');
+  const best = bestTestedChart();
+  assert.ok(CHART_TESTED[best.iv]);
+  for (const iv of Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard)) assert.ok((CHART_TESTED[iv].up ?? 0) <= best.up);
+  const w = settingsWarnings({ ...DEFAULT_CONFIG, interval: '30m', strategy: 'custom', riskPct: 3, universe: ['BTC'] });
+  assert.ok(w.some((x) => /never tested/.test(x)) && w.some((x) => /no published test/.test(x)) && w.some((x) => /ten losing trades/.test(x)) && w.some((x) => /fewer than three/.test(x)));
+  assert.deepEqual(settingsWarnings({ ...DEFAULT_CONFIG, interval: '1d', universe: ['BTC', 'ETH', 'SOL'] }), []);
+  // the settings test replays them like the live account
+  const by = { A: climb(320), B: climb(320) };
+  const bt = backtestSettings({ ...DEFAULT_CONFIG, trendFilter: false, entryScore: -100 }, by);
+  assert.equal(bt.coins, 2);
+  assert.ok(bt.trades > 0 && Number.isFinite(bt.ret) && Number.isFinite(bt.hold) && bt.hold > 0);
+});
+
+test('the expected yield comes from the walk-forward test of the rules the chart trades', async () => {
+  const { expectedYield, CHART_TESTED } = await import('../js/lib/autotrader.js');
+  assert.equal(expectedYield({ ...DEFAULT_CONFIG, interval: '30m' }), null, 'nothing measured on an untested chart');
+  assert.equal(expectedYield({ ...DEFAULT_CONFIG, interval: '1d', strategy: 'custom' }), null, 'nor for your own rules');
+  for (const iv of Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard)) {
+    const x = CHART_TESTED[iv];
+    const y = expectedYield({ ...DEFAULT_CONFIG, interval: iv });
+    assert.ok(y.lo <= y.ret && y.ret <= y.hi, `${iv}: the average sits between the worst and best period`);
+    assert.equal(y.hold, x.hold);
+    if (x.byRisk) {
+      // at a tested level the figures are the measured ones; between two, in between
+      const at = (r) => expectedYield({ ...DEFAULT_CONFIG, interval: iv, riskPct: r });
+      assert.deepEqual([at(1).ret, at(1).dd], [x.byRisk[1].ret, x.byRisk[1].dd]);
+      const mid = at(1.25).ret;
+      assert.ok(mid >= Math.min(x.byRisk[1].ret, x.byRisk[1.5].ret) && mid <= Math.max(x.byRisk[1].ret, x.byRisk[1.5].ret));
+      assert.equal(at(50).risk, 5, 'clamped to the highest level tested');
+    }
+  }
+  assert.equal(expectedYield({ ...DEFAULT_CONFIG, interval: '1d', maxPositionPct: 50 }).capsDiffer, true);
+});

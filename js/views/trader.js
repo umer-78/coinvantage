@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -16,6 +16,12 @@ import { openAuth } from './auth.js';
 import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger, recordForecast, resolveDueLedger } from '../lib/selfimprove.js';
 import { runForecast } from '../lib/compute.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
+
+// Runs fn over items, at most n at a time.
+async function pool(items, n, fn) {
+  const queue = [...items];
+  await Promise.all(Array.from({ length: Math.min(n, queue.length) }, async () => { while (queue.length) await fn(queue.shift()); }));
+}
 
 export const title = 'Trading';
 
@@ -45,7 +51,7 @@ export async function render(el) {
   // so a strategy update never reached anyone who had once pressed Save. Only
   // the user's own choices — and, from v2, what the self-review learned — carry over.
   const savedCfg = load(CFG_KEY, {}) || {};
-  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe', 'ownRulesOff'];
+  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe', 'ownRulesOff', 'maxPositionPct', 'feePct', 'strategy', 'custom'];
   // The trend filter is not carried over from a save: whether the self-review
   // switched it is read from its lessons (rulesForChart), since a saved value
   // cannot tell a learned setting from an old default.
@@ -60,7 +66,7 @@ export async function render(el) {
   // follows the chart the account RUNS on, which only changes on a Reset, not
   // the chart picked in Settings. Stored as an opt-out: for an hour they were
   // opt-in, and a Save then stored "off" for anyone who never touched the box.
-  const ownRulesOn = () => !cfg.ownRulesOff && (state?.interval || cfg.interval) === PER_COIN_RULES.interval;
+  const ownRulesOn = () => !cfg.ownRulesOff && cfg.strategy !== 'custom' && (state?.interval || cfg.interval) === PER_COIN_RULES.interval;
   // What the account actually trades: the settings, the chart's own measured
   // rules, the self-review's lessons. Everything that trades or describes the
   // rules reads this, so the page cannot describe one strategy and run another.
@@ -144,7 +150,7 @@ export async function render(el) {
     if (!w) {
       return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} Not tested on the ${esc(iv)} chart</h3></div>
-      <p class="fine">This strategy was measured on ${TFS.join(', ')} charts. Pick one of those in Settings to see its measured result.</p>
+      <p class="fine">This strategy was measured on ${TFS.join(', ')} charts. On ${esc(iv)} it trades ${cfg.strategy === 'custom' ? 'your own rules' : 'the standard rules'} with no measured result to expect; "Test these settings" in Settings shows how they did on recent candles. Rules in force: ${esc(rulesText(effective(iv)))}</p>
     </div>`;
     }
     const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
@@ -153,11 +159,11 @@ export async function render(el) {
     const e = effective(iv);
     return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(CHART_TESTED.measuredOn)}, not estimated</span></div>
-      <p>Run candle by candle over ${CHART_TESTED.coins} coins in one account, fees included, in ${CHART_TESTED.blocks} back-to-back periods of about ${esc(w.block)} (${esc(w.from)} → ${esc(w.to)}). Before each period the rules were picked from ${CHART_TESTED.configs} rule sets on the history before it, then run on a period they had never seen. On ${esc(iv)} the rules it trades averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period with an average worst drop of ${r.dd}%, while holding the same coins averaged <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b>. ${r.ret > w.hold ? 'On this chart it did better than holding, over three periods; that is evidence, not a promise.' : 'On this chart holding did better.'}</p>
+      <p>Run candle by candle over ${CHART_TESTED.coins} coins in one account, fees included, in ${CHART_TESTED.blocks} back-to-back periods of about ${esc(w.block)} (${esc(w.from)} → ${esc(w.to)}). Before each period the rules were picked from ${CHART_TESTED.configs} rule sets on the history before it, then run on a period they had never seen. ${cfg.strategy === 'custom' ? `<b>You are trading your own rules, which were not part of this test</b>, so it says nothing about them; use "Test these settings" in Settings for a look back. For comparison, the tested rules for ${esc(iv)} averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period against <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b> for holding the same coins.` : `On ${esc(iv)} the rules it trades averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period with an average worst drop of ${r.dd}%, while holding the same coins averaged <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b>. ${r.ret > w.hold ? 'On this chart it did better than holding, over three periods; that is evidence, not a promise.' : 'On this chart holding did better.'}`}</p>
       <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested</th><th>Rules</th><th>Result a period</th><th>Worst drop</th><th>Standard rules</th><th>Holding</th><th>Trades</th></tr></thead><tbody>
         ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="fine">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td>${t.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
-      <p class="fine mt">Rules in force on ${esc(iv)}: ${esc(rulesText(e))} ${w.adopt ? `They are this chart's own pick: in the test, picking rules for the chart beat the standard rules in ${w.better} of ${CHART_TESTED.blocks} periods (${sign(w.own.ret)} against ${sign(w.standard.ret)} a period, worst drop ${w.own.dd}% against ${w.standard.dd}%), so they are re-picked the same way on all the history.` : `The chart's own pick did not beat the standard rules clearly enough (better in ${w.better} of ${CHART_TESTED.blocks} periods), so it keeps them.`} Fees came to ${r.fees}% of the balance a period, and ${r.win}% of trades won.${iv === '15m' ? ' A 15m period is only ten days, so these numbers swing a lot: one run picked different rules after twenty minutes of new candles.' : ''}${ownRulesText()}${ownRulesOn() ? ` Tested on ${PER_COIN_RULES.coins} coins over ${esc(PER_COIN_RULES.tested.from)} → ${esc(PER_COIN_RULES.tested.to)}, with every rule chosen on the years before: ${sign(PER_COIN_RULES.tested.own.ret)} with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${sign(PER_COIN_RULES.tested.standard.ret)} and ${PER_COIN_RULES.tested.standard.dd}% for the daily rules alone, and ${sign(PER_COIN_RULES.tested.hold)} for holding the coins. You can switch them off in Settings.` : ''}</p>
+      <p class="fine mt">Rules in force on ${esc(iv)}: ${esc(rulesText(e))} ${cfg.strategy === 'custom' ? 'These are your own rules, set in Settings.' : w.adopt ? `They are this chart's own pick: in the test, picking rules for the chart beat the standard rules in ${w.better} of ${CHART_TESTED.blocks} periods (${sign(w.own.ret)} against ${sign(w.standard.ret)} a period, worst drop ${w.own.dd}% against ${w.standard.dd}%), so they are re-picked the same way on all the history.` : `The chart's own pick did not beat the standard rules clearly enough (better in ${w.better} of ${CHART_TESTED.blocks} periods), so it keeps them.`} Fees came to ${r.fees}% of the balance a period, and ${r.win}% of trades won.${iv === '15m' ? ' A 15m period is only ten days, so these numbers swing a lot: one run picked different rules after twenty minutes of new candles.' : ''}${ownRulesText()}${ownRulesOn() ? ` Tested on ${PER_COIN_RULES.coins} coins over ${esc(PER_COIN_RULES.tested.from)} → ${esc(PER_COIN_RULES.tested.to)}, with every rule chosen on the years before: ${sign(PER_COIN_RULES.tested.own.ret)} with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${sign(PER_COIN_RULES.tested.standard.ret)} and ${PER_COIN_RULES.tested.standard.dd}% for the daily rules alone, and ${sign(PER_COIN_RULES.tested.hold)} for holding the coins. You can switch them off in Settings.` : ''}</p>
       ${ownRulesOn() ? coinRulesTable(e) : ''}
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
     </div>`;
@@ -304,12 +310,21 @@ export async function render(el) {
     // still checked now, for its exits only.
     const held = Object.keys(state.open).filter((sym) => !cfg.universe.includes(sym));
     const bySymbol = {};
-    for (const sym of [...cfg.universe, ...held]) {
+    // four coins at a time: a list of thirty used to be fetched one by one
+    const syms = [...cfg.universe, ...held];
+    const fetched = new Map();
+    await pool(syms, 4, async (sym) => {
+      const coin = all.find((c) => c.symbol === sym);
+      if (!coin || st.disposed) return;
+      try { fetched.set(sym, await getCandles(coin, runCfg.interval, 500)); } catch (err) { fetched.set(sym, err); }
+    });
+    for (const sym of syms) {
       if (st.disposed) return;
       const coin = all.find((c) => c.symbol === sym);
       if (!coin) { failed.push(sym); continue; }
       try {
-        const r = await getCandles(coin, runCfg.interval, 500);
+        const r = fetched.get(sym);
+        if (!r || r instanceof Error) throw r || new Error('no candles');
         // Demo candles are invented: never trade on them or price a position with them.
         if (r.source === 'demo') { failed.push(sym); continue; }
         // Open positions used to be marked at their ENTRY price until a live
@@ -419,17 +434,18 @@ export async function render(el) {
         return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles.toLocaleString('en-US')} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}`;
       }
       if (e.kind === 'review') return `<b>Self-review</b> — ${esc(e.c.text)}`;
+      if (e.kind === 'settings') return `<b>Settings changed</b> — ${esc(e.c.text)}`;
       if (e.kind === 'buy') {
         const bar = e.p.entryBar;
         return `<b>Bought ${esc(e.sym)}</b> at ${money(e.p.entry)}${Number.isFinite(e.p.openScore) ? ` — score ${e.p.openScore > 0 ? '+' : ''}${Math.round(e.p.openScore)}${Number.isFinite(bar) ? ` cleared the +${bar} entry bar` : ''}` : ''}`;
       }
       return `<b>Sold ${esc(e.sym)}</b> at ${money(e.p.exit)} — ${esc(why[e.p.reason] || e.p.reason)} · <span class="${e.p.pnl >= 0 ? 'up' : 'down'}">${e.p.pnl >= 0 ? '+' : '−'}${money(Math.abs(e.p.pnl))} (${pct(e.p.pnlPct)})</span>`;
     };
-    const replayed = ev.filter((e) => e.kind !== 'check' && e.kind !== 'review' && e.t < liveSince).length;
+    const replayed = ev.filter((e) => !['check', 'review', 'settings'].includes(e.kind) && e.t < liveSince).length;
     return `<div class="card mt">
       <div class="card-h"><h3>${icon('ai', 16)} AI activity</h3><span class="fine">${autoOn ? 'running · checks every 5 minutes' : session.status === 'stopped' ? 'stopped · press Resume to continue' : 'idle'}${st.lastRun ? ` · last check ${ago(st.lastRun)}` : ''}</span></div>
       ${replayed ? `<p class="fine" style="margin-top:0">Entries marked <span class="chip">replayed</span> happened on candles from before this account went live on ${dateTime(liveSince)} — the same rules run over past prices so the record does not start empty. Everything after that was decided live.</p>` : ''}
-      ${ev.length ? `<ul class="fine" style="list-style:none;padding:0;margin:0">${ev.slice(0, 30).map((e) => `<li style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(e.t)}</span>${e.kind !== 'check' && e.kind !== 'review' && e.t < liveSince ? '<span class="chip" style="margin-right:6px">replayed</span>' : ''}${line(e)}</li>`).join('')}</ul>`
+      ${ev.length ? `<ul class="fine" style="list-style:none;padding:0;margin:0">${ev.slice(0, 30).map((e) => `<li style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(e.t)}</span>${!['check', 'review', 'settings'].includes(e.kind) && e.t < liveSince ? '<span class="chip" style="margin-right:6px">replayed</span>' : ''}${line(e)}</li>`).join('')}</ul>`
         : `<p class="muted">${autoOn ? 'No trades yet — the AI is watching for a setup that meets its rules.' : `No trades yet. The AI is ${session.status === 'stopped' ? 'stopped' : 'not running'}, so it is not looking for setups — press ${session.status === 'stopped' ? 'Resume the AI' : 'Start the trader'} to let it trade.`}</p>`}
     </div>`;
   }
@@ -881,51 +897,218 @@ export async function render(el) {
   }
 
   // ---------------------------------------------------------------- settings
+  // Every choice here takes effect: a coin that cannot be traded is named and
+  // left out (never silently dropped), a new chart can start a fresh account
+  // straight away, and your own rules are traded as you set them.
+  function resetAccount() {
+    const wasRunning = autoOn;
+    state = newState(cfg, { liveFrom: Date.now() }); save(STATE_KEY, state);
+    st.prices = {}; st.priceFrom = {};
+    applySession('RESET');
+    saveLedger(newLedger());
+    // a reset clears the account, not the choice to run the AI
+    if (wasRunning) applySession('START');
+    return wasRunning;
+  }
+
+  // What a set of settings can be expected to make: in % and money, the
+  // spread between test periods, and the same test at each risk level.
+  function yieldHtml(c) {
+    const y = expectedYield(c);
+    const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+    if (!y) return `<b>Expected yield</b><p class="fine" style="margin:6px 0 0">Nothing measured to expect: ${c.strategy === 'custom' ? 'your own rules were never tested' : `the ${esc(c.interval)} chart was never tested`}. "Test these settings" below shows how they did on recent candles.</p>`;
+    const own = c.strategy !== 'custom' && !c.ownRulesOff && c.interval === PER_COIN_RULES.interval;
+    const cash = (v) => `${v >= 0 ? '+' : '−'}${money(Math.abs((c.startingBalance * v) / 100))}`;
+    const top = y.levels.reduce((a, l) => (!a || l.ret > a.ret ? l : a), null);
+    const n = (c.universe || []).length;
+    return `<b>Expected yield</b> <span class="fine">from the walk-forward test of the ${esc(y.chart)} rules, at ${y.risk}% a trade</span>
+      <p class="fine" style="margin:6px 0 0">About <b class="${y.ret >= 0 ? 'up' : 'down'}">${sign(y.ret)}</b> per ${esc(y.block)} on average (${cash(y.ret)} on ${money(c.startingBalance)}): ${sign(y.lo)} in the worst of the ${y.periods} test periods, ${sign(y.hi)} in the best, a gain in ${y.up} of ${y.periods}. Worst drop along the way about ${y.dd}%; about ${y.trades} trades a period. Holding the same coins made ${sign(y.hold)} a period.</p>
+      <p class="fine" style="margin:6px 0 0">Measured on ${y.coins} coins in one account${n && n < y.coins ? `; with ${n} coin${n === 1 ? '' : 's'} expect fewer trades` : ''}.${y.capsDiffer ? ' Your caps on open trades or on one coin differ from the test\'s (5 open, 25% a coin), so treat it as rougher.' : ''}${own ? ` With each coin's own rules on, a separate test over ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)} made ${sign(PER_COIN_RULES.tested.own.ret)} against ${sign(PER_COIN_RULES.tested.standard.ret)} without them.` : ''} An expectation from past periods, not a promise.</p>
+      ${y.levels.length ? `<div class="tbl-wrap mt"><table class="tbl fine"><thead><tr><th class="l">Risk a trade</th><th>Average a period</th><th>Worst → best</th><th>Worst drop</th><th>Periods up</th></tr></thead><tbody>
+        ${y.levels.map((l) => `<tr${l.risk === y.risk ? ' style="font-weight:700"' : ''}><td class="l">${l.risk}%${l.risk === y.risk ? ' ← yours' : ''}</td><td class="${l.ret >= 0 ? 'up' : 'down'}">${sign(l.ret)}</td><td>${sign(l.lo)} → ${sign(l.hi)}</td><td>${l.dd}%</td><td>${l.up} of ${y.periods}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="fine" style="margin:6px 0 0">Each row is the same test at that risk${y.levels.some((l) => l.risk === y.risk) ? '' : `; yours (${y.risk}%) is read between the two nearest rows`}. The best average came at ${top.risk}% a trade${top.risk < y.levels[y.levels.length - 1].risk ? ' and higher settings made no more' : ''}: with at most 25% in one coin, a higher setting soon stops making positions bigger. Read off these same periods, so a guide, not a promise.</p>` : ''}`;
+  }
+
   $('#cfgBtn', el).addEventListener('click', () => {
+    const coins = all.filter((c) => !isStable(c.symbol)).slice(0, 100);
+    const chosen = new Set(cfg.universe);
+    const best = bestTestedChart();
+    const own = cfg.custom ? { ...CUSTOM_DEFAULT, ...cfg.custom } : { ...CUSTOM_DEFAULT };
+    const exitOf = (r) => (r.trailAtr ? `t${r.trailAtr}` : `r${r.rMultiple}`);
+    const chartLabel = (i) => {
+      const x = CHART_TESTED[i];
+      if (!x) return `${i} — not tested`;
+      const t = x.adopt ? x.own : x.standard;
+      return `${i} — tested ${t.ret >= 0 ? '+' : '−'}${Math.abs(t.ret)}% per ${x.block} (holding ${x.hold >= 0 ? '+' : '−'}${Math.abs(x.hold)}%)`;
+    };
     const m = modal(`<h3>Trader settings</h3>
-      <p class="fine">Changing these does not rewrite past trades. Risk, max open and coins apply to the next trade. A new starting balance or chart applies straight away while the account has no trades, and after a Reset once it has some.</p>
-      <form class="stack mt" style="gap:10px" id="cf">
-        <div class="row" style="gap:8px">
-          <label class="fld">Starting balance<input class="inp" name="startingBalance" type="number" min="100" step="100" value="${cfg.startingBalance}" style="width:130px"></label>
-          <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="5" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
-          <label class="fld">Max open<input class="inp" name="maxPositions" type="number" min="1" max="10" value="${cfg.maxPositions}" style="width:90px"></label>
-        </div>
-        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => { const x = CHART_TESTED[i], t = x.adopt ? x.own : x.standard; return `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${i} — tested ${t.ret >= 0 ? '+' : '−'}${Math.abs(t.ret)}% per ${x.block} (holding ${x.hold >= 0 ? '+' : '−'}${Math.abs(x.hold)}%)</option>`; }).join('')}</select></label>
-        <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
-        <label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" name="ownRules" ${cfg.ownRulesOff ? '' : 'checked'} style="margin-top:3px"><span>Let each coin trade its own rules <span class="fine">(daily chart only; on unless you untick it)</span><br><span class="fine">Chosen on each coin's own daily history for ${PER_COIN_RULES.coins} large coins; others keep the daily rules. In a test on ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)} data they were not chosen on, they made ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% for the daily rules alone, with a deeper worst drop: ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%. Holding the same coins made ${PER_COIN_RULES.tested.hold >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.hold)}%.</span></span></label>
-        <p class="fine">Available: ${esc(tradable.filter((c) => c.binance).slice(0, 24).map((c) => c.symbol).join(', '))}… The AI only trades coins with real exchange candles.</p>
-        <button class="btn primary">Save settings</button>
+      <div class="card mt" style="padding:12px" id="todo"><b>What to do</b>
+        <p class="fine" style="margin:6px 0 0">Best tested setup: the <b>${esc(best.iv)}</b> chart with the tested rules — it made money in ${best.up} of 3 test periods, ${best.ret >= 0 ? '+' : '−'}${Math.abs(best.ret)}% per ${esc(best.block)} on average against ${best.hold >= 0 ? '+' : '−'}${Math.abs(best.hold)}% for holding the same coins. Keep risk at 1–2% a trade, pick at least five coins, and leave the self-review on. None of this is a promise: the tests looked back, the market goes forward.</p>
+        <button class="btn sm mt" type="button" id="useBest">Use the best tested setup</button>
+        <div id="todoLive"></div></div>
+      <form class="stack mt" style="gap:12px" id="cf">
+        <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Account and risk</b></legend>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <label class="fld">Starting balance<input class="inp" name="startingBalance" type="number" min="100" step="100" value="${cfg.startingBalance}" style="width:130px"></label>
+            <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="5" step="0.1" value="${cfg.riskPct}" style="width:110px"></label>
+            <label class="fld">Max open trades<input class="inp" name="maxPositions" type="number" min="1" max="20" value="${cfg.maxPositions}" style="width:110px"></label>
+            <label class="fld">Max in one coin %<input class="inp" name="maxPositionPct" type="number" min="5" max="100" step="5" value="${cfg.maxPositionPct}" style="width:120px"></label>
+            <label class="fld">Fee per trade %<input class="inp" name="feePct" type="number" min="0" max="1" step="0.01" value="${cfg.feePct}" style="width:110px"></label>
+          </div>
+        </fieldset>
+        <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Chart</b></legend>
+          <select class="inp" name="interval" aria-label="Chart" style="width:100%">${TRADER_CHARTS.map((i) => `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${esc(chartLabel(i))}</option>`).join('')}</select>
+          <label class="row fine" style="gap:8px;align-items:flex-start" id="switchRow" hidden><input type="checkbox" name="switchNow" checked style="margin-top:2px"><span>Start a fresh account on the new chart now. This account has trades on <b>${esc(state?.interval || cfg.interval)}</b>; mixing two charts in one balance would muddle its record, so the old trades and balance are cleared. Untick to keep this account and switch at the next Reset.</span></label>
+        </fieldset>
+        <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Strategy</b></legend>
+          <label class="row" style="gap:8px"><input type="radio" name="strategy" value="tested" ${cfg.strategy === 'custom' ? '' : 'checked'}><span>Tested rules for the chart <span class="fine">(recommended)</span></span></label>
+          <label class="row" style="gap:8px;align-items:flex-start;margin-left:24px" id="ownRow"><input type="checkbox" name="ownRules" ${cfg.ownRulesOff ? '' : 'checked'} style="margin-top:3px"><span class="fine">On the daily chart, each coin trades rules chosen on its own history (${PER_COIN_RULES.coins} coins have them). Tested ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)}: ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% for the daily rules alone, worst drop ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%.</span></label>
+          <label class="row" style="gap:8px"><input type="radio" name="strategy" value="custom" ${cfg.strategy === 'custom' ? 'checked' : ''}><span>My own rules <span class="fine">(no published test)</span></span></label>
+          <div class="stack" id="customBox" style="gap:8px;margin-left:24px">
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <label class="fld">Buy when<select class="inp" name="entryMode">${[['trend', 'the score is strong'], ['breakout', 'it breaks a 20-candle high'], ['pullback', 'it dips in an uptrend']].map(([v, t]) => `<option value="${v}" ${own.entryMode === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+              <label class="fld">Stop<select class="inp" name="atrStop">${[1.5, 2, 3].map((v) => `<option value="${v}" ${own.atrStop === v ? 'selected' : ''}>${v} ATR below entry</option>`).join('')}</select></label>
+              <label class="fld">Sell at<select class="inp" name="exit">${[['r2', 'a target of 2× the risk'], ['r3', 'a target of 3× the risk'], ['t3', 'a stop trailing 3 ATR'], ['t4', 'a stop trailing 4 ATR']].map(([v, t]) => `<option value="${v}" ${exitOf(own) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+            </div>
+            <label class="row fine" style="gap:8px"><input type="checkbox" name="momentumConfirm" ${own.momentumConfirm ? 'checked' : ''}>only buy when short-term momentum agrees</label>
+            <label class="row fine" style="gap:8px"><input type="checkbox" name="trendFilter" ${own.trendFilter ? 'checked' : ''}>only buy coins in an uptrend (above their 200-candle average)</label>
+            <label class="row fine" style="gap:8px"><input type="checkbox" name="marketFilter" ${own.marketFilter ? 'checked' : ''}>only buy while Bitcoin itself is in an uptrend</label>
+            <label class="row fine" style="gap:8px"><input type="checkbox" name="signalExit" ${own.signalExitBars ? 'checked' : ''}>sell after 2 candles of signal reversal</label>
+          </div>
+        </fieldset>
+        <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Coins</b> <span id="coinCount"></span></legend>
+          <div class="row" style="gap:6px;flex-wrap:wrap"><input class="inp" id="coinFind" placeholder="Find a coin" aria-label="Find a coin" style="flex:1;min-width:140px">
+            <button class="btn sm" type="button" data-pick="10">Top 10</button><button class="btn sm" type="button" data-pick="20">Top 20</button><button class="btn sm" type="button" data-pick="own">Coins with own rules</button><button class="btn sm" type="button" data-pick="0">Clear</button></div>
+          <div id="coinGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px">
+            ${coins.map((c) => `<label class="fine" style="display:flex;gap:6px;align-items:center" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}${c.binance ? '' : ' <small class="muted" title="not on Binance: candles come from Gate.io, HTX or OKX if any lists it">other exchange</small>'}</label>`).join('')}
+          </div>
+          ${(cfg.excluded || []).length ? `<label class="row fine" style="gap:8px"><input type="checkbox" name="unbench"><span>Trade the coins the self-review benched again (${esc(cfg.excluded.join(', '))})</span></label>` : ''}
+          <p class="fine" style="margin:0">Up to ${MAX_COINS} coins. ★ = has its own daily rules. Coins with no exchange candles are skipped at each check and named in the activity log.</p>
+        </fieldset>
+        <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" type="button" id="testCfg">${icon('chart', 16)} Test these settings</button><button class="btn primary">Save settings</button></div>
+        <div id="testOut"></div>
       </form>`);
-    $('#cf', m.el).addEventListener('submit', (e) => {
-      e.preventDefault();
-      const f = e.target;
-      const uni = f.universe.value.split(',').map((x) => x.trim().toUpperCase()).filter((x) => tradable.some((c) => c.symbol === x));
-      if (!uni.length) { toast('Pick at least one tradable coin.', 'down'); return; }
-      Object.assign(cfg, {
-        startingBalance: Math.max(100, +f.startingBalance.value),
-        riskPct: Math.min(5, Math.max(0.1, +f.riskPct.value)),
-        maxPositions: Math.min(10, Math.max(1, +f.maxPositions.value)),
+    const f = $('#cf', m.el);
+    const read = () => {
+      const picks = [...f.querySelectorAll('#coinGrid input:checked')].map((x) => x.value);
+      const exit = f.exit.value;
+      return {
+        startingBalance: Math.max(100, +f.startingBalance.value || cfg.startingBalance),
+        riskPct: Math.min(5, Math.max(0.1, +f.riskPct.value || DEFAULT_CONFIG.riskPct)),
+        maxPositions: Math.min(20, Math.max(1, Math.round(+f.maxPositions.value) || DEFAULT_CONFIG.maxPositions)),
+        maxPositionPct: Math.min(100, Math.max(5, +f.maxPositionPct.value || DEFAULT_CONFIG.maxPositionPct)),
+        feePct: Math.min(1, Math.max(0, Number.isFinite(+f.feePct.value) ? +f.feePct.value : DEFAULT_CONFIG.feePct)),
         interval: f.interval.value,
-        universe: uni.slice(0, 12),
+        strategy: f.querySelector('input[name="strategy"]:checked')?.value === 'custom' ? 'custom' : 'tested',
+        custom: { entryMode: f.entryMode.value, atrStop: +f.atrStop.value, rMultiple: exit[0] === 'r' ? +exit.slice(1) : 3, trailAtr: exit[0] === 't' ? +exit.slice(1) : null, momentumConfirm: f.momentumConfirm.checked, trendFilter: f.trendFilter.checked, marketFilter: f.marketFilter.checked, signalExitBars: f.signalExit.checked ? 2 : null },
         ownRulesOff: !f.ownRules.checked,
+        universe: picks,
+      };
+    };
+    const refresh = () => {
+      const next = read();
+      $('#customBox', m.el).hidden = next.strategy !== 'custom';
+      $('#ownRow', m.el).hidden = next.strategy === 'custom';
+      const hasTrades = state && (Object.keys(state.open || {}).length || (state.closed || []).length);
+      $('#switchRow', m.el).hidden = !(hasTrades && next.interval !== (state?.interval || cfg.interval));
+      $('#coinCount', m.el).textContent = `· ${next.universe.length} chosen${next.universe.length > MAX_COINS ? ` — only ${MAX_COINS} can be traded` : ''}`;
+      const warn = settingsWarnings({ ...cfg, ...next });
+      // only this part is redrawn: a button redrawn under the pointer would
+      // swallow the click that blurred the field before it
+      $('#todoLive', m.el).innerHTML = `<div class="mt" style="border-top:1px solid var(--border);padding-top:8px">${yieldHtml({ ...cfg, ...next })}</div>
+        ${warn.length ? `<ul class="fine" style="margin:8px 0 0;padding-left:18px">${warn.map((w) => `<li class="down">${esc(w)}</li>`).join('')}</ul>` : '<p class="fine up" style="margin:8px 0 0">Nothing in these settings needs a warning.</p>'}`;
+    };
+    $('#useBest', m.el).addEventListener('click', () => {
+      f.interval.value = best.iv;
+      f.querySelector('input[name="strategy"][value="tested"]').checked = true;
+      f.ownRules.checked = true;
+      f.riskPct.value = Math.min(2, +f.riskPct.value || 1.5);
+      if (read().universe.length < 5) for (const x of [...f.querySelectorAll('#coinGrid input')].slice(0, 10)) x.checked = true;
+      refresh();
+    });
+    f.addEventListener('input', refresh);
+    f.addEventListener('change', refresh);
+    $('#coinFind', m.el).addEventListener('input', (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      for (const row of f.querySelectorAll('#coinGrid [data-coin]')) row.hidden = !!q && !row.dataset.coin.toLowerCase().includes(q) && !row.dataset.name.includes(q);
+    });
+    for (const b of f.querySelectorAll('[data-pick]')) b.addEventListener('click', () => {
+      const v = b.dataset.pick;
+      const boxes = [...f.querySelectorAll('#coinGrid input')];
+      boxes.forEach((x, i) => { x.checked = v === 'own' ? !!PER_COIN_RULES.rules[x.value] : i < +v; });
+      refresh();
+    });
+    $('#testCfg', m.el).addEventListener('click', async () => {
+      const next = { ...cfg, ...read() };
+      const syms = next.universe.slice(0, MAX_COINS);
+      const out = $('#testOut', m.el);
+      if (!syms.length) { out.innerHTML = '<p class="fine down">Pick at least one coin to test.</p>'; return; }
+      out.innerHTML = `<p class="fine"><span class="spinner"></span> Replaying these settings on the last 1,000 ${esc(next.interval)} candles of ${syms.length} coin${syms.length === 1 ? '' : 's'}…</p>`;
+      const by = {};
+      await pool(syms, 4, async (sym) => {
+        const coin = all.find((c) => c.symbol === sym);
+        if (!coin) return;
+        try { const r = await getCandles(coin, next.interval, 1000); if (r.source !== 'demo' && r.source !== 'coingecko' && !r.lowRes) by[sym] = r.candles.slice(0, -1); } catch { /* skipped */ }
       });
+      if (!m.el.isConnected) return;
+      const rules = rulesForChart({ ...next, excluded: [] }, next.interval, load(LESSONS_KEY, []));
+      const res = backtestSettings({ ...rules, perCoin: next.strategy !== 'custom' && !next.ownRulesOff && next.interval === PER_COIN_RULES.interval ? PER_COIN_RULES.rules : null }, by);
+      if (!res.coins) { out.innerHTML = '<p class="fine down">None of these coins had enough exchange candles on this chart to test.</p>'; return; }
+      const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+      out.innerHTML = `<div class="card" style="padding:12px"><b>How these settings did on recent candles</b>
+        <p class="fine" style="margin:6px 0 0">${res.coins} coin${res.coins === 1 ? '' : 's'}, ${esc(new Date(res.from).toISOString().slice(0, 10))} → ${esc(new Date(res.to).toISOString().slice(0, 10))}, fees included: <b class="${res.ret >= 0 ? 'up' : 'down'}">${sign(res.ret)}</b> against <b>${sign(res.hold)}</b> for holding the same coins. ${res.trades} trade${res.trades === 1 ? '' : 's'} closed${res.trades ? `, ${res.winRate}% won` : ''}, worst drop ${res.dd}%, ${res.open} still open. ${Object.keys(by).length < syms.length ? `${syms.length - Object.keys(by).length} coin${syms.length - Object.keys(by).length === 1 ? '' : 's'} had no exchange candles and ${syms.length - Object.keys(by).length === 1 ? 'was' : 'were'} left out.` : ''}</p>
+        <p class="fine" style="margin:6px 0 0">A look back, not a promise. ${next.strategy === 'custom' ? 'Rules tuned until they look good here usually do worse live.' : 'The tested rules were picked on history that includes these candles, so they look better here than they will live; the walk-forward result is the one to expect.'}</p></div>`;
+    });
+    refresh();
+
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const next = read();
+      if (!next.universe.length) { toast('Pick at least one coin.', 'down'); return; }
+      const dropped = next.universe.slice(MAX_COINS);
+      next.universe = next.universe.slice(0, MAX_COINS);
+      const before = { ...cfg };
+      const unbench = f.unbench?.checked;
+      Object.assign(cfg, next, unbench ? { excluded: [] } : {});
       save(CFG_KEY, cfg);
+      // the record: what changed, in the account's activity log
+      const changes = [];
+      if (before.interval !== cfg.interval) changes.push(`chart ${before.interval} → ${cfg.interval}`);
+      if ((before.strategy || 'tested') !== cfg.strategy) changes.push(cfg.strategy === 'custom' ? 'now your own rules' : 'now the tested rules');
+      else if (cfg.strategy === 'custom' && JSON.stringify(before.custom) !== JSON.stringify(cfg.custom)) changes.push('own rules changed');
+      if (before.riskPct !== cfg.riskPct) changes.push(`risk ${before.riskPct}% → ${cfg.riskPct}% a trade`);
+      if (before.maxPositions !== cfg.maxPositions) changes.push(`max open ${before.maxPositions} → ${cfg.maxPositions}`);
+      if (before.maxPositionPct !== cfg.maxPositionPct) changes.push(`max in one coin ${before.maxPositionPct}% → ${cfg.maxPositionPct}%`);
+      if (before.feePct !== cfg.feePct) changes.push(`fee ${before.feePct}% → ${cfg.feePct}%`);
+      if (!!before.ownRulesOff !== !!cfg.ownRulesOff) changes.push(cfg.ownRulesOff ? 'coins\' own daily rules off' : 'coins\' own daily rules on');
+      const added = cfg.universe.filter((s) => !before.universe.includes(s)), removed = before.universe.filter((s) => !cfg.universe.includes(s));
+      if (added.length) changes.push(`added ${added.join(', ')}`);
+      if (removed.length) changes.push(`removed ${removed.join(', ')}`);
+      if (unbench) changes.push('benched coins allowed again');
       m.close();
-      // An account with no trades yet has nothing to protect, so a new starting
-      // balance or chart applies to it at once (it used to keep showing the old
-      // balance until a Reset, which looked like the setting was ignored).
-      const untouched = state && !Object.keys(state.open || {}).length && !(state.closed || []).length;
-      if (untouched && (state.startingBalance !== cfg.startingBalance || state.interval !== cfg.interval)) {
+      const hasTrades = state && (Object.keys(state.open || {}).length || (state.closed || []).length);
+      const chartChanged = state && state.interval !== cfg.interval;
+      let msg = 'Settings saved.';
+      if (state && hasTrades && chartChanged && f.switchNow?.checked) {
+        const running = resetAccount();
+        msg = `Settings saved. A fresh account started on ${cfg.interval} with ${money(cfg.startingBalance)}${running ? '; the AI keeps running' : ''}.`;
+      } else if (state && !hasTrades && (chartChanged || state.startingBalance !== cfg.startingBalance)) {
+        // an account with no trades has nothing to protect: it follows the settings at once
         state = state.interval === cfg.interval
           ? { ...state, balance: cfg.startingBalance, startingBalance: cfg.startingBalance, equityCurve: [] }
           : { ...newState(cfg, { liveFrom: state.liveFrom }), log: state.log || [] };
-        save(STATE_KEY, state);
-        toast(`Settings saved. The AI's account now starts at ${money(cfg.startingBalance)} on ${cfg.interval}.`, 'up');
-      } else if (state && (state.startingBalance !== cfg.startingBalance || state.interval !== cfg.interval)) {
-        toast(`Settings saved. This account already has trades, so it keeps ${money(state.startingBalance)} on ${state.interval}; press Reset to start again with ${money(cfg.startingBalance)} on ${cfg.interval}.`, 'info');
-      } else toast('Settings saved.', 'up');
+        msg = `Settings saved. The AI's account now starts at ${money(cfg.startingBalance)} on ${cfg.interval}.`;
+      } else if (state && chartChanged) {
+        msg = `Settings saved. This account keeps trading ${state.interval} until you press Reset; then it starts on ${cfg.interval}.`;
+      } else if (state && state.startingBalance !== cfg.startingBalance) {
+        msg = `Settings saved. A new starting balance applies at the next Reset; this account keeps ${money(state.startingBalance)}.`;
+      }
+      if (dropped.length) msg += ` Only ${MAX_COINS} coins can be traded, so ${dropped.join(', ')} ${dropped.length === 1 ? 'was' : 'were'} left out.`;
+      if (state && changes.length) { logCheck(state, { kind: 'settings', text: changes.join(' · ') }); save(STATE_KEY, state); }
+      toast(msg, dropped.length ? 'info' : 'up');
       draw();
-      if (untouched && autoOn) catchUp();
+      if (state && autoOn) catchUp();
     });
   });
 
@@ -936,13 +1119,7 @@ export async function render(el) {
     $('#yes', m.el).addEventListener('click', () => {
       // Start clean from now: no candle that opened before this moment is ever
       // traded, so the old trades cannot come back on the next Start.
-      const wasRunning = autoOn;
-      state = newState(cfg, { liveFrom: Date.now() }); save(STATE_KEY, state);
-      st.prices = {}; st.priceFrom = {};
-      applySession('RESET');
-      saveLedger(newLedger());
-      // A reset clears the account, not the user's choice to run the AI.
-      if (wasRunning) applySession('START');
+      const wasRunning = resetAccount();
       m.close(); draw();
       toast(wasRunning ? `Account reset to ${money(cfg.startingBalance)}. The AI is still running and trades new ${cfg.interval} candles from now on.` : `Account reset to ${money(cfg.startingBalance)}. Press Start the trader when you want it running.`, 'info');
       if (wasRunning) catchUp();

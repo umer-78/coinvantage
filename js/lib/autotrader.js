@@ -71,14 +71,24 @@ export const CHART_RULES = {
  * That test's results, averaged over its three blocks: `standard` is the
  * standard rules, `own` the chart's own pick, `hold` equal amounts of every
  * coin held through the block. Returns, drops and fees are % of the balance
- * per block; trades are the total over the three.
+ * per block; trades are the total over the three. `range` and `up` are the
+ * worst and best block and the blocks with a gain, for the rules the chart
+ * trades. `byRisk` is the same test with every block replayed at six risk
+ * levels (same rules, 5 open at most, 25% a coin): average, worst and best
+ * block, average worst drop, blocks with a gain, trades a block. These are
+ * from a re-run that day on slightly newer candles; it made the same
+ * decisions and the same picks as the first.
  */
 export const CHART_TESTED = {
   measuredOn: '2026-10-12', coins: 24, configs: 432, blocks: 3,
-  '15m': { from: '2026-09-11', to: '2026-10-12', block: '10 days', better: 1, adopt: false, hold: 7.76, standard: { ret: 5.84, dd: 9.68, trades: 273, win: 27.5, fees: 3.6 }, own: { ret: 6.93, dd: 6.51, trades: 250, win: 30.4, fees: 3.61 } },
-  '1h': { from: '2026-06-09', to: '2026-10-12', block: '6 weeks', better: 2, adopt: true, hold: 16.15, standard: { ret: 1.27, dd: 15.31, trades: 253, win: 26.9, fees: 3.5 }, own: { ret: 7.12, dd: 12.86, trades: 218, win: 33.0, fees: 3.21 } },
-  '4h': { from: '2025-08-01', to: '2026-10-12', block: '5 months', better: 0, adopt: false, hold: -9.88, standard: { ret: 0.7, dd: 23.32, trades: 218, win: 24.8, fees: 2.6 }, own: { ret: -13.42, dd: 25.28, trades: 218, win: 28.9, fees: 3.08 } },
-  '1d': { from: '2022-04-07', to: '2026-10-12', block: '18 months', better: 2, adopt: true, hold: 10.39, standard: { ret: 13.03, dd: 16.95, trades: 134, win: 27.6, fees: 0.97 }, own: { ret: 16.97, dd: 14.22, trades: 175, win: 34.9, fees: 2.54 } },
+  '15m': { range: [-9.86, 27.09], up: 1, from: '2026-09-11', to: '2026-10-12', block: '10 days', better: 1, adopt: false, hold: 7.79, standard: { ret: 5.45, dd: 11.3, trades: 288, win: 26.7, fees: 3.83 }, own: { ret: 4.34, dd: 7.97, trades: 282, win: 28.7, fees: 4.03 },
+    byRisk: { 0.5: { ret: 1.96, lo: -9.76, hi: 16.15, dd: 8.84, up: 1, trades: 96 }, 1: { ret: 4.94, lo: -9.71, hi: 25.92, dd: 9.59, up: 1, trades: 95 }, 1.5: { ret: 5.45, lo: -9.86, hi: 27.09, dd: 11.3, up: 1, trades: 96 }, 2: { ret: 5.61, lo: -10.03, hi: 26.49, dd: 11.96, up: 2, trades: 93 }, 3: { ret: 5.99, lo: -8.9, hi: 26.49, dd: 11.93, up: 2, trades: 93 }, 5: { ret: 5.99, lo: -8.9, hi: 26.49, dd: 11.93, up: 2, trades: 93 } } },
+  '1h': { range: [-6.36, 21.4], up: 2, from: '2026-06-09', to: '2026-10-12', block: '6 weeks', better: 2, adopt: true, hold: 14.76, standard: { ret: -0.19, dd: 15.76, trades: 254, win: 26.8, fees: 3.52 }, own: { ret: 8.21, dd: 12.09, trades: 235, win: 30.6, fees: 3.49 },
+    byRisk: { 0.5: { ret: 6.45, lo: -4.97, hi: 17.12, dd: 8, up: 2, trades: 80 }, 1: { ret: 6.37, lo: -7.99, hi: 19.22, dd: 12.78, up: 2, trades: 79 }, 1.5: { ret: 8.21, lo: -6.36, hi: 21.4, dd: 12.09, up: 2, trades: 78 }, 2: { ret: 8.47, lo: -6.36, hi: 21.38, dd: 11.81, up: 2, trades: 78 }, 3: { ret: 8.33, lo: -6.36, hi: 21.38, dd: 12.17, up: 2, trades: 77 }, 5: { ret: 8.33, lo: -6.36, hi: 21.38, dd: 12.17, up: 2, trades: 77 } } },
+  '4h': { range: [-15.08, 20.73], up: 1, from: '2025-08-01', to: '2026-10-12', block: '5 months', better: 0, adopt: false, hold: -10.72, standard: { ret: -0.65, dd: 22.72, trades: 215, win: 24.7, fees: 2.55 }, own: { ret: -14.56, dd: 25.65, trades: 205, win: 27.8, fees: 2.9 },
+    byRisk: { 0.5: { ret: 2.45, lo: -4.67, hi: 14.51, dd: 9.65, up: 1, trades: 72 }, 1: { ret: 1.25, lo: -11.18, hi: 19.6, dd: 17.57, up: 1, trades: 72 }, 1.5: { ret: -0.65, lo: -15.08, hi: 20.73, dd: 22.72, up: 1, trades: 72 }, 2: { ret: -4.9, lo: -17.93, hi: 14.62, dd: 26.93, up: 1, trades: 72 }, 3: { ret: -8.74, lo: -19.57, hi: 12.29, dd: 31.44, up: 1, trades: 72 }, 5: { ret: -11.29, lo: -27.39, hi: 11.01, dd: 33.75, up: 1, trades: 69 } } },
+  '1d': { range: [3.34, 24.42], up: 3, from: '2022-04-07', to: '2026-10-12', block: '18 months', better: 2, adopt: true, hold: 9.82, standard: { ret: 12.72, dd: 16.95, trades: 134, win: 27.6, fees: 0.97 }, own: { ret: 16.64, dd: 14.22, trades: 176, win: 34.7, fees: 2.55 },
+    byRisk: { 0.5: { ret: 8.82, lo: 1.02, hi: 13.68, dd: 5.19, up: 3, trades: 59 }, 1: { ret: 16.1, lo: 2.19, hi: 23.65, dd: 10.01, up: 3, trades: 59 }, 1.5: { ret: 16.64, lo: 3.34, hi: 24.42, dd: 14.22, up: 3, trades: 59 }, 2: { ret: 17.8, lo: 4.75, hi: 35.83, dd: 17.76, up: 3, trades: 59 }, 3: { ret: 9.35, lo: 3.3, hi: 20.5, dd: 22.04, up: 3, trades: 59 }, 5: { ret: 10.12, lo: -0.97, hi: 26.18, dd: 23.47, up: 2, trades: 56 } } },
 };
 
 /**
@@ -98,8 +108,106 @@ export function rulesInWords(c) {
 }
 
 export function rulesForChart(cfg, interval, lessons = []) {
+  // Your own rules are traded as you set them: neither the chart's tested
+  // rules nor the self-review's trend lesson overrides what you chose.
+  if (cfg.strategy === 'custom') return { ...cfg, ...pickRules({ ...CUSTOM_DEFAULT, ...(cfg.custom || {}) }), interval };
   const trend = [...(lessons || [])].reverse().find((h) => h.lens === 'trend');
   return { ...cfg, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), interval };
+}
+
+/**
+ * What the settings can be expected to make, from the walk-forward test of
+ * the rules this chart trades (CHART_TESTED): the average per test period and
+ * the worst and best period. The test was run at six risk levels (byRisk);
+ * between two of them the figures are read off a straight line. More risk did
+ * not mean more return: above 2% a trade the results stayed about flat on 15m and
+ * 1h (the 25%-a-coin cap binds first) and got worse on 4h and 1d, with deeper
+ * drops. Measured with the standard caps (5 open, 25% a coin) on 24 coins;
+ * `capsDiffer` flags other caps.
+ * Null for your own rules or an untested chart: nothing measured to expect.
+ */
+export function expectedYield(cfg) {
+  const x = CHART_TESTED[cfg.interval];
+  if (!x?.standard || cfg.strategy === 'custom') return null;
+  const t = x.adopt ? x.own : x.standard;
+  const risk = Math.min(5, Math.max(0.5, Number(cfg.riskPct) || DEFAULT_CONFIG.riskPct));
+  const levels = Object.keys(x.byRisk || {}).map(Number).sort((a, b) => a - b);
+  let at = { ret: t.ret, lo: x.range[0], hi: x.range[1], dd: t.dd, up: x.up, trades: Math.round(t.trades / CHART_TESTED.blocks) };
+  if (levels.length) {
+    const hiL = levels.find((l) => l >= risk) ?? levels[levels.length - 1];
+    const loL = [...levels].reverse().find((l) => l <= risk) ?? levels[0];
+    const a = x.byRisk[loL], b = x.byRisk[hiL], w = hiL === loL ? 0 : (risk - loL) / (hiL - loL);
+    const mix = (k) => +(a[k] + (b[k] - a[k]) * w).toFixed(2);
+    // between two levels, count only the blocks with a gain at both
+    at = { ret: mix('ret'), lo: mix('lo'), hi: mix('hi'), dd: mix('dd'), up: Math.min(a.up, b.up), trades: Math.round(mix('trades')) };
+  }
+  return {
+    chart: cfg.interval, block: x.block, periods: CHART_TESTED.blocks, hold: x.hold, risk, measured: levels.length > 0,
+    levels: levels.map((l) => ({ risk: l, ...x.byRisk[l] })), coins: CHART_TESTED.coins,
+    ...at, capsDiffer: (cfg.maxPositionPct ?? 25) !== 25 || (cfg.maxPositions ?? 5) !== 5,
+  };
+}
+
+/** Rules you can set yourself, and what they start at. */
+export const CUSTOM_DEFAULT = { entryMode: 'trend', momentumConfirm: false, trendFilter: true, marketFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: 2 };
+const pickRules = (r) => Object.fromEntries(['entryMode', 'momentumConfirm', 'trendFilter', 'marketFilter', 'atrStop', 'rMultiple', 'trailAtr', 'signalExitBars'].filter((k) => k in r).map((k) => [k, r[k]]));
+
+/**
+ * Settings replayed on recent candles with the live account's own engine and
+ * fees, every coin together. A look back, not a promise: rules picked on these
+ * same candles (the tested ones were picked on all the history) look better
+ * here than they will live.
+ */
+export function backtestSettings(cfg, candlesBySymbol) {
+  const series = Object.entries(candlesBySymbol).filter(([, c]) => Array.isArray(c) && c.length > 220);
+  const state = newState(cfg);
+  replayAll(state, cfg, Object.fromEntries(series));
+  const last = Object.fromEntries(series.map(([sym, c]) => [sym, c[c.length - 1].c]));
+  const st = stats(state, last);
+  const exitFees = Object.values(state.open).reduce((a, p) => a + (last[p.symbol] ?? p.entry) * p.qty * (cfg.feePct / 100), 0);
+  const holds = series.map(([, c]) => c[c.length - 1].c / c[210].c - 1);
+  return {
+    coins: series.length,
+    from: series.length ? Math.min(...series.map(([, c]) => c[210].t)) : null,
+    to: series.length ? Math.max(...series.map(([, c]) => c[c.length - 1].t)) : null,
+    ret: round(((st.equity - exitFees) / cfg.startingBalance - 1) * 100, 2),
+    hold: holds.length ? round((holds.reduce((a, b) => a + b, 0) / holds.length) * 100, 2) : null,
+    dd: st.maxDrawdownPct, trades: st.trades, winRate: st.winRate, fees: st.feesPaid, open: st.openCount,
+  };
+}
+
+/** Charts the trader can run on; only some were tested (CHART_TESTED). */
+export const TRADER_CHARTS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'];
+export const MAX_COINS = 30;
+
+/**
+ * The tested chart that did best, judged in this order: the most test
+ * periods with a gain, then the most made above holding the same coins,
+ * then the smaller worst drop.
+ */
+export function bestTestedChart() {
+  const rows = Object.entries(CHART_TESTED).filter(([, x]) => x && typeof x === 'object' && x.standard).map(([iv, x]) => {
+    const r = x.adopt ? x.own : x.standard;
+    return { iv, up: x.up ?? 0, edge: r.ret - x.hold, dd: r.dd, ret: r.ret, hold: x.hold, block: x.block };
+  });
+  rows.sort((a, b) => b.up - a.up || b.edge - a.edge || a.dd - b.dd);
+  return rows[0];
+}
+
+/**
+ * Plain warnings about a set of trader settings, before they are used:
+ * what was never tested, what risks a lot, what cannot work as set.
+ */
+export function settingsWarnings(cfg) {
+  const out = [];
+  const tested = CHART_TESTED[cfg.interval];
+  if (!tested) out.push(`The ${cfg.interval} chart was never tested with these rules, so there is no measured result to expect on it. ${Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard).join(', ')} were.`);
+  if (cfg.strategy === 'custom') out.push('Your own rules have no published test. Use "Test these settings" to see how they did on recent candles before you rely on them.');
+  if (cfg.riskPct > 2) out.push(`Risking ${cfg.riskPct}% a trade means ten losing trades in a row, which happens, cost about ${Math.round((1 - (1 - cfg.riskPct / 100) ** 10) * 100)}% of the account.`);
+  if (cfg.maxPositions * (cfg.maxPositionPct ?? 25) < 50) out.push(`With at most ${cfg.maxPositions} open and ${cfg.maxPositionPct ?? 25}% in one coin, no more than ${cfg.maxPositions * (cfg.maxPositionPct ?? 25)}% of the account is ever invested.`);
+  if ((cfg.universe || []).length < 3) out.push('With fewer than three coins the trader will often have nothing to do.');
+  if ((cfg.feePct ?? 0.1) > 0.25) out.push(`A ${cfg.feePct}% fee each way is high: on short charts fees can take most of the gains.`);
+  return out;
 }
 
 /**
