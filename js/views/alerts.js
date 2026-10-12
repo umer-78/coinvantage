@@ -27,7 +27,7 @@ export async function render(el, [preset]) {
           <label class="fld">Coin<select class="inp" name="sym">${coins.map((c) => `<option value="${esc(c.symbol)}" ${c.symbol === (preset || 'BTC').toUpperCase() ? 'selected' : ''}>${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select></label>
           <div class="row">
             <label class="fld">When price is<select class="inp" name="dir"><option value="above">Above</option><option value="below">Below</option></select></label>
-            <label class="fld" style="flex:1">Price (<span id="curCode">${esc(fx.code)}</span>)<input class="inp" name="price" type="number" step="any" min="0" required></label>
+            <label class="fld" style="flex:1"><span>Price (<span id="curCode">${esc(fx.code)}</span>)</span><input class="inp" name="price" type="number" step="any" min="0" required></label>
           </div>
           <p class="fine" id="cur"></p>
           <button class="btn primary">${icon('alerts', 16)} Create alert</button>
@@ -82,7 +82,13 @@ export async function render(el, [preset]) {
       return;
     }
 
-    const rows = await serverAlerts().catch(() => []);
+    const rows = await serverAlerts().catch(() => null);
+    // A failed load used to read "No signal alerts yet" while alerts existed.
+    if (!rows) {
+      box.innerHTML = `<p class="fine">Could not load your signal alerts — the server did not answer.</p><button class="btn sm" id="sigRetry">Try again</button>`;
+      $('#sigRetry', box).addEventListener('click', drawSignals);
+      return;
+    }
     const sigs = rows.filter((r) => r.kind === 'signal');
     box.innerHTML = `
       <form id="sf" class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
@@ -119,7 +125,7 @@ export async function render(el, [preset]) {
       }
     });
     $$('[data-sigdel]', box).forEach((b) => b.addEventListener('click', async () => {
-      await deleteServerAlert(b.dataset.sigdel).catch(() => {});
+      try { await deleteServerAlert(b.dataset.sigdel); } catch (err) { toast(err.message, 'down'); }
       drawSignals();
     }));
   }

@@ -619,3 +619,20 @@ body { background: transparent; }
   .chat-fab span { display: none; }
   .chat-panel { left: 8px; right: 8px; width: auto; bottom: calc(132px + env(safe-area-inset-bottom)); max-height: calc(100vh - 210px); }
 }
+
+/* Keyboard users' first stop: hidden until it has focus. */
+.skip-link {
+  position: fixed; left: 12px; top: -60px; z-index: 1000;
+  padding: 10px 14px; border-radius: 10px;
+  background: var(--accent); color: var(--accent-ink); font-weight: 700; text-decoration: none;
+  transition: top .15s ease;
+}
+.skip-link:focus { top: 12px; outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+
+@media (max-width: 600px) {
+  /* Wrapped onto many rows, the suggested questions took more height than the
+     conversation on a phone and cut the first answer off mid-line. One row
+     that scrolls sideways leaves the conversation the room. */
+  .suggest { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; }
+  .suggest button { flex: 0 0 auto; max-width: 78%; }
+}

@@ -2,11 +2,17 @@ import { markets, findCoin, getCandles, walletBalance, CHAINS, isStable } from '
 import { generateSignal, adviseHolding } from '../lib/signals.js';
 import { donut } from '../charts/small.js';
 import { $, $$, coinLogo, icon, toast, skeleton, modal } from '../ui.js';
-import { esc, usd, price, pct, amount, changeHtml, compact, money} from '../format.js';
+import { esc, usd, price, pct, amount, changeHtml, compact, money, tone } from '../format.js';
 import { fx } from '../api/fx.js';
 import { load, save } from '../store.js';
 import { connectWallet, injectedWallet, walletLabel, onWalletChange } from '../api/connect.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
+
+// Zero is neither a gain nor a loss: an empty portfolio used to read "+$0.00" in green.
+const signedUsd = (v) => {
+  const c = Math.round(v * 100) / 100;
+  return `<span class="v ${tone(c)}">${c > 0 ? '+' : c < 0 ? '−' : ''}${usd(Math.abs(c))}</span>`;
+};
 
 export const title = 'Wallet';
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -24,7 +30,7 @@ export async function render(el) {
         <form id="addForm" class="row" hidden style="margin-bottom:12px;align-items:flex-end">
           <label class="fld">Coin<input class="inp" name="sym" list="wCoins" required placeholder="BTC" style="width:110px"></label>
           <label class="fld">Amount<input class="inp" name="amt" type="number" step="any" min="0" required placeholder="0.5" style="width:120px"></label>
-          <label class="fld">Avg buy price (<span id="buyCur">${esc(fx.code)}</span>)<input class="inp" name="buy" type="number" step="any" min="0" placeholder="optional" style="width:150px"></label>
+          <label class="fld"><span>Avg buy price (<span id="buyCur">${esc(fx.code)}</span>)</span><input class="inp" name="buy" type="number" step="any" min="0" placeholder="optional" style="width:150px"></label>
           <button class="btn primary">Save</button>
         </form>
         <div id="holdings"></div>
@@ -66,8 +72,8 @@ export async function render(el) {
     const day = rows.reduce((s, r) => s + (r.ch24 !== null ? r.value - r.value / (1 + r.ch24 / 100) : 0), 0);
     $('#sum', el).innerHTML = `
       <div class="card stat"><span class="k">Portfolio value</span><span class="v">${usd(total)}</span></div>
-      <div class="card stat"><span class="k">Total profit / loss</span><span class="v ${pnl >= 0 ? 'up' : 'down'}">${pnl >= 0 ? '+' : '−'}${usd(Math.abs(pnl))}</span><span class="s">${cost ? pct((pnl / cost) * 100) : ''}</span></div>
-      <div class="card stat"><span class="k">24h change</span><span class="v ${day >= 0 ? 'up' : 'down'}">${day >= 0 ? '+' : '−'}${usd(Math.abs(day))}</span></div>
+      <div class="card stat"><span class="k">Total profit / loss</span>${signedUsd(pnl)}<span class="s">${cost ? pct((pnl / cost) * 100) : ''}</span></div>
+      <div class="card stat"><span class="k">24h change</span>${signedUsd(day)}</div>
       <div class="card stat"><span class="k">Watched wallets</span><span class="v">${usd(walletValue)}</span><span class="s muted">${wallets.length} address${wallets.length === 1 ? '' : 'es'}</span></div>`;
     $('#holdings', el).innerHTML = rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Amount</th><th>Price</th><th>Value</th><th>P&amp;L</th><th class="hide-m">24h</th><th class="l">AI hint (4h)</th><th></th></tr></thead><tbody>
       ${rows.sort((a, b) => b.value - a.value).map((r) => { const a = advice.get(r.symbol); return `<tr data-sym="${esc(r.symbol)}">

@@ -77,7 +77,12 @@ export async function render(el) {
   // Presenting the page size as "N logged" made the two disagree as soon as the
   // table outgrew the limit, so the cap is stated when it is reached.
   const ROW_CAP = 1000;
-  const rows = await getTrackRecord({ limit: ROW_CAP }).catch(() => []);
+  const rows = await getTrackRecord({ limit: ROW_CAP }).catch(() => null);
+  // A failed load used to look like an empty record ("No signals logged yet").
+  if (!rows) {
+    $('#body', el).innerHTML = '<div class="card empty"><h3>Could not load the track record</h3><p>The server that logs and scores the signals did not answer. Reload the page to try again.</p></div>';
+    return;
+  }
   const rowsCapped = rows.length >= ROW_CAP;
   let interval = 'all';
 

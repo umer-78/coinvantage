@@ -1047,7 +1047,7 @@ export async function render(el, [symParam]) {
           <div class="stat"><span class="k">Strategy return</span><span class="v ${bt.totalReturnPct >= 0 ? 'up' : 'down'}">${pct(bt.totalReturnPct)}</span></div>
           <div class="stat"><span class="k">Buy &amp; hold</span><span class="v ${bt.buyHoldPct >= 0 ? 'up' : 'down'}">${pct(bt.buyHoldPct)}</span></div>
           <div class="stat"><span class="k">Win rate</span><span class="v">${bt.winRate ?? '—'}%</span><span class="s muted">${bt.tradeCount} trades</span></div>
-          <div class="stat"><span class="k">Max drawdown</span><span class="v down">${pct(-bt.maxDrawdownPct)}</span><span class="s muted">profit factor ${bt.profitFactor ?? '—'}</span></div>
+          <div class="stat"><span class="k">Max drawdown</span><span class="v ${bt.maxDrawdownPct > 0 ? 'down' : 'flat'}">${pct(-bt.maxDrawdownPct)}</span><span class="s muted">profit factor ${bt.profitFactor ?? '—'}</span></div>
         </div>
         <div id="btChart" class="mt"></div>
         <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Entry</th><th>Entry price</th><th>Exit price</th><th>Result</th><th>Exit reason</th></tr></thead><tbody>

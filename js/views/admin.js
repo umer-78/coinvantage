@@ -239,7 +239,8 @@ export async function render(el) {
 
     // ------------------------------------------------------------ content
     async content() {
-      const posts = await getPosts(60);
+      const posts = await getPosts(60).catch(() => null);
+      if (!posts) { panel.innerHTML = '<div class="card"><p class="down">Could not load the posts — the server did not answer. Open this tab again to retry.</p></div>'; return; }
       panel.innerHTML = `
         <div class="card">
           <div class="card-h"><h3>Posts &amp; trade ideas</h3><button class="btn sm" id="new">${icon('plus', 14)} New post</button></div>

@@ -123,6 +123,10 @@ async function route(opts) {
   trackPageView(location.hash || '#/');
 }
 
+// The skip link's "#view" would be read by the hash router as a page name and
+// open Markets; it moves focus to the page content instead.
+document.querySelector('.skip-link')?.addEventListener('click', (e) => { e.preventDefault(); $('#view').focus(); });
+
 // ---------------------------------------------------------------- theme
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -139,6 +143,11 @@ $('#themeBtn').addEventListener('click', () => {
 // ---------------------------------------------------------------- search
 function initSearch() {
   const input = $('#searchInput'), box = $('#searchResults');
+  // The full hint was cut to "Search coi" on a phone.
+  const narrow = matchMedia('(max-width: 600px)');
+  const hint = () => { input.placeholder = narrow.matches ? 'Search' : 'Search coin (BTC, Ethereum…)'; };
+  hint();
+  narrow.addEventListener('change', hint);
   let items = [], active = -1;
   const draw = () => {
     box.hidden = !items.length;
@@ -427,7 +436,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261012-015948";
+export const BUILD = "20261012-021106";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

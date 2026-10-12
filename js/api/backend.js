@@ -155,10 +155,13 @@ export async function consumeRecoveryLink() {
 }
 
 // ---------------------------------------------------------------- alerts (server side)
+// The reads below throw when the server cannot be reached: they used to return
+// an empty list, so a failed load read as "nothing here yet".
 export async function serverAlerts() {
   const client = await sb();
   if (!client || !auth.user) return [];
-  const { data } = await client.from('alerts').select('*').order('created_at', { ascending: false }).limit(100);
+  const { data, error } = await client.from('alerts').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
   return data || [];
 }
 
@@ -170,14 +173,16 @@ export async function createServerAlert(alert) {
 
 export async function deleteServerAlert(id) {
   const client = await sb();
-  await client.from('alerts').delete().eq('id', id);
+  const { error } = await client.from('alerts').delete().eq('id', id);
+  if (error) throw new Error('Could not delete the alert. Try again.');
 }
 
 // ---------------------------------------------------------------- content
 export async function getPosts(limit = 30) {
   const client = await sb();
   if (!client) return [];
-  const { data } = await client.rpc('get_posts', { max_rows: limit });
+  const { data, error } = await client.rpc('get_posts', { max_rows: limit });
+  if (error) throw new Error(error.message);
   return data || [];
 }
 
@@ -191,17 +196,19 @@ export async function savePost(post) {
 
 export async function deletePost(id) {
   const client = await sb();
-  await client.from('posts').delete().eq('id', id);
+  const { error } = await client.from('posts').delete().eq('id', id);
+  if (error) throw new Error(error.message);
 }
 
 export async function getNews({ coin = null, limit = 40 } = {}) {
   const client = await sb();
-  if (!client) return [];
+  if (!client) throw new Error('The news service is not reachable.');
   // Ask for extra rows: the feed can hold the same story twice (one outlet
   // posting it under two links), and repeats are dropped before returning.
   let q = client.from('news').select('*').order('published_at', { ascending: false }).limit(limit * 2);
   if (coin) q = q.contains('coins', [coin]);
-  const { data } = await q;
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
   const seen = new Set();
   return (data || []).filter((r) => {
     const k = String(r.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -212,10 +219,11 @@ export async function getNews({ coin = null, limit = 40 } = {}) {
 
 export async function getTrackRecord({ symbol = null, limit = 300 } = {}) {
   const client = await sb();
-  if (!client) return [];
+  if (!client) throw new Error('The track record is not reachable.');
   let q = client.from('signal_log').select('*').order('candle_time', { ascending: false }).limit(limit);
   if (symbol) q = q.eq('symbol', symbol);
-  const { data } = await q;
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
   return data || [];
 }
 

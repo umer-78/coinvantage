@@ -432,7 +432,7 @@ export async function render(el) {
       ${s3 ? `<div class="grid g4 mt">
         <div class="stat"><span class="k">Realised result</span><span class="v ${s3.returnPct >= 0 ? 'up' : 'down'}">${pct(s3.returnPct)}</span><span class="s fine">${money(s3.equity - s3.startingBalance)} on a ${money(s3.startingBalance)} basis</span></div>
         <div class="stat"><span class="k">Win rate</span><span class="v">${s3.winRate === null ? '—' : `${s3.winRate}%`}</span><span class="s fine">${s3.wins}W / ${s3.losses}L${s3.profitFactor ? ` · PF ${s3.profitFactor}` : ''}</span></div>
-        <div class="stat"><span class="k">Max drawdown</span><span class="v down">${pct(-s3.maxDrawdownPct, 1)}</span></div>
+        <div class="stat"><span class="k">Max drawdown</span><span class="v ${s3.maxDrawdownPct > 0 ? 'down' : 'flat'}">${pct(-s3.maxDrawdownPct, 1)}</span></div>
         <div class="stat"><span class="k">Trades</span><span class="v">${s3.trades}</span><span class="s fine">${s3.openCount} open</span></div>
       </div>` : ''}
 
@@ -682,7 +682,7 @@ export async function render(el) {
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}${s.since < s.liveSince - 60e3 ? ` · replayed until ${dateTime(s.liveSince)}` : ''}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Win rate</span><span class="v">${s.winRate === null ? '—' : `${s.winRate}%`}</span><span class="s fine">${s.wins}W / ${s.losses}L${s.profitFactor ? ` · PF ${s.profitFactor}` : ''}</span></div></div>
-        <div class="card"><div class="stat"><span class="k">Max drawdown</span><span class="v down">${pct(-s.maxDrawdownPct, 1)}</span><span class="s fine">${s.openCount} open · ${s.trades} closed</span></div></div>
+        <div class="card"><div class="stat"><span class="k">Max drawdown</span><span class="v ${s.maxDrawdownPct > 0 ? 'down' : 'flat'}">${pct(-s.maxDrawdownPct, 1)}</span><span class="s fine">${s.openCount} open · ${s.trades} closed</span></div></div>
       </div>
 
       <div class="card mt">
