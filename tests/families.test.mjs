@@ -58,3 +58,15 @@ test('the cross-check blends with the learned weights and damps on its own recor
   assert.equal(bad.dampened, Math.abs(bad.rawProbUp - 0.5) > 1e-9, 'blend right 25%: damped');
   assert.ok(bad.blendAccuracy < 40);
 });
+
+test('risk warnings: a losing backtest that trailed a losing hold is flagged too', async () => {
+  const { riskWarnings } = await import('../js/lib/selfimprove.js');
+  const bt = (ret, hold) => riskWarnings({ backtest: { ok: true, totalReturnPct: ret, buyHoldPct: hold, tradeCount: 12 } }).find((w) => w.key === 'backtest')?.text || null;
+  assert.match(bt(-20, 5), /gained 5\.0%/);
+  assert.match(bt(-20, -5), /lost only 5\.0%/);
+  assert.equal(bt(-5, -20), null, 'lost less than holding');
+  assert.equal(bt(3, 10), null, 'made money');
+  const geo = (x) => riskWarnings({ signal: { plan: { expectancyR: x } }, interval: '1h' })[0].text;
+  assert.match(geo(-0.02), /about break-even/);
+  assert.match(geo(-0.4), /— negative before fees/);
+});

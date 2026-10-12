@@ -420,7 +420,7 @@ export function riskWarnings({ signal = null, forecast = null, backtest = null, 
     out.push({
       key: 'geometry',
       level: 'warn',
-      text: `Stop/target geometry on ${interval || 'this'} timeframe tested at ${signal.plan.expectancyR}R per trade — slightly negative before fees. Read the plan as structure, not as an edge.`,
+      text: `Stop/target geometry on ${interval || 'this'} timeframe tested at ${signal.plan.expectancyR}R per trade — ${signal.plan.expectancyR > -0.05 ? 'about break-even' : 'negative'} before fees. Read the plan as structure, not as an edge.`,
     });
   }
   if (noEdgeTimeframe) {
@@ -430,11 +430,13 @@ export function riskWarnings({ signal = null, forecast = null, backtest = null, 
       text: noEdgeText || `The forecast engine has no measured edge on the ${interval} chart (at or below its baseline). A probability shown here is background, not a reason to act.`,
     });
   }
-  if (backtest?.ok && backtest.totalReturnPct < 0 && backtest.buyHoldPct > 0 && backtest.tradeCount >= 10) {
+  // A losing backtest that also did worse than holding. This used to need
+  // holding to have GAINED, so losing 20% while holding lost 5% raised nothing.
+  if (backtest?.ok && backtest.totalReturnPct < 0 && backtest.totalReturnPct < backtest.buyHoldPct && backtest.tradeCount >= 10) {
     out.push({
       key: 'backtest',
       level: 'down',
-      text: `Backtest over ${backtest.tradeCount} trades lost ${Math.abs(backtest.totalReturnPct).toFixed(1)}% while simply holding gained ${backtest.buyHoldPct.toFixed(1)}%.`,
+      text: `Backtest over ${backtest.tradeCount} trades lost ${Math.abs(backtest.totalReturnPct).toFixed(1)}% while simply holding ${backtest.buyHoldPct >= 0 ? `gained ${backtest.buyHoldPct.toFixed(1)}%` : `lost only ${Math.abs(backtest.buyHoldPct).toFixed(1)}%`}.`,
     });
   }
   if (forecast?.ok && forecast.confidence === 'Low') {
