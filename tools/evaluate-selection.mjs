@@ -23,7 +23,7 @@ import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 
 const raw = JSON.parse(readFileSync(process.argv[2] || 'klines.json', 'utf8'));
-const only = process.argv[3]; // 'rotation' | 'percoin' | undefined (both)
+const only = process.argv[3]; // 'rotation' | 'percoin' | 'table' | undefined (all)
 const candlesOf = (k) => raw[k].map((r) => ({ t: r[0], o: r[1], h: r[2], l: r[3], c: r[4], v: r[5] }));
 const ivs = (want) => want.filter((iv) => Object.keys(raw).some((k) => k.endsWith(`:${iv}`)));
 const PER_DAY = { '1h': 24, '4h': 6, '1d': 1 };
@@ -32,7 +32,7 @@ const objective = (m, min = 10) => (m.trades < min ? -Infinity : m.ret - 0.5 * m
 const out = { measuredOn: new Date().toISOString().slice(0, 10) };
 
 // ---------------------------------------------------------------- rotation
-if (only !== 'percoin') {
+if (!only || only === 'rotation') {
   out.rotation = {};
   for (const iv of ivs(['4h', '1d'])) {
     const by = {};
@@ -67,7 +67,7 @@ if (only !== 'percoin') {
 }
 
 // ---------------------------------------------------------------- per-coin rules
-if (only !== 'rotation') {
+if (!only || only === 'percoin') {
   out.perCoin = {};
   const WARM = 260;
   const grid = [];
@@ -132,7 +132,7 @@ if (only !== 'rotation') {
 // first draft of this bar, two folds and any average lead, passed on random-
 // walk candles where no coin can have rules of its own, so it was tightened
 // before the real candles were run.)
-if (only !== 'rotation') {
+if (!only || only === 'percoin') {
   out.perCoinFolds = {};
   const WARM = 260;
   const grid = [];
@@ -183,5 +183,77 @@ if (only !== 'rotation') {
     console.log(`  own better in ${better} of 3 folds and on ${wins} of ${pairs} coin-folds; average own ${mean('own')}% vs shared ${mean('shared')}% → ${adopt ? 'ADOPT' : 'REJECT'}`);
     out.perCoinFolds[iv] = { folds, better, wins, pairs, own: mean('own'), shared: mean('shared'), adopt };
   }
+}
+// ---------------------------------------------------------------- the app's account, daily chart
+// Per-coin rules passed the walk-forward bar on the daily chart only. What the
+// app would publish is the ACCOUNT (all coins together, shared cash, the app's
+// own sizing): its own rules alone, against its own rules plus each coin's
+// rules where a coin's older half preferred different ones. Decided before the
+// run: per-coin rules are switched on for daily accounts only if the account
+// with them makes more on the newer half than without, with a worst drawdown
+// no more than 5 points deeper. Then the table the app ships is chosen the
+// same way on each coin's FULL history.
+if (!only || only === 'table') {
+  const WARM = 260, iv = '1d';
+  const grid = [];
+  for (const entryMode of ['trend', 'breakout', 'pullback'])
+    for (const momentumConfirm of entryMode === 'pullback' ? [false] : [false, true])
+      for (const trendFilter of entryMode === 'pullback' ? [true] : [false, true])
+        for (const atrStop of [1.5, 2, 3])
+          for (const exit of ['r2', 'r3', 't3', 't4'])
+            for (const signalExitBars of [2, null])
+              grid.push({ entryMode, momentumConfirm, trendFilter, atrStop, rMultiple: exit[0] === 'r' ? +exit[1] : 3, trailAtr: exit[0] === 't' ? +exit[1] : null, signalExitBars });
+  const mk = (sym, c) => { const ind = computeAll(c); return { symbol: sym, candles: c, ind, atr: atr(c, 14), scores: c.map((_, i) => (i >= 210 ? scoreAt(c, ind, i).score : 0)) }; };
+  const coins = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length > 2 * WARM + 200).map((k) => k.split(':')[0]);
+  const prep = coins.map((sym) => { const all = candlesOf(`${sym}:${iv}`); const half = Math.floor(all.length / 2); return { sym, older: mk(sym, all.slice(0, half)), newer: mk(sym, all.slice(half - WARM)), full: mk(sym, all) }; });
+  const solo = (rules, x) => {
+    const cfg = { ...DEFAULT_CONFIG, ...rules, maxPositions: 1, excluded: [], universe: [x.symbol], interval: iv };
+    const st = newState(cfg);
+    st.cursor[x.symbol] = x.candles[209].t;
+    replaySeries(st, cfg, [x], { from: 210 });
+    const last = x.candles.at(-1).c;
+    const eqEnd = equity(st, { [x.symbol]: last }) - Object.values(st.open).reduce((a, p) => a + (last * p.qty * cfg.feePct) / 100, 0);
+    let eq = cfg.startingBalance, peak = eq, dd = 0;
+    for (const t of st.closed) { eq += t.pnl; peak = Math.max(peak, eq); dd = Math.max(dd, (peak - eq) / peak); }
+    dd = Math.max(dd, (peak - eqEnd) / peak);
+    return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length };
+  };
+  // a coin gets its own rules only where they beat the app's on the data given
+  const choose = (key) => {
+    const table = {};
+    for (const p of prep) {
+      const base = objective(solo({}, p[key]), 5);
+      let best = null, bv = base;
+      for (const g of grid) { const v = objective(solo(g, p[key]), 5); if (v > bv) { bv = v; best = g; } }
+      if (best) table[p.sym] = best;
+    }
+    return table;
+  };
+  const account = (perCoin) => {
+    const cfg = { ...DEFAULT_CONFIG, universe: coins, interval: iv, perCoin, excluded: [] };
+    const st = newState(cfg);
+    const series = prep.map((p) => p.newer);
+    for (const x of series) st.cursor[x.symbol] = x.candles[WARM - 1].t;
+    replaySeries(st, cfg, series, { from: WARM });
+    const last = Object.fromEntries(series.map((x) => [x.symbol, x.candles.at(-1).c]));
+    const eqEnd = equity(st, last) - Object.values(st.open).reduce((a, p) => a + (last[p.symbol] * p.qty * cfg.feePct) / 100, 0);
+    let eq = cfg.startingBalance, peak = eq, dd = 0;
+    for (const t of [...st.closed].sort((a, b) => a.exitAt - b.exitAt)) { eq += t.pnl; peak = Math.max(peak, eq); dd = Math.max(dd, (peak - eq) / peak); }
+    dd = Math.max(dd, (peak - eqEnd) / peak);
+    const wins = st.closed.filter((t) => t.pnl > 0).length;
+    return { ret: +((eqEnd / cfg.startingBalance - 1) * 100).toFixed(2), dd: +(dd * 100).toFixed(2), trades: st.closed.length, winRate: st.closed.length ? +((wins / st.closed.length) * 100).toFixed(1) : 0 };
+  };
+  const olderTable = choose('older');
+  const without = account(null), withOwn = account(olderTable);
+  const hold = +(prep.reduce((a, p) => a + (p.newer.candles.at(-1).c / p.newer.candles[WARM].c - 1), 0) / prep.length * 100).toFixed(2);
+  const enable = withOwn.ret > without.ret && withOwn.dd <= without.dd + 5;
+  const from = iso(prep[0].newer.candles[WARM].t), to = iso(prep[0].newer.candles.at(-1).t);
+  console.log(`\n== ACCOUNT, DAILY CHART: ${coins.length} coins together, newer half ${from} → ${to}`);
+  console.log(`  app's rules:              ret ${without.ret}%  dd ${without.dd}%  trades ${without.trades}  won ${without.winRate}%`);
+  console.log(`  + each coin's own rules:  ret ${withOwn.ret}%  dd ${withOwn.dd}%  trades ${withOwn.trades}  won ${withOwn.winRate}%   (${Object.keys(olderTable).length} of ${coins.length} coins had their own)`);
+  console.log(`  holding every coin: ${hold}%   → ${enable ? 'SWITCH ON for daily accounts' : 'LEAVE OFF'}`);
+  const fullTable = choose('full');
+  console.log(`\nTABLE ${JSON.stringify(fullTable)}`);
+  out.account1d = { coins: coins.length, from, to, without, withOwn, hold, enable, own: Object.keys(olderTable).length, table: fullTable };
 }
 console.log(`\nJSON ${JSON.stringify(out)}`);

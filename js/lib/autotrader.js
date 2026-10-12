@@ -82,6 +82,7 @@ export const DEFAULT_CONFIG = {
   maxEntryRsi: null,     // skip entries while RSI is above this (already stretched)
   excluded: [],          // coins the review stopped trading after a run of losses
   entryMode: 'trend',     // 'trend' buys a high score; 'pullback' a dip in an uptrend; 'breakout' a new 20-candle high
+  perCoin: null,          // { SYMBOL: { ...RULE_KEYS } }: a coin's own rules over these (see PER_COIN_RULES)
   momentumConfirm: false, // also require price > 20 EMA > 50 EMA and a rising MACD
   marketFilter: false,    // no new buys while Bitcoin is below its 200 EMA
   interval: '1h',
@@ -162,6 +163,20 @@ export function replaySeries(state, cfg, series, { from = 210, result = {} } = {
   return result;
 }
 
+// The settings a coin can have its own value for. Sizing, risk and fees are
+// the account's and stay the same for every coin.
+export const RULE_KEYS = ['entryMode', 'momentumConfirm', 'trendFilter', 'atrStop', 'rMultiple', 'trailAtr', 'signalExitBars'];
+const merged = new WeakMap();
+/** The account's settings with this coin's own rules on top, if it has any. */
+export function rulesFor(cfg, symbol) {
+  const own = cfg.perCoin?.[symbol];
+  if (!own) return cfg;
+  let bySym = merged.get(cfg);
+  if (!bySym) merged.set(cfg, (bySym = new Map()));
+  if (!bySym.has(symbol)) bySym.set(symbol, { ...cfg, ...Object.fromEntries(RULE_KEYS.filter((k) => k in own).map((k) => [k, own[k]])) });
+  return bySym.get(symbol);
+}
+
 // One closed candle of one coin: skip it if already seen, else trade it.
 function advance(state, cfg, s, i, out) {
   const c = s.candles[i];
@@ -173,7 +188,7 @@ function advance(state, cfg, s, i, out) {
   if (!state.firstBarAt || c.t < state.firstBarAt) state.firstBarAt = c.t;
   const score = s.scores ? s.scores[i] : scoreAt(s.candles, s.ind, i).score;
   out.lastScore = score;
-  stepBar(state, cfg, s, i, score);
+  stepBar(state, rulesFor(cfg, s.symbol), s, i, score);
 }
 
 /**
