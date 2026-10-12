@@ -158,8 +158,26 @@ export async function render(el) {
         ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="fine">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td>${t.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
       <p class="fine mt">Rules in force on ${esc(iv)}: ${esc(rulesText(e))} ${w.adopt ? `They are this chart's own pick: in the test, picking rules for the chart beat the standard rules in ${w.better} of ${CHART_TESTED.blocks} periods (${sign(w.own.ret)} against ${sign(w.standard.ret)} a period, worst drop ${w.own.dd}% against ${w.standard.dd}%), so they are re-picked the same way on all the history.` : `The chart's own pick did not beat the standard rules clearly enough (better in ${w.better} of ${CHART_TESTED.blocks} periods), so it keeps them.`} Fees came to ${r.fees}% of the balance a period, and ${r.win}% of trades won.${iv === '15m' ? ' A 15m period is only ten days, so these numbers swing a lot: one run picked different rules after twenty minutes of new candles.' : ''}${ownRulesText()}${ownRulesOn() ? ` Tested on ${PER_COIN_RULES.coins} coins over ${esc(PER_COIN_RULES.tested.from)} → ${esc(PER_COIN_RULES.tested.to)}, with every rule chosen on the years before: ${sign(PER_COIN_RULES.tested.own.ret)} with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${sign(PER_COIN_RULES.tested.standard.ret)} and ${PER_COIN_RULES.tested.standard.dd}% for the daily rules alone, and ${sign(PER_COIN_RULES.tested.hold)} for holding the coins. You can switch them off in Settings.` : ''}</p>
+      ${ownRulesOn() ? coinRulesTable(e) : ''}
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
     </div>`;
+  }
+
+  // What each watched coin trades on the daily chart, so "its own rules" is
+  // something you can read rather than take on trust.
+  function coinRulesTable(base) {
+    const buys = (r) => `${r.entryMode === 'breakout' ? 'new 20-candle high' : r.entryMode === 'pullback' ? 'dip in an uptrend' : `score +${r.entryScore} or more`}${r.momentumConfirm ? ', momentum up' : ''}${r.trendFilter && r.entryMode !== 'pullback' ? ', in an uptrend' : ''}`;
+    const sells = (r) => `${r.trailAtr ? `stop trailing ${r.trailAtr} ATR` : `target ${r.rMultiple}R`}${r.signalExitBars ? `, or ${r.signalExitBars} reversal candles` : ''}`;
+    const rows = cfg.universe.map((sym) => {
+      const own = PER_COIN_RULES.rules[sym];
+      const r = own ? { ...base, ...own } : base;
+      return `<tr><td class="l"><b>${esc(sym)}</b>${own ? '' : ' <small class="fine">daily rules</small>'}</td><td class="l fine">${esc(buys(r))}</td><td>${r.atrStop} ATR</td><td class="l fine">${esc(sells(r))}</td></tr>`;
+    }).join('');
+    const n = cfg.universe.filter((sym) => PER_COIN_RULES.rules[sym]).length;
+    return `<details class="mt"><summary class="fine" style="cursor:pointer">Each coin's rules on this chart (${n} of ${cfg.universe.length} have their own)</summary>
+      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Buys on</th><th>Stop</th><th class="l">Sells at</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="fine">Chosen on each coin's own daily history; a coin without its own uses the daily rules. Switch them off in Settings.</p>
+    </details>`;
   }
 
   // Self-improvement status: rolling hit-rate windows over forecasts this

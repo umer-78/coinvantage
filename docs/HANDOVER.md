@@ -117,7 +117,9 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   and it did NOT beat the shipped rules on the newer halves, so nothing changed.
   Newer-half results of the shipped rules: 15m −6.3% (hold +1.8%), 1h +11.9%
   (+36.6%), 4h +4.0% (−12.4%), 1d +110.3% (+123.3%). On 15m only 3 of 432 rule
-  sets made money after fees. Source: `AUTOTRADER_TESTED`.
+  sets made money after fees. Source: `AUTOTRADER_TESTED` (kept as the record of that
+  single split; the Trading page now shows `CHART_TESTED`, see "Coin selection and
+  per-coin rules" below, where 1h and 1d got their own rules).
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
@@ -231,6 +233,11 @@ A short-side test has not been run.
   CSV import. Keep it that way.
 
 ## Measured numbers currently published (do not change without re-measuring)
+- **AI trader (Trading page, 2026-10-12):** `CHART_TESTED` (walk-forward block averages per
+  chart, 24 coins) and `PER_COIN_RULES.tested` (daily account, per-coin rules on) in
+  `js/lib/autotrader.js`. Re-measure with the Evaluate workflow, jobs `trader-folds` and
+  `selection`; `tests/autotrader.test.mjs` fails if the shipped chart rules stop matching
+  the published bar.
 - **AI learning center (#/learn, 2026-09-26):** `js/lib/learncenter.js` + `learnpass.js`. Grades 12 indicator
   readings, the forecast and a learned blend on real outcomes (non-overlapping calls, Wilson 95% ranges, a
   vote only with 30+ calls and a range clear of 50%). Walk-forward release test (`tools/evaluate-learning.mjs`):
