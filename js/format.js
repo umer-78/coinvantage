@@ -46,7 +46,11 @@ export function compact(v, prefix = '$') {
 
 export function pct(v, dp = 2, sign = true) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
-  return `${sign && v > 0 ? '+' : ''}${(+v).toFixed(dp)}%`;
+  // A true minus, as money() uses ("−$80.06 (−3.10%)", not "(-3.10%)"), and no
+  // sign on a value that rounds to zero ("-0.00%").
+  const t = Math.abs(+v).toFixed(dp);
+  if (+t === 0) return `${t}%`;
+  return `${v < 0 ? '−' : sign ? '+' : ''}${t}%`;
 }
 
 export function num(v, dp = 2) {

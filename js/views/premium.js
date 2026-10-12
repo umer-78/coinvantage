@@ -13,7 +13,7 @@ export const title = 'Premium';
 // not exist — the levels are the same ones every visitor sees. Selling either
 // would be charging for a claim the testing does not support.
 const FREE = [
-  'Live prices from Binance + 10 exchanges',
+  'Live prices from 10 exchanges, Binance included',
   'Candlestick charts with 12 indicators',
   'Chart readings with entry zone, stop-loss and targets',
   'AI forecast published next to the baseline it has to beat',

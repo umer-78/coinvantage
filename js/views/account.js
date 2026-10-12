@@ -14,7 +14,7 @@ export const title = 'Account';
 export async function render(el, [flag]) {
   await sb();
   if (!auth.user) {
-    el.innerHTML = `<div class="card empty"><h3>You're not signed in</h3><p>An account keeps your watchlist, portfolio and alerts in sync on every device, and lets alerts reach you by e-mail or Telegram while the site is closed.</p><button class="btn primary" id="si">Sign in or create an account</button></div>`;
+    el.innerHTML = `<div class="card empty"><h3>You're not signed in</h3><p>An account keeps your watchlist, portfolio, trades and alerts in sync on every device, and lets alerts reach you by e-mail or Telegram while the site is closed.</p><button class="btn primary" id="si">Sign in or create an account</button></div>`;
     $('#si', el).addEventListener('click', () => openAuth('up'));
     return;
   }

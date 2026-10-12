@@ -160,7 +160,10 @@ export function historyVerdict(analogs, season, validation, horizon = 30) {
   const direction = probUp >= 0.6 ? 'UP' : probUp <= 0.4 ? 'DOWN' : 'MIXED';
   const reliable = validation?.accuracy !== null && validation?.tests >= 15;
   const parts = [];
-  parts.push(`${s.upCount} of ${s.total} times when this chart looked like today, price was ${s.median >= 0 ? 'higher' : 'lower'} ${horizon} days later (median ${s.median >= 0 ? '+' : ''}${s.median.toFixed(1)}%).`);
+  // Count the cases that went the way the sentence says: it used to give the up
+  // count even when it said "lower".
+  const higher = s.median >= 0;
+  parts.push(`${higher ? s.upCount : s.total - s.upCount} of ${s.total} times when this chart looked like today, price was ${higher ? 'higher' : 'lower'} ${horizon} days later (median ${higher ? '+' : ''}${s.median.toFixed(1)}%).`);
   if (seasonBias !== null) parts.push(`Historically this month averaged ${seasonBias >= 0 ? '+' : ''}${seasonBias.toFixed(1)}% for this coin (${season.current.count} years, ${season.current.winRate.toFixed(0)}% positive).`);
   if (reliable) parts.push(`On this coin, the pattern method called the ${horizon}-day direction right ${(validation.accuracy * 100).toFixed(0)}% of the time across ${validation.tests} past tests.`);
   else parts.push('Too few past tests to judge how reliable this method is for this coin.');

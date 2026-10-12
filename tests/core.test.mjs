@@ -999,6 +999,12 @@ test('matching a coin against its own history never looks into the future', asyn
   assert.equal(v.tone, 'warn');
   assert.ok(v.lines.some((l) => /did not earn its keep/i.test(l)));
 
+  // the count named is the count that went that way
+  const fell = { ...m, ok: true, direction: 'down', upCount: 1, downCount: 7, matches: new Array(8).fill({}) };
+  assert.match(analogVerdict(fell, null, { symbol: 'BTC', interval: '4h' }).headline, /7 of those 8 went lower/);
+  assert.match(analogVerdict(fell, { ok: true, beatsBaseline: false, accuracyPct: 44, baselinePct: 53, tests: 60 }, { symbol: 'BTC', interval: '4h' }).headline, /7 of them went lower/);
+  assert.match(analogVerdict({ ...fell, direction: 'up', upCount: 6, downCount: 2 }, null, { symbol: 'BTC', interval: '4h' }).headline, /6 of those 8 went higher/);
+
   // too little history is an answer, not a guess
   assert.equal(historyMatch(c.slice(0, 40), { interval: '1d' }).ok, false);
   assert.equal(backtestAnalog(c.slice(0, 120), { interval: '1d' }).ok, false);

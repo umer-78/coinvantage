@@ -60,7 +60,7 @@ export async function render(el) {
     ].sort((a, b) => b.at - a.at).slice(0, 25);
     const closedOf = (key) => (load(key, null)?.closed || []);
     const accounts = [
-      { name: "AI's paper trades", r: reviewTrades(closedOf('traderState')) },
+      { name: "The AI's trades", r: reviewTrades(closedOf('traderState')) },
       { name: 'Your demo buys', r: reviewTrades(closedOf('myDemoState'), { includeManual: true }) },
       { name: 'Your real trades', r: reviewTrades(closedOf('realTradeState'), { includeManual: true }) },
     ];
@@ -114,7 +114,7 @@ export async function render(el) {
 
       <div class="card mt">
         <div class="card-h"><h3>${icon('chart', 16)} Buy trades, graded</h3><span class="fine">what happened after each buy</span></div>
-        <p class="fine" style="margin-top:0">Every closed buy is checked against what the chart did next. Buys are grouped by the chart at the moment of buying (with or against the trend, trending or ranging, RSI stretched or not), so a pattern that keeps losing shows up here. That covers the AI's paper trades, your own demo buys, and the real trades you recorded. Results are in R: 1R is the amount a trade risked.</p>
+        <p class="fine" style="margin-top:0">Every closed buy is checked against what the chart did next. Buys are grouped by the chart at the moment of buying (with or against the trend, trending or ranging, RSI stretched or not), so a pattern that keeps losing shows up here. That covers the AI's simulated trades, your own demo buys, and the real trades you recorded. Results are in R: 1R is the amount a trade risked.</p>
         <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Account</th><th>Closed buys</th><th>Won</th><th>Average</th><th class="l">What stands out</th></tr></thead><tbody>
           ${accounts.map((a) => `<tr><td class="l"><b>${esc(a.name)}</b></td><td>${a.r.overall.n}</td><td>${a.r.overall.winRate === null ? '—' : a.r.overall.winRate + '%'}</td><td class="${a.r.overall.avgR > 0 ? 'up' : a.r.overall.avgR < 0 ? 'down' : ''}">${a.r.overall.avgR === null ? '—' : (a.r.overall.avgR > 0 ? '+' : '') + a.r.overall.avgR + 'R'}</td><td class="l fine">${esc(a.r.findings[0] || '—')}</td></tr>`).join('')}
         </tbody></table></div>
@@ -123,7 +123,7 @@ export async function render(el) {
 
       <div class="card mt">
         <div class="card-h"><h3>${icon('bolt', 16)} Trading</h3><a class="btn sm" href="#/trader">Open the trader</a></div>
-        <p class="fine" style="margin-top:0">After every check the paper trader reads its own trade log. It switches on a filter when one market condition keeps losing, and switches it off again if results get worse. Its current rules were chosen on training data and scored on data they had never seen: on ${esc(cfg.interval)} they returned ${AUTOTRADER_TESTED[cfg.interval] ? `${AUTOTRADER_TESTED[cfg.interval].pickedReturn}% against ${AUTOTRADER_TESTED[cfg.interval].buyHold}% for buy-and-hold` : 'an untested result'}.</p>
+        <p class="fine" style="margin-top:0">After every check the AI trader reads its own trade log. It switches on a filter when one market condition keeps losing, and switches it off again if results get worse. Its current rules were chosen on training data and scored on data they had never seen: on ${esc(cfg.interval)} they returned ${AUTOTRADER_TESTED[cfg.interval] ? `${AUTOTRADER_TESTED[cfg.interval].pickedReturn}% against ${AUTOTRADER_TESTED[cfg.interval].buyHold}% for buy-and-hold` : 'an untested result'}.</p>
         <p class="fine"><b>Rules in force:</b> ${esc((activeLessons(cfg).join(' · ')) || 'the original strategy')}.</p>
       </div>
 

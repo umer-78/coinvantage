@@ -175,12 +175,18 @@ export function backtestAnalog(candles, { interval = '1d', topK = 8, minCorr = 0
  * Written here rather than in the view so the page, the assistant and any export
  * cannot drift into describing the same numbers differently.
  */
+// "+1.26%", "−7.67%": signed, with a true minus.
+const sp = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}%`;
+
 export function analogVerdict(match, score, { symbol = 'this coin', interval = '1d', horizonText = null } = {}) {
   if (!match?.ok) return { headline: match?.reason || 'No reading.', tone: 'flat', lines: [] };
   const span = horizonText || `${match.horizon} candles`;
   const lines = [];
 
   const dirWord = match.direction === 'up' ? 'higher' : match.direction === 'down' ? 'lower' : 'in no consistent direction';
+  // The count that went the way the word says. It used to be the up count every
+  // time, so a falling outcome read "1 of those 8 went lower" when 7 had.
+  const dirCount = match.direction === 'down' ? match.downCount : match.upCount;
   const failed = score && score.ok && !score.beatsBaseline;
   let headline;
   if (match.direction === 'mixed') {
@@ -188,13 +194,13 @@ export function analogVerdict(match, score, { symbol = 'this coin', interval = '
   } else if (failed) {
     // The count is still worth seeing; presenting it as a lean would be the
     // claim the backtest below just refused.
-    headline = `${symbol} has traced this shape ${match.matches.length} times before on the ${interval} chart — ${match.upCount} of them went ${dirWord} next. On this coin that count has not predicted the following move any better than chance, so read the picture below as history rather than as a lean.`;
+    headline = `${symbol} has traced this shape ${match.matches.length} times before on the ${interval} chart — ${dirCount} of them went ${dirWord} next. On this coin that count has not predicted the following move any better than chance, so read the picture below as history rather than as a lean.`;
   } else {
-    headline = `${symbol} has traced this shape ${match.matches.length} times before on the ${interval} chart, and ${match.upCount} of those ${match.matches.length} went ${dirWord} over the next ${span}.`;
+    headline = `${symbol} has traced this shape ${match.matches.length} times before on the ${interval} chart, and ${dirCount} of those ${match.matches.length} went ${dirWord} over the next ${span}.`;
   }
 
-  lines.push(`Typical outcome: ${match.medianPct >= 0 ? '+' : ''}${match.medianPct}% after ${span}, with the middle half of past cases landing between ${match.p25Pct >= 0 ? '+' : ''}${match.p25Pct}% and ${match.p75Pct >= 0 ? '+' : ''}${match.p75Pct}%. Best case was ${match.bestPct >= 0 ? '+' : ''}${match.bestPct}%, worst was ${match.worstPct}%.`);
-  lines.push(`Along the way those past cases typically rallied ${match.typicalRallyPct >= 0 ? '+' : ''}${match.typicalRallyPct}% at best and fell ${match.typicalDrawdownPct}% at worst before the horizon was up — the path matters as much as the endpoint if you are using a stop.`);
+  lines.push(`Typical outcome: ${sp(match.medianPct)} after ${span}, with the middle half of past cases landing between ${sp(match.p25Pct)} and ${sp(match.p75Pct)}. Best case was ${sp(match.bestPct)}, worst was ${sp(match.worstPct)}.`);
+  lines.push(`Along the way those past cases typically rallied ${sp(match.typicalRallyPct)} at best and fell ${sp(match.typicalDrawdownPct)} at worst before the horizon was up — the path matters as much as the endpoint if you are using a stop.`);
   lines.push(`Average shape similarity of the matches: ${match.avgSimilarityPct}%. A lower number means the "repeat" is looser than it looks on the chart.`);
 
   let tone = match.direction === 'up' ? 'up' : match.direction === 'down' ? 'down' : 'flat';

@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
+import { newState, replaySymbol, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -75,7 +75,7 @@ export async function render(el) {
   el.innerHTML = `
     <div class="page-head">
       <div><h1>Trading</h1>
-        <p>Three accounts, side by side: the practice trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p>
+        <p>Three accounts, side by side: the demo trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p>
         <p class="fine" id="syncNote">${syncNote()}</p></div>
       <div class="row">
         <span class="session-chip ${session.status}" id="sessionChip"><i></i>${sessionLabel(session.status)}</span>
@@ -149,7 +149,7 @@ export async function render(el) {
       ${spark.length > 1 ? `<div class="mt"><div class="fine" style="margin-bottom:4px">Hit rate over the last ${spark.length} resolved forecasts (rolling 20)</div>${sparklineSvg(spark, { width: 240, height: 36, color: 'var(--accent)' })}</div>` : ''}
       <p class="fine mt">Model v${ls.modelVersion} · ${ls.total} forecast${ls.total === 1 ? '' : 's'} recorded · ${ls.resolved} resolved · ${ls.pending} still waiting for their horizon.</p>
       <div class="mt">
-        <div class="fine">Once 15 forecasts have resolved, a hit rate below 55% over the last 50 (or 20, if fewer) pulls displayed confidence toward 50/50 — halfway below 40%. This is purely local measurement; no external validation is performed.</div>
+        <div class="fine">Once 15 forecasts have resolved, a hit rate below 55% over the last 50 (or the last 20, if fewer have resolved) pulls the displayed confidence a quarter of the way toward 50/50, and halfway if the hit rate is below 40%. This is purely local measurement; no external validation is performed.</div>
       </div>
     </div>`;
   }
@@ -191,7 +191,7 @@ export async function render(el) {
 
   function startCard() {
     return `<div class="card empty">
-      <h3>Run the strategy on play money</h3>
+      <h3>Run the strategy on simulated money</h3>
       <p style="max-width:620px">It watches ${cfg.universe.length} coins on the ${esc(cfg.interval)} chart. When the score clears +${cfg.entryScore} it buys, sizes the position so a stop-out costs ${cfg.riskPct}% of the balance, and sells at the target (${cfg.rMultiple}R), the stop (${cfg.atrStop} ATR) or a signal reversal. Every trade is logged with the fee it would have paid.</p>
       <p class="fine" style="max-width:620px">Starting balance ${money(cfg.startingBalance)}. Read the tested result above before you start it — it did not beat buying and holding. You can stop it at any time without resetting the account.</p>
     </div>${learningCard()}`;
@@ -257,7 +257,7 @@ export async function render(el) {
     btn.innerHTML = old;
     if (failed.length) toast(`No data for ${failed.join(', ')} — skipped.`, 'info');
     draw();
-    if (processed) toast(`Processed ${processed} new candles.`, 'up');
+    if (processed) toast(`Checked ${processed.toLocaleString('en-US')} new candle${processed === 1 ? '' : 's'}.`, 'up');
     learnFrom(forecastInputs, runCfg.interval);
     // The AI learning center grades every indicator and the forecast on the same
     // candles, so the system keeps learning whenever the trader is open.
@@ -311,7 +311,7 @@ export async function render(el) {
       if (e.kind === 'check') {
         const c = e.c;
         const did = c.opened || c.closed ? `${c.opened ? `opened ${c.opened}` : ''}${c.opened && c.closed ? ', ' : ''}${c.closed ? `closed ${c.closed}` : ''}` : 'no trade';
-        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}`;
+        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles.toLocaleString('en-US')} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}`;
       }
       if (e.kind === 'review') return `<b>Self-review</b> — ${esc(e.c.text)}`;
       if (e.kind === 'buy') {
@@ -404,7 +404,7 @@ export async function render(el) {
     const closed = has ? [...rs.closed].reverse().slice(0, 25) : [];
     return `<div class="card mt">
       <div class="card-h"><h3>Real account</h3><div class="row" style="gap:8px"><span class="chip up">Your own money</span>${has ? '<button class="btn sm ghost" id="realReset">Reset</button>' : ''}</div></div>
-      <p class="fine">Record the trades you actually placed on an exchange and they are measured the same way as the accounts above. ${esc(REAL_NOTICE)}</p>
+      <p class="fine">Record the trades you actually placed on an exchange, and they are measured the same way as the accounts above. ${esc(REAL_NOTICE)}</p>
 
       <div class="row mt" style="gap:10px;align-items:center;flex-wrap:wrap">
         <label class="btn sm" style="cursor:pointer">${icon('exchanges', 14)} Import from Binance
@@ -618,7 +618,7 @@ export async function render(el) {
     const ms = myState();
     if (!ms || (!Object.keys(ms.open).length && !ms.closed.length)) {
       return `<div class="card"><div class="card-h"><h3>Your own demo trades</h3><span class="chip">Separate account</span></div>
-        <p class="fine">Nothing here yet. Open any coin, press <b>Trade</b>, and use <b>Buy (demo)</b> to place a practice trade yourself at the live price. It is kept apart from the AI's account below, so your experiments never distort the strategy's record.</p></div>`;
+        <p class="fine">Nothing here yet. Open any coin, press <b>Trade</b>, and use <b>Buy (demo)</b> to place a demo trade yourself at the live price. It is kept apart from the AI's account below, so your experiments never distort the strategy's record.</p></div>`;
     }
     const s2 = stats(ms, st.prices);
     const open = Object.entries(ms.open);
@@ -644,7 +644,7 @@ export async function render(el) {
         ${closed.map((t) => `<tr><td class="l"><b>${esc(t.symbol)}</b></td><td class="l fine">${dateTime(t.exitAt, false)}</td><td>${money(t.entry)}</td><td>${money(t.exit)}</td>
           <td class="${t.pnl >= 0 ? 'up' : 'down'}"><b>${t.pnl >= 0 ? '+' : '−'}${money(Math.abs(t.pnl))}</b> <small>${pct(t.pnlPct)}</small></td></tr>`).join('')}
       </tbody></table></div>` : ''}
-      <p class="fine mt">${esc(PAPER_NOTICE)}</p>
+      <p class="fine mt">${esc(DEMO_NOTICE)}</p>
     </div>`;
   }
 

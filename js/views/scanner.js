@@ -64,7 +64,9 @@ export async function render(el) {
     if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 68);
     const key = { score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
-    $('#hz', el).textContent = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);
+    // "for the next 1 day" → "for the next day"
+    const hz = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);
+    $('#hz', el).textContent = hz.startsWith('1 ') ? hz.slice(2) : hz;
     if (!rows.length) {
       const noDirection = (f === 'aiup' || f === 'aidown') && !reliable;
       // filter((k) => directionReliable(k)) — NOT filter(directionReliable): passing

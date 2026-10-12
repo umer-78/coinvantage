@@ -150,7 +150,7 @@ export function timingText(t, fmtDuration, fmtMoney) {
     else parts.push(`and holds rather than reversing inside this horizon`);
   } else if (t.falling && t.trough) {
     parts.push(`Weakness usually runs about **${fmtDuration(t.trough.bar)}**, bottoming near **${fmtMoney(t.trough.price)}** (${t.trough.pct.toFixed(1)}%)`);
-    if (t.recover) parts.push(`with a bounce starting around **${fmtDuration(t.recover.bar)}** from now`);
+    if (t.recover) parts.push(`with a bounce starting in about **${fmtDuration(t.recover.bar)}**`);
     else parts.push(`with no clear bounce inside this horizon`);
   }
   return `${parts.join(', ')}.`;

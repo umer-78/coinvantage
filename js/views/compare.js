@@ -129,7 +129,7 @@ export async function render(el, [preset]) {
   // bars and scored — which is what the hit-rate line underneath is. If the
   // method does not beat simply always calling the more common outcome on this
   // coin, the card says so instead of quietly showing the percentage anyway.
-  const CANDLE_WORD = { '1h': 'hourly', '4h': '4-hour', '1d': 'daily' };
+  const CANDLE_WORD = { '1h': 'hourly', '4h': 'four-hour', '1d': 'daily' };
 
   const drawSelfPick = () => {
     const host = $('#selfPick', el);
@@ -182,7 +182,7 @@ export async function render(el, [preset]) {
     body.innerHTML = `
       <div class="row spread" style="gap:10px;flex-wrap:wrap">
         <span class="chip ${v.tone === 'warn' ? 'warn' : v.tone}"><b>${esc(chip)}</b></span>
-        <span class="fine">${match.matches.length} matching stretches · ${match.window} ${esc(CANDLE_WORD[iv] || '')} candles of shape · ${match.horizon} candles ahead</span>
+        <span class="fine">${match.matches.length} matching stretches · a ${match.window}-candle shape · ${match.horizon} candles ahead</span>
       </div>
       <p class="mt">${esc(v.headline)}</p>
       <div id="selfChart" class="mt"></div>

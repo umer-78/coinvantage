@@ -233,8 +233,8 @@ function closePosition(state, cfg, symbol, exitPrice, t, reason) {
  * Still no real order anywhere — this is practice, priced off the live market.
  */
 export function openManual(state, cfg, symbol, price, { notional, stopPrice, targetPrice, at = Date.now(), ctx = null } = {}) {
-  if (state.open[symbol]) return { ok: false, error: `You already have a practice position open on ${symbol}. Close it first.` };
-  if (Object.keys(state.open).length >= cfg.maxPositions) return { ok: false, error: `You already have ${cfg.maxPositions} practice positions open — that is the limit in your settings.` };
+  if (state.open[symbol]) return { ok: false, error: `You already have a demo position open on ${symbol}. Close it first.` };
+  if (Object.keys(state.open).length >= cfg.maxPositions) return { ok: false, error: `You already have ${cfg.maxPositions} demo positions open — that is the limit in your settings.` };
   if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
 
   const size = Math.min(+notional || 0, state.balance);
@@ -303,11 +303,11 @@ export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry,
   return { ok: true, trade: state.closed[state.closed.length - 1] };
 }
 
-export const REAL_NOTICE = 'These are trades you placed yourself on an exchange. CoinVantage records them so you can measure your own results — it never places an order, connects to an exchange, or holds any key.';
+export const REAL_NOTICE = 'CoinVantage only keeps the record: it never places an order, connects to an exchange or holds any key.';
 
 /** Close a position by hand at the current price. */
 export function closeManual(state, cfg, symbol, price, at = Date.now()) {
-  if (!state.open[symbol]) return { ok: false, error: `No practice position open on ${symbol}.` };
+  if (!state.open[symbol]) return { ok: false, error: `No open position on ${symbol}.` };
   if (!Number.isFinite(price) || price <= 0) return { ok: false, error: 'No live price for this coin right now.' };
   closePosition(state, cfg, symbol, price, at, 'closed by you');
   markEquity(state, at);
@@ -366,6 +366,9 @@ export function stats(state, pricesBySymbol = {}) {
 }
 
 export const PAPER_NOTICE = 'Simulated money only. This trader places no orders, connects to no exchange and holds no keys — it shows what the strategy would have done, fees included.';
+// The trades you place yourself are not "what the strategy would have done", so
+// they used to carry the AI's notice by mistake.
+export const DEMO_NOTICE = 'Simulated money only: no order is sent anywhere, no exchange is connected and no keys are held. The fee is counted as if the trade were real.';
 
 /**
  * Record what one check of the market did, so the activity feed can show every

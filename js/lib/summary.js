@@ -29,6 +29,20 @@ import { conflictCheck } from './analyst.js';
 import { edgeBand, confluence, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
 import { TESTED_ACCURACY } from './predict.js';
 
+// Risking r% with a stop s% away means a position worth r/s of the account. This
+// used to say "1.5/s to 2/s × your per-trade risk budget": the wrong unit, a lower
+// bound that did not match the 1% it named, and no word when the answer meant
+// borrowing.
+export function sizeText(stopPct) {
+  const share = (r) => r / stopPct;
+  const x = (v) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)}×`;
+  const a = /^(8|11|18)/.test(String(stopPct)) ? 'an' : 'a';   // "an 8% stop"
+  if (!(stopPct > 0)) return '';
+  if (share(2) <= 1) return `With ${a} ${stopPct}% stop, that means a position worth about ${x(share(1))} to ${x(share(2))} your account balance — not all of it.`;
+  if (share(1) <= 1) return `With ${a} ${stopPct}% stop, risking 1% means a position worth about ${x(share(1))} your account balance; 2% would take more than all of it, which means borrowing.`;
+  return `With a stop only ${stopPct}% away, even your whole balance risks less than 1% here, so the size is limited by your balance, not by the stop. Going bigger means borrowing (leverage).`;
+}
+
 const pct = (v, dp = 1) => `${v > 0 ? '+' : ''}${Number(v).toFixed(dp)}%`;
 const signed = (v) => `${v > 0 ? '+' : ''}${v}`;
 
@@ -303,10 +317,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
       label: 'Where you are wrong',
       text: `${fmt(p.stopLoss)}. That is ${p.riskPct}% below your entry — if price closes past it, the reason for the trade is gone. Set this when you place the order, not later.`,
     });
-    steps.push({
-      label: 'How much',
-      text: `Risk at most 1–2% of your account on this. With a ${p.riskPct}% stop, that means a position of roughly ${(1.5 / p.riskPct).toFixed(1)}× to ${(2 / p.riskPct).toFixed(1)}× your per-trade risk budget — not your whole balance.`,
-    });
+    steps.push({ label: 'How much', text: `Risk at most 1–2% of your account on this. ${sizeText(p.riskPct)}` });
   } else if (!p) {
     const waits = signal.waitFor?.length ? signal.waitFor : ['No trigger has formed yet.'];
     steps.push({ label: 'What to wait for', text: waits.join(' · ') });

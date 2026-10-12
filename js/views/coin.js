@@ -18,7 +18,7 @@ import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
 import { tradeSummary } from '../lib/summary.js';
-import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, PAPER_NOTICE } from '../lib/autotrader.js';
+import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE } from '../lib/autotrader.js';
 import { fx } from '../api/fx.js';
 import {
   loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger, directionTrustFor, MIN_GRADED_FOR_TRUST,
@@ -168,8 +168,8 @@ export async function render(el, [symParam]) {
       </div>
       <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>
 
-      <h3 class="mt">Practice first — your own demo trade</h3>
-      <p class="fine">Trade ${esc(coin.symbol)} yourself with simulated money at the live price. This is your own practice account, kept separate from the AI trader's. No exchange, no order, no keys.</p>
+      <h3 class="mt">Try it first with a demo trade</h3>
+      <p class="fine">Trade ${esc(coin.symbol)} yourself with simulated money at the live price. This is your own demo account, kept separate from the AI trader's. No exchange, no order, no keys.</p>
       <div id="paperWrap">${paperBlock()}</div>`);
     wirePaper();
   });
@@ -203,22 +203,22 @@ export async function render(el, [symParam]) {
     if (pos) {
       const pnl = (px - pos.entry) * pos.qty;
       return `<div class="plan mt">
-        <div><div class="k">Your practice position</div><div class="v">${amount(pos.qty)} ${esc(coin.symbol)}</div></div>
+        <div><div class="k">Your demo position</div><div class="v">${amount(pos.qty)} ${esc(coin.symbol)}</div></div>
         <div><div class="k">Bought at</div><div class="v">${money(pos.entry, { dp: st.dp })}</div></div>
         <div><div class="k">Open profit / loss</div><div class="v ${pnl >= 0 ? 'up' : 'down'}">${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</div></div>
-        <div><div class="k">Practice balance</div><div class="v">${money(bal)}</div></div>
+        <div><div class="k">Demo balance</div><div class="v">${money(bal)}</div></div>
       </div>
       <div class="row mt" style="gap:8px"><button class="btn primary" id="paperClose">Sell (demo)</button><a class="btn sm ghost" href="#/trader">See all my demo trades</a></div>
       <p class="fine" id="paperMsg"></p>
-      <p class="fine">${esc(PAPER_NOTICE)}</p>`;
+      <p class="fine">${esc(DEMO_NOTICE)}</p>`;
     }
     return `<form class="row mt" style="gap:8px;align-items:flex-end" id="paperForm">
         <label class="fld" style="flex:1">Amount to put in (${esc(fx.code)})<input class="inp" name="amt" type="number" min="1" step="1" value="${suggested}"></label>
         <button class="btn primary">Buy (demo)</button>
       </form>
-      <p class="fine">Practice balance ${money(bal)}. ${st.signal?.ok && st.signal.plan ? `A stop-loss at ${money(st.signal.plan.stopLoss, { dp: st.dp })} is set for you, matching the signal.` : 'A 5% stop-loss is set for you.'}</p>
+      <p class="fine">Demo balance ${money(bal)}. ${st.signal?.ok && st.signal.plan ? `A stop-loss at ${money(st.signal.plan.stopLoss, { dp: st.dp })} is set for you, matching the signal.` : 'A 5% stop-loss is set for you.'}</p>
       <p class="fine" id="paperMsg"></p>
-      <p class="fine">${esc(PAPER_NOTICE)}</p>`;
+      <p class="fine">${esc(DEMO_NOTICE)}</p>`;
   }
 
   function wirePaper() {
@@ -726,7 +726,7 @@ export async function render(el, [symParam]) {
         <dl class="kv" style="margin-top:8px">
           ${ens3.models.map((m) => `<dt>${esc(m.name)}</dt><dd><span class="${m.probUp >= 0.5 ? 'up' : 'down'}">${(m.probUp * 100).toFixed(1)}% up</span> <span class="fine">· weight ${m.weightPct}%</span></dd>`).join('')}
         </dl>
-        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b> (${ens3.direction}).${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} Weights adapt to your local rolling accuracy (source: ${esc(ens3.weights.source)}). Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
+        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b>.${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} ${ens3.weights.source === 'default' ? 'Its three models (momentum, mean-reversion and past patterns) count equally until this device has graded 10 forecasts.' : `Its weights follow this device's recent hit rate (${esc(String(ens3.weights.accuracy))}%): below 40% leans on mean-reversion, above 60% on momentum.`} Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
       </div>` : ''}
       <dl class="kv mt">
         <dt>Brier score (lower is better)</dt><dd>${brier !== null ? brier.toFixed(3) : '—'}</dd>
@@ -814,7 +814,7 @@ export async function render(el, [symParam]) {
         <p class="fine" style="margin:8px 0 0">
           ${t.rising
             ? `Expect strength for about <b>${esc(dur(main.bar))}</b>, topping near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.turn ? `, then fading back to ${pct(t.turn.pct, 1)} by <b>${esc(dur(t.turn.bar))}</b>` : ', holding rather than reversing inside this horizon'}.`
-            : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting around <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
+            : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting in about <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
           ${main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
         </p>
         <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% on ${esc(st.interval)} charts against a ${TESTED_TIMING.byInterval[st.interval].baselinePct}% random baseline.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts — the 4h chart is the one it tested best on.` : trust.level === 'unknown' ? 'Timing has not been measured on this timeframe.' : `Timing barely clears chance here${TESTED_TIMING.byInterval[st.interval] ? ` (${TESTED_TIMING.byInterval[st.interval].hitPct}% against ${TESTED_TIMING.byInterval[st.interval].baselinePct}%)` : ''}.`}</p>
@@ -840,7 +840,7 @@ export async function render(el, [symParam]) {
     target.innerHTML = `
       <div style="padding:10px;border-radius:10px;background:var(--surface-2)">
         <div class="row spread"><b>Previous years say</b><span class="chip ${cls === 'flat' ? '' : cls}">${v.direction === 'UP' ? 'higher' : v.direction === 'DOWN' ? 'lower' : 'mixed'} in ${h.horizon}d</span></div>
-        <p class="fine" style="margin:6px 0 0">${h.weak ? `No past chart closely resembles today (best match ${Math.round(h.analogs.matches[0].similarity * 100)}%), so this is background only. ` : ''}${s.upCount}/${s.total} past look-alikes rose, median ${pct(s.median, 1)}. ${v.accuracy !== null ? `This method has been right ${(v.accuracy * 100).toFixed(0)}% of the time on ${esc(coin.symbol)}.` : 'Too few past tests to score this method here.'}</p>
+        <p class="fine" style="margin:6px 0 0">${h.weak ? `No past chart closely resembles today (best match ${Math.round(h.analogs.matches[0].similarity * 100)}%), so this is background only. ` : ''}${s.upCount} of ${s.total} past look-alikes rose, median ${pct(s.median, 1)}. ${v.accuracy !== null ? `This method has been right ${(v.accuracy * 100).toFixed(0)}% of the time on ${esc(coin.symbol)}.` : 'Too few past tests to score this method here.'}</p>
         <button class="btn sm ghost" style="margin-top:8px" id="openHist">See the matching charts →</button>
       </div>`;
     $('#openHist', el)?.addEventListener('click', () => {
@@ -918,7 +918,7 @@ export async function render(el, [symParam]) {
             <td>${m.accuracy !== null ? (m.accuracy * 100).toFixed(1) + '%' : '—'}<span class="acc-bar"><i style="width:${Math.max(0, Math.min(100, ((m.accuracy ?? 0.5) - 0.3) / 0.4 * 100))}%"></i></span></td><td>${m.weightPct}%</td></tr>`).join('')}
         </tbody></table></div>
         <p class="fine mt">How it works: each model is trained on this coin's own history, then tested on the most recent period it never saw. Models that predicted better get more weight. Crypto is noisy: a direction rate only counts as an edge when it beats the baseline over enough tests that luck cannot explain it, and nothing is certain.</p>
-        <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time. It called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring it entirely and always naming whichever direction was more common in that window. By timeframe, accuracy against that same baseline: ${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => `${iv} ${TESTED_ACCURACY[iv]}% vs ${TESTED_ACCURACY.baseline[iv]}%`).join(' · ')}.${UNMEASURED.includes(st.interval) ? ` <b class="warn">This engine has never been tested on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart, so it has no measured accuracy here. Second charts are for watching price move — use the 5m chart or slower for a forecast you can judge.</b>` : (TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` <b class="warn">On the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart it scored ${TESTED_ACCURACY[st.interval]}% against a ${TESTED_ACCURACY.baseline[st.interval]}% baseline — no edge. Read this forecast as background, not as a reason to trade.</b>` : st.interval === '1w' ? ` <b class="warn">The weekly chart has too few candles to test, so nothing here has a measured accuracy.</b>` : ''}</p>
+        <p class="fine">Independent test of this engine: ${TESTED_ACCURACY.tests.toLocaleString('en-US')} forecasts on ${TESTED_ACCURACY.coins} major coins, made only with data available at the time. It called the direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring it entirely and always naming whichever direction was more common in that window. By timeframe, accuracy against that same baseline: ${['1m', '5m', '15m', '1h', '4h', '1d'].map((iv) => `${iv} ${TESTED_ACCURACY[iv]}% vs ${TESTED_ACCURACY.baseline[iv]}%`).join(' · ')}.${UNMEASURED.includes(st.interval) ? ` <b class="warn">This engine has never been tested on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart, so it has no measured accuracy here. Second charts are for watching price move — use the 5m chart or slower for a forecast you can judge.</b>` : (TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` <b class="warn">On the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart it scored ${TESTED_ACCURACY[st.interval]}% against a ${TESTED_ACCURACY.baseline[st.interval]}% baseline — no edge. Read this forecast as background, not as a reason to trade.</b>` : st.interval === '1w' ? ` <b class="warn">The weekly chart has too few candles to test, so nothing here has a measured accuracy.</b>` : ''}</p>
         <p class="fine">Overall the engine did <b>not</b> beat that baseline (${TESTED_ACCURACY.all}% against ${TESTED_ACCURACY.allBaseline}%), and it is listed as having no edge on ${(TESTED_ACCURACY.noEdge || []).join(', ')}. ${esc(TESTED_ACCURACY.caveat)} Treat the probability below as a description of what the indicators imply, not as a reason to act.</p>`;
       body.insertAdjacentHTML('beforeend', timingSection());
       const lc = new LineChart($('#fcChart', body), { height: 300, yFormat: (v) => money(v), xFormat: (x) => shortTime(x, st.interval), tooltipX: (x) => dateTime(x) });

@@ -84,7 +84,7 @@ export function reviewTrades(closed = [], { includeManual = false } = {}) {
   for (const t of trades) (exits[t.reason] ||= []).push(t);
 
   const findings = [];
-  if (overall.n < MIN_TRADES) findings.push(`Only ${overall.n} closed trade${overall.n === 1 ? '' : 's'} so far — the review needs ${MIN_TRADES} before it changes anything.`);
+  if (overall.n < MIN_TRADES) findings.push(`${overall.n ? `Only ${overall.n} closed trade${overall.n === 1 ? '' : 's'} so far` : 'No closed trades yet'} — the review needs ${MIN_TRADES} before it changes anything.`);
   for (const l of lenses) {
     if (!l.judged) continue;
     const [bk, gk] = [LENSES.find((L) => L.key === l.key).bad, Object.keys(l.groups).find((k) => k !== LENSES.find((L) => L.key === l.key).bad)];

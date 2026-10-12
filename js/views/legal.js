@@ -27,7 +27,7 @@ const PAGES = (contact) => ({
   terms: {
     h: 'Terms of Service',
     body: `
-      <p class="fine">Last updated: ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+      <p class="fine">Last updated: September 2026</p>
       <h2>1. What this service is</h2>
       <p>${N} is a market-analysis website. It shows public market data, technical indicators, statistical forecasts and historical comparisons. It is an information tool and nothing more.</p>
       <h2>2. What it is not</h2>
@@ -51,14 +51,14 @@ const PAGES = (contact) => ({
   privacy: {
     h: 'Privacy Policy',
     body: `
-      <p class="fine">Last updated: ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+      <p class="fine">Last updated: October 2026</p>
       <h2>The short version</h2>
       <p>Most of ${N} runs inside your browser. Charts, indicators, signals, forecasts and the built-in AI are computed on your device. We collect the minimum needed to run accounts and alerts.</p>
       <h2>Without an account</h2>
-      <p>Your watchlist, portfolio entries, wallet addresses you watch, alerts and settings are stored in your browser's local storage on your device. We cannot read them. Clearing your browser data deletes them.</p>
+      <p>Your watchlist, portfolio entries, wallet addresses you watch, alerts, settings and the Trading page's accounts are stored in your browser's local storage on your device. We cannot read them. Clearing your browser data deletes them.</p>
       <p>We record anonymous page views (page path, referrer, coarse device type, browser language and a random session id that is discarded when you close the tab) to see which pages are worth improving. No cookies are used for advertising and no data is sold or shared with advertisers.</p>
       <h2>With an account</h2>
-      <p>We store your e-mail address, display name, an encrypted password hash, and the data you choose to sync: watchlist, holdings, watch-only wallet addresses, chart drawings and app preferences. If you enable alerts we store the alerts you create and, if you link them, your Telegram chat id.</p>
+      <p>We store your e-mail address, display name, an encrypted password hash, and the data you choose to sync: watchlist, holdings, watch-only wallet addresses, chart drawings, app preferences, and the Trading page's accounts (your demo trades, the real trades you record with their amounts, prices, fees and notes, and the AI's simulated account with its rules). If you enable alerts we store the alerts you create and, if you link them, your Telegram chat id.</p>
       <h2>Your market data stays yours</h2>
       <p>Questions you type into the AI assistant are processed in your browser by the built-in model and are not sent to us. If you deliberately configure an external AI endpoint in settings, your prompts go to that provider under their policy, not ours.</p>
       <h2>Third parties we send data to</h2>
@@ -75,7 +75,7 @@ const PAGES = (contact) => ({
       <h2>Read this before you trade anything</h2>
       <p>Crypto assets are volatile, largely unregulated, and can lose most or all of their value quickly. Nothing on ${N} changes that.</p>
       <h2>The forecasts have no measured edge on direction</h2>
-      <p>The engine is validated by walk-forward testing: every forecast is made using only the data that existed at that moment. Across ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} coins it called direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring the engine entirely and always naming whichever direction was more common in that window. It did not beat that baseline. By timeframe: ${accuracyLine()}. It is below its baseline on ${TESTED_ACCURACY.noEdge.join(', ')}.</p>
+      <p>The engine is validated by walk-forward testing: every forecast is made using only the data that existed at that moment. Across ${TESTED_ACCURACY.tests.toLocaleString('en-US')} forecasts on ${TESTED_ACCURACY.coins} coins it called direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring the engine entirely and always naming whichever direction was more common in that window. It did not beat that baseline. By timeframe: ${accuracyLine()}. It is below its baseline on ${TESTED_ACCURACY.noEdge.join(', ')}.</p>
       <p>${esc(TESTED_ACCURACY.caveat)}</p>
       <h2>The chart score does not mean what its name suggested</h2>
       <p>Sorting ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins by the score this engine assigns them shows the share that rose <b>falls</b> as the score rises — the highest-scoring bars were the ones least likely to go up. Trading the reverse does not work either; both directions were tested over held-out data with fees and neither produced a positive expectancy. The score is therefore labelled as a description of how extended a trend is, not as a recommendation to buy or sell.</p>
