@@ -75,3 +75,34 @@ test('entries record the market context the review reads', () => {
   assert.ok(p.riskCash > 0);
   assert.equal(p.entryBar, -100);
 });
+
+test('R is measured against the real risk, not the intended one', async () => {
+  const { tradeR } = await import('../js/lib/tradelearn.js');
+  // 10% risk was asked for ($860) but the position cap let only $50 be at risk
+  const t = { entry: 1.0, initialStop: 0.98, qty: 2500, riskCash: 860, pnl: -50 };
+  assert.ok(Math.abs(tradeR(t) + 1) < 1e-9);
+  // a recorded real trade with no stop has no R
+  assert.equal(tradeR({ entry: 10, initialStop: null, qty: 1, pnl: 5 }), null);
+});
+
+test('the trade diagnosis explains a losing log in numbers', async () => {
+  const { diagnose } = await import('../js/lib/tradelearn.js');
+  const H = 3600e3;
+  const mk = (i, symbol, reason, pnl, extra = {}) => ({ symbol, reason, pnl, feePaid: 5, entry: 100, initialStop: 97, qty: 20, notional: 2000, openedAt: i * H, exitAt: i * H + 30 * H, ...extra });
+  const log = [
+    ...Array.from({ length: 6 }, (_, i) => mk(i, 'AAA', 'stop-loss', -60)),
+    ...Array.from({ length: 4 }, (_, i) => mk(10 + i, 'BBB', 'signal reversal', -20)),
+    mk(20, 'CCC', 'target', 180),
+  ];
+  const d = diagnose(log, { startingBalance: 10000 });
+  const text = d.join('\n');
+  assert.match(text, /Of 11 trades, 6 were stopped out \(−\$360\)/);
+  assert.match(text, /1 hit the target \(\$180\)/);
+  // winners +3R, losers average 0.73R: breaking even needs 0.73 / 3.73 = 20% winners
+  assert.match(text, /breaking even needed 20% of trades to win; 9% did\./);
+  assert.match(text, /Fees came to \$55 \(0\.5% of the starting balance\)/);
+  assert.match(text, /Most of the loss came from AAA \(6 trades, 0 won, −\$360\)/);
+  // all ten losing positions of $2,000 were open at hour 13: 200% of the account
+  assert.match(text, /open positions added up to 200% of the starting balance/);
+  assert.deepEqual(diagnose(log.slice(0, 3)), [], 'too few trades to say anything');
+});

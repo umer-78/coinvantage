@@ -19,32 +19,35 @@ import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
 /**
  * What this ruleset actually did on real candles.
  *
- * Measured 2026-09-26 with tools/evaluate-trader-live.mjs: 12 coins, Binance
- * candles (4,000 each on 15m and 1h, 3,500 on 4h, 2,200 on 1d), first half of
- * history used to choose settings, second half — never seen while choosing —
- * is what these numbers report. The simulation now advances all coins together
- * one candle at a time, exactly like the live account; the older harness ran
- * one coin's whole history before the next, which let a single open trade
- * block every other coin and gave different numbers.
+ * Measured 2026-10-12 with tools/evaluate-trader-rules.mjs (the Evaluate
+ * workflow): 12 coins, Binance candles (4,000 each on 15m and 1h, 3,500 on 4h,
+ * 2,200 on 1d). All coins advance together, candle by candle, through the same
+ * engine the live account runs, fees included; open positions at the end are
+ * valued at the last close. The numbers are the NEWER half of each history,
+ * which played no part in choosing anything.
  *
- * The settings (3 ATR stop, 3R target, trend filter on) were picked ONCE, as
- * the best average rank on the training halves of all four timeframes, then
- * scored on the test halves. Against the previous settings (2 ATR, no trend
- * filter) they did better on 15m, 4h and 1d and worse on 1h, with half the
- * fees and a smaller worst drawdown on three of four. The benchmark is still
- * equal-weight buy-and-hold of the same coins over the same window: the new
- * rules beat it on 4h (a falling market) and not on the other three.
+ * 432 rule sets were tried against these: trend, breakout and buy-the-dip
+ * entries, momentum confirmation, a filter that pauses buying while Bitcoin is
+ * in a downtrend, stops of 1.5-3 ATR, fixed and trailing exits. The one with the
+ * best average rank on the OLDER halves (`alt`) did worse than the current rules
+ * on the newer halves on 4h and 1d and about the same on 1h, so the current
+ * rules stay. On 15m only 3 of the 432 made money after fees.
+ *
+ * The benchmark is equal-weight buy-and-hold of the same coins over the same
+ * window: the rules beat it on 4h (a falling market) and not on the other three.
  */
 export const AUTOTRADER_TESTED = {
-  '15m': { pickedReturn: 18.0, buyHold: 19.6, beatBuyHold: 7, configs: 48, trades: 109, feeDragPct: 5.8, maxDrawdownPct: 9.9, previousReturn: 9.3, previousDrawdownPct: 12.0 },
-  '1h': { pickedReturn: 24.8, buyHold: 40.7, beatBuyHold: 2, configs: 48, trades: 107, feeDragPct: 5.5, maxDrawdownPct: 15.6, previousReturn: 31.8, previousDrawdownPct: 14.2 },
-  '4h': { pickedReturn: 11.2, buyHold: -16.0, beatBuyHold: 33, configs: 48, trades: 82, feeDragPct: 3.3, maxDrawdownPct: 30.5, previousReturn: -10.9, previousDrawdownPct: 36.8 },
-  '1d': { pickedReturn: 70.7, buyHold: 143.4, beatBuyHold: 0, configs: 48, trades: 67, feeDragPct: 2.2, maxDrawdownPct: 37.5, previousReturn: 65.6, previousDrawdownPct: 52.5 },
-  coins: 12, candlesPerCoin: 4000, measuredOn: '2026-09-26',
+  '15m': { pickedReturn: -6.26, buyHold: 1.81, maxDrawdownPct: 13.89, trades: 152, winRate: 23.0, feeDragPct: 6.7, from: '2026-09-21', to: '2026-10-12', alt: { ret: -4.8, dd: 9.63 }, madeMoney: 3 },
+  '1h': { pickedReturn: 11.86, buyHold: 36.55, maxDrawdownPct: 12.97, trades: 171, winRate: 29.8, feeDragPct: 7.7, from: '2026-07-20', to: '2026-10-12', alt: { ret: 11.34, dd: 9.87 }, madeMoney: 334 },
+  '4h': { pickedReturn: 3.98, buyHold: -12.35, maxDrawdownPct: 22.86, trades: 98, winRate: 25.5, feeDragPct: 3.6, from: '2025-12-24', to: '2026-10-12', alt: { ret: -4.06, dd: 20.22 }, madeMoney: 90 },
+  '1d': { pickedReturn: 110.31, buyHold: 123.26, maxDrawdownPct: 17.81, trades: 100, winRate: 35.0, feeDragPct: 3.8, from: '2023-10-09', to: '2026-10-12', alt: { ret: 70.84, dd: 18.09 }, madeMoney: 384 },
+  coins: 12, configs: 432, measuredOn: '2026-10-12',
+  altRules: 'breakout entry with momentum confirmation and the Bitcoin-trend filter, 3 ATR stop, 2R target',
   beatsBuyAndHold: false,
-  // The self-review (js/lib/tradelearn.js) run inside the same test: it acted
-  // in 1 of 8 runs (4h, old settings: -10.9% → -7.2%) and left the rest
-  // unchanged. Too few cases to call an edge — it is a safety net, not a boost.
+  // The self-review (js/lib/tradelearn.js), measured 2026-09-26 with
+  // tools/evaluate-trader-live.mjs: it acted in 1 of 8 held-out runs (4h, older
+  // rules: -10.9% -> -7.2%) and left the rest unchanged. Too few cases to call
+  // an edge: it is a safety net, not a boost.
   selfReview: { runs: 8, acted: 1, note: 'Changed its rules in 1 of 8 held-out runs (4h: −10.9% → −7.2%); no change in the other 7.' },
 };
 
@@ -60,7 +63,7 @@ export const DEFAULT_CONFIG = {
   // published rule does, which is the only thing this account is for.
   entryScore: THRESHOLDS.normal,
   exitScore: -THRESHOLDS.normal,
-  atrStop: 3,            // was 2; see AUTOTRADER_TESTED for the held-out comparison
+  atrStop: 3,            // see AUTOTRADER_TESTED for the held-out comparison
   rMultiple: 3,
   feePct: 0.1,
   // Two behaviours that were hardcoded and therefore never measured. Moving the

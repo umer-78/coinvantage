@@ -21,7 +21,12 @@ const r2 = (v) => Math.round(v * 100) / 100;
 
 /** Result of one trade in R: profit or loss as a multiple of the cash it risked. */
 export function tradeR(t) {
-  const risk = t.riskCash || (t.entry - t.initialStop) * t.qty;
+  // The real risk is entry-to-stop times the amount bought. Older AI trades
+  // stored the INTENDED risk instead (balance x risk %), which the 25% position
+  // cap often cut: at 10% risk a trade that could lose $50 was filed as risking
+  // $860, so its R looked twenty times smaller than it was.
+  const actual = Number.isFinite(t.entry) && Number.isFinite(t.initialStop) && Number.isFinite(t.qty) ? Math.abs(t.entry - t.initialStop) * t.qty : null;
+  const risk = actual > 0 ? actual : t.riskCash;
   // A trade recorded without a stop has no defined risk, so it has no R.
   return risk > 0 && Number.isFinite(risk) ? t.pnl / risk : null;
 }
@@ -151,4 +156,66 @@ export function activeLessons(cfg) {
   const on = LENSES.filter((L) => isOn(cfg, L)).map((L) => L.fixText);
   if (cfg.excluded?.length) on.push(`not trading ${cfg.excluded.join(', ')}`);
   return on;
+}
+
+const usd = (v) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+const EXIT_WORDS = {
+  target: 'hit the target', 'stop-loss': 'were stopped out', 'trailing stop': 'hit the trailing stop',
+  'break-even stop': 'came back to entry', 'signal reversal': 'were sold on a reversal', 'sold into strength': 'were sold into strength',
+  'closed by you': 'were closed by hand', 'no exchange price': 'were closed for lack of exchange prices', 'recorded by you': 'were recorded closed',
+};
+
+/**
+ * What drove an account's result, in plain words with the numbers behind each
+ * line: how trades ended, what the win rate had to be, what fees took, which
+ * coins cost most and whether positions ever added up to more than the account.
+ * Reads the log only; it changes nothing.
+ */
+export function diagnose(closed = [], { startingBalance = null } = {}) {
+  const trades = closed.filter((t) => Number.isFinite(t.pnl));
+  const out = [];
+  if (trades.length < 5) return out;
+  const total = trades.reduce((a, t) => a + t.pnl, 0);
+  const fees = trades.reduce((a, t) => a + (t.feePaid || 0), 0);
+
+  // 1. How the trades ended, biggest money first.
+  const byExit = {};
+  for (const t of trades) (byExit[t.reason] ||= { n: 0, pnl: 0 }).n++, byExit[t.reason].pnl += t.pnl;
+  const parts = Object.entries(byExit).sort((a, b) => Math.abs(b[1].pnl) - Math.abs(a[1].pnl))
+    .map(([k, v]) => `${v.n} ${EXIT_WORDS[k] || k} (${usd(v.pnl)})`);
+  out.push(`Of ${trades.length} trades, ${parts.join(', ')}.`);
+
+  // 2. The win rate it needed, given the size of wins and losses.
+  const rs = trades.map(tradeR).filter((r) => r !== null);
+  const wins = rs.filter((r) => r > 0), losses = rs.filter((r) => r <= 0);
+  if (wins.length && losses.length) {
+    const aw = wins.reduce((a, b) => a + b, 0) / wins.length;
+    const al = Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length);
+    const need = (al / (aw + al)) * 100;
+    const won = (wins.length / rs.length) * 100;
+    out.push(`Winners averaged +${aw.toFixed(2)}R and losers −${al.toFixed(2)}R, so breaking even needed ${need.toFixed(0)}% of trades to win; ${won.toFixed(0)}% did${won >= need ? ' — enough' : ''}.`);
+  }
+
+  // 3. Fees.
+  if (fees > 0) {
+    const ofStart = startingBalance ? ` (${((fees / startingBalance) * 100).toFixed(1)}% of the starting balance)` : '';
+    out.push(`Fees came to ${usd(fees)}${ofStart}${total < 0 && fees > 0 ? ` — ${Math.min(100, (fees / Math.abs(total)) * 100).toFixed(0)}% of the size of the overall loss` : ''}. Every trade pays about 0.2% round trip, so small, frequent trades lose most to fees.`);
+  }
+
+  // 4. The coins that cost most.
+  const bySym = {};
+  for (const t of trades) (bySym[t.symbol] ||= { n: 0, pnl: 0, wins: 0 }).n++, bySym[t.symbol].pnl += t.pnl, bySym[t.symbol].wins += t.pnl > 0 ? 1 : 0;
+  const worst = Object.entries(bySym).filter(([, v]) => v.pnl < 0).sort((a, b) => a[1].pnl - b[1].pnl).slice(0, 2);
+  if (worst.length && total < 0) out.push(`Most of the loss came from ${worst.map(([s, v]) => `${s} (${v.n} trades, ${v.wins} won, ${usd(v.pnl)})`).join(' and ')}.`);
+
+  // 5. Positions open at the same time, as a share of the account.
+  const ev = [];
+  for (const t of trades) if (!t.real && Number.isFinite(t.notional) && t.openedAt && t.exitAt) ev.push([t.openedAt, t.notional], [t.exitAt, -t.notional]);
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let now = 0, peak = 0;
+  for (const [, d] of ev) { now += d; peak = Math.max(peak, now); }
+  if (startingBalance && peak > startingBalance * 1.02) {
+    out.push(`At its peak, open positions added up to ${((peak / startingBalance) * 100).toFixed(0)}% of the starting balance — more money than the account had, which multiplies losses. Buys are now limited to the cash that is free.`);
+  }
+  return out;
 }

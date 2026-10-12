@@ -101,6 +101,35 @@ Umer picked these four, plus the Binance import which is DONE and live.
   changed on the live database without a migration; it was not applied there
   and changes nothing if it is.
 
+### AI trader fixes and re-measure (2026-10-12, later the same day)
+Found by reading a live account that lost 20% (63 trades, 3 targets):
+- Sizing ignored cash already in open positions (ten positions at the 25% cap
+  held 250% of the balance). `freeCash()` now caps every buy, fee included.
+- The reversal-bar count restarted each check, so the signal exit never fired
+  live; it is kept on the position (`pos.reversalBars`).
+- Coins without exchange candles (CoinGecko samples, e.g. FIGR_HELOC) and demo
+  candles are never traded; an open position in such a coin is closed at its last
+  price. Coins removed from the list keep being checked for exits.
+- Catch-ups replay all coins together in time (`replayAll` / `replaySeries`).
+- New, OFF by default: `entryMode` breakout / pullback, `momentumConfirm`,
+  `marketFilter` (Bitcoin trend). `tools/evaluate-trader-rules.mjs` (Actions →
+  Evaluate → Run workflow) tried 432 rule sets, picked one on the older halves,
+  and it did NOT beat the shipped rules on the newer halves, so nothing changed.
+  Newer-half results of the shipped rules: 15m −6.3% (hold +1.8%), 1h +11.9%
+  (+36.6%), 4h +4.0% (−12.4%), 1d +110.3% (+123.3%). On 15m only 3 of 432 rule
+  sets made money after fees. Source: `AUTOTRADER_TESTED`.
+- Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
+  the test on GitHub's runners. Read its log for the report.
+
+### Backend deploy as it stands (2026-10-12)
+The live edge function `cv` (version 11) is a one-line entry that imports
+`supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com
+(ea81f80), so what runs is exactly what was committed. To deploy newer server
+code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
+`/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
+`telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
+token, Resend key and Stripe keys are added under Admin → API keys.
+
 ### Futures data fallback (2026-09-17)
 Binance futures and Bybit both geo-block some regions (the browser only sees a
 CORS error), which left the Futures page empty there. `js/api/futures.js` now
@@ -165,7 +194,7 @@ A short-side test has not been run.
   baseline, 52.2% for "always up"; confident subset 50.7% (227). No edge on any timeframe. Ranges now
   come from each coin's own standardized past moves: 80% band holds 78.5% (was 71.7%), 50% band 48.4%
   (was 45.1%). Source: TESTED_ACCURACY. Tool: tools/evaluate-engine.mjs.
-- **AI trader, 2026-09-26:** `tools/evaluate-trader-live.mjs` simulates all coins candle by candle (the old
+- **AI trader, 2026-09-26 (superseded by the 2026-10-12 section above):** `tools/evaluate-trader-live.mjs` simulates all coins candle by candle (the old
   harness replayed one coin at a time, which let one open trade block every other coin). One setting chosen
   on the training halves of 15m/1h/4h/1d — 3 ATR stop, 3R target, trend filter on — now ships. Held-out:
   15m +18.0% (prev +9.3%), 1h +24.8% (prev +31.8%), 4h +11.2% (prev −10.9%), 1d +70.7% (prev +65.6%),

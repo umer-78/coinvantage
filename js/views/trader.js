@@ -1,7 +1,7 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, findCoin, INTERVAL_MS } from '../api/market.js';
 import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, AUTOTRADER_TESTED, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck } from '../lib/autotrader.js';
-import { reviewTrades, decideChanges, activeLessons, MIN_TRADES } from '../lib/tradelearn.js';
+import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
@@ -112,10 +112,10 @@ export async function render(el) {
     return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(AUTOTRADER_TESTED.measuredOn || '')}, not estimated</span></div>
       <p>Run candle by candle over ${AUTOTRADER_TESTED.coins} coins, with settings chosen on the first half of history and scored on the second half it had never seen, the ${esc(iv)} version returned <b class="${t.pickedReturn >= 0 ? 'up' : 'down'}">${sign(t.pickedReturn)}</b> with a worst drawdown of ${t.maxDrawdownPct}% — while buying the same coins and holding them returned <b class="${t.buyHold >= 0 ? 'up' : 'down'}">${sign(t.buyHold)}</b> over the identical window. ${beat ? 'On this timeframe it did better than holding.' : 'On this timeframe holding did better.'}</p>
-      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>These rules</th><th>Worst drawdown</th><th>Previous rules</th><th>Buy &amp; hold</th><th>Trades</th></tr></thead><tbody>
-        ${TFS.map((k) => { const x = AUTOTRADER_TESTED[k]; return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="${x.pickedReturn >= 0 ? 'up' : 'down'}">${sign(x.pickedReturn)}</td><td class="down">−${x.maxDrawdownPct}%</td><td class="${x.previousReturn >= 0 ? 'up' : 'down'}">${sign(x.previousReturn)} <small class="fine">(−${x.previousDrawdownPct}%)</small></td><td class="${x.buyHold >= 0 ? 'up' : 'down'}">${sign(x.buyHold)}</td><td>${x.trades}</td></tr>`; }).join('')}
+      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested on</th><th>These rules</th><th>Worst drawdown</th><th>Best alternative</th><th>Buy &amp; hold</th><th>Trades</th></tr></thead><tbody>
+        ${TFS.map((k) => { const x = AUTOTRADER_TESTED[k]; return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="${x.pickedReturn >= 0 ? 'up' : 'down'}">${sign(x.pickedReturn)}</td><td class="down">−${x.maxDrawdownPct}%</td><td class="${x.alt.ret >= 0 ? 'up' : 'down'}">${sign(x.alt.ret)} <small class="fine">(−${x.alt.dd}%)</small></td><td class="${x.buyHold >= 0 ? 'up' : 'down'}">${sign(x.buyHold)}</td><td>${x.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
-      <p class="fine mt">Current rules: stop 3 ATR below entry, target 3× the risk, and only buy while price is above its 200-bar average. Compared with the previous rules they did better on 15m, 4h and 1d and worse on 1h, with about half the fees. Fees on ${esc(iv)} came to ${t.feeDragPct}% of the balance across ${t.trades} trades.</p>
+      <p class="fine mt">Current rules: buy when the score clears +${DEFAULT_CONFIG.entryScore} while price is above its 200-bar average, stop ${DEFAULT_CONFIG.atrStop} ATR below entry, target ${DEFAULT_CONFIG.rMultiple}× the risk, and sell after ${DEFAULT_CONFIG.signalExitBars} candles of reversal. ${AUTOTRADER_TESTED.configs} other rule sets were tried — breakouts, buying dips, momentum confirmation, pausing while Bitcoin falls, other stops and exits. The best of them on the older data (${esc(AUTOTRADER_TESTED.altRules)}) did no better on the newer data, so these rules stay. On ${esc(iv)}, fees came to ${t.feeDragPct}% of the balance across ${t.trades} trades, and ${t.winRate}% of trades won.${iv === '15m' ? ` On 15m only ${t.madeMoney} of the ${AUTOTRADER_TESTED.configs} rule sets made money after fees — this chart is the hardest to profit from.` : ''}</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
     </div>`;
   }
@@ -408,6 +408,7 @@ export async function render(el) {
         <div class="stat"><span class="k">Rules it changed</span><span class="v">${lessons.filter((l) => !l.undo && !l.undone).length}</span></div>
       </div>
       ${review.findings.length ? `<ul class="reasons mt">${review.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${(() => { const d = diagnose(state.closed, { startingBalance: state.startingBalance }); return d.length ? `<div class="mt"><div class="fine" style="margin-bottom:4px"><b>What drove the result</b></div><ul class="reasons">${d.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''; })()}
       <p class="fine mt"><b>Rules in force now:</b> ${active.length ? esc(active.join(' · ')) : 'none yet — the original strategy'}.</p>
       ${lessons.length ? `<div class="mt"><div class="fine" style="margin-bottom:4px"><b>What it changed, and when</b></div><ul class="fine" style="list-style:none;padding:0;margin:0">${[...lessons].reverse().slice(0, 12).map((l) => `<li style="padding:4px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(l.at)}</span>${esc(l.text)}${l.undone ? ' <span class="chip">later undone</span>' : ''}</li>`).join('')}</ul></div>` : ''}
     </div>`;
@@ -798,7 +799,7 @@ export async function render(el) {
           <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="5" step="0.1" value="${cfg.riskPct}" style="width:120px"></label>
           <label class="fld">Max open<input class="inp" name="maxPositions" type="number" min="1" max="10" value="${cfg.maxPositions}" style="width:90px"></label>
         </div>
-        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => `<option ${i === cfg.interval ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+        <label class="fld">Chart<select class="inp" name="interval">${['15m', '1h', '4h', '1d'].map((i) => { const x = AUTOTRADER_TESTED[i]; return `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${i} — tested ${x.pickedReturn >= 0 ? '+' : '−'}${Math.abs(x.pickedReturn)}% (holding ${x.buyHold >= 0 ? '+' : '−'}${Math.abs(x.buyHold)}%)</option>`; }).join('')}</select></label>
         <label class="fld">Coins it may trade<input class="inp" name="universe" value="${esc(cfg.universe.join(', '))}"></label>
         <p class="fine">Available: ${esc(tradable.filter((c) => c.binance).slice(0, 24).map((c) => c.symbol).join(', '))}… The AI only trades coins with real exchange candles.</p>
         <button class="btn primary">Save settings</button>
