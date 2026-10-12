@@ -36,10 +36,10 @@ import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
  * rules beat it on 4h (a falling market) and not on the other three.
  */
 export const AUTOTRADER_TESTED = {
-  '15m': { pickedReturn: 18.0, buyHold: 19.6, beatBuyHold: 7, configs: 48, trades: 109, feeDragPct: 5.8, profitFactor: 1.73, maxDrawdownPct: 9.9, previousReturn: 9.3, previousDrawdownPct: 12.0 },
-  '1h': { pickedReturn: 24.8, buyHold: 40.7, beatBuyHold: 2, configs: 48, trades: 107, feeDragPct: 5.5, profitFactor: 1.56, maxDrawdownPct: 15.6, previousReturn: 31.8, previousDrawdownPct: 14.2 },
-  '4h': { pickedReturn: 11.2, buyHold: -16.0, beatBuyHold: 33, configs: 48, trades: 82, feeDragPct: 3.3, profitFactor: 1.25, maxDrawdownPct: 30.5, previousReturn: -10.9, previousDrawdownPct: 36.8 },
-  '1d': { pickedReturn: 70.7, buyHold: 143.4, beatBuyHold: 0, configs: 48, trades: 67, feeDragPct: 2.2, profitFactor: 1.79, maxDrawdownPct: 37.5, previousReturn: 65.6, previousDrawdownPct: 52.5 },
+  '15m': { pickedReturn: 18.0, buyHold: 19.6, beatBuyHold: 7, configs: 48, trades: 109, feeDragPct: 5.8, maxDrawdownPct: 9.9, previousReturn: 9.3, previousDrawdownPct: 12.0 },
+  '1h': { pickedReturn: 24.8, buyHold: 40.7, beatBuyHold: 2, configs: 48, trades: 107, feeDragPct: 5.5, maxDrawdownPct: 15.6, previousReturn: 31.8, previousDrawdownPct: 14.2 },
+  '4h': { pickedReturn: 11.2, buyHold: -16.0, beatBuyHold: 33, configs: 48, trades: 82, feeDragPct: 3.3, maxDrawdownPct: 30.5, previousReturn: -10.9, previousDrawdownPct: 36.8 },
+  '1d': { pickedReturn: 70.7, buyHold: 143.4, beatBuyHold: 0, configs: 48, trades: 67, feeDragPct: 2.2, maxDrawdownPct: 37.5, previousReturn: 65.6, previousDrawdownPct: 52.5 },
   coins: 12, candlesPerCoin: 4000, measuredOn: '2026-09-26',
   beatsBuyAndHold: false,
   // The self-review (js/lib/tradelearn.js) run inside the same test: it acted
@@ -213,8 +213,13 @@ function closePosition(state, cfg, symbol, exitPrice, t, reason) {
   const dir = p.side === 'short' ? -1 : 1;
   const gross = (exitPrice - p.entry) * p.qty * dir;
   const fee = exitPrice * p.qty * (cfg.feePct / 100);
-  const pnl = gross - fee;
-  state.balance += pnl;
+  // A trade's result counts both fees. It used to leave out the entry fee, so a
+  // trade that lost money overall could still count as a win. The simulated
+  // accounts paid that fee from the balance when the position opened; a recorded
+  // real trade has not paid it yet.
+  const entryFee = p.feePaid || 0;
+  const pnl = gross - fee - entryFee;
+  state.balance += p.real ? pnl : gross - fee;
   state.closed.push({
     ...p, exit: round(exitPrice), exitAt: t, reason,
     pnl: round(pnl, 2), pnlPct: round((((exitPrice / p.entry) - 1) * 100) * dir, 3),

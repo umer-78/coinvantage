@@ -143,9 +143,13 @@ export function modal(html, { onClose } = {}) {
   // straight past it into the page behind — which is still fully interactive.
   const opener = document.activeElement;
   const focusables = () => [...wrap.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+  let open = true;
   const close = () => {
+    if (!open) return;
+    open = false;
     wrap.remove();
     document.removeEventListener('keydown', onKey);
+    window.removeEventListener('hashchange', close);
     if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
     onClose?.();
   };
@@ -161,6 +165,9 @@ export function modal(html, { onClose } = {}) {
   wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
   wrap.querySelector('.modal-x').addEventListener('click', close);
   document.addEventListener('keydown', onKey);
+  // A link inside the dialog (or the back button) opens another page; the
+  // dialog used to stay on top of it, covering the page it had just opened.
+  window.addEventListener('hashchange', close);
   // move focus into the dialog: the first real control, or the close button
   setTimeout(() => { (focusables().find((x) => !x.classList.contains('modal-x')) || wrap.querySelector('.modal-x'))?.focus(); }, 0);
   document.body.append(wrap);

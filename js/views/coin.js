@@ -258,7 +258,7 @@ export async function render(el, [symParam]) {
       if (!r.ok) { const m = msg(); if (m) { m.textContent = r.error; m.className = 'fine down'; } return; }
       save(PAPER_STATE, state);
       logActivity('paper_sell', coin.symbol);
-      toast(`Demo sell done — ${r.trade.pnl >= 0 ? 'profit' : 'loss'} ${r.trade.pnlPct}%.`, r.trade.pnl >= 0 ? 'up' : 'down');
+      toast(`Demo sell done: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.`, r.trade.pnl >= 0 ? 'up' : 'down');
       redraw();
     });
   }

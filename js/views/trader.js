@@ -589,7 +589,7 @@ export async function render(el) {
       });
       if (!r.ok) { err.textContent = r.error; err.hidden = false; return; }
       save(REAL_KEY, rs);
-      toast(r.trade ? `Recorded — ${r.trade.pnl >= 0 ? 'profit' : 'loss'} ${r.trade.pnlPct}%.` : `Open ${f3.sym.value} trade recorded.`, r.trade && r.trade.pnl < 0 ? 'down' : 'up');
+      toast(r.trade ? `Recorded: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.` : `Open ${f3.sym.value} trade recorded.`, r.trade && r.trade.pnl < 0 ? 'down' : 'up');
       draw();
     });
     $$('[data-realclose]', el).forEach((b) => b.addEventListener('click', () => {
@@ -599,7 +599,7 @@ export async function render(el) {
       const r = closeManual(rs, cfg, sym, px);
       if (!r.ok) { toast(r.error, 'down'); return; }
       save(REAL_KEY, rs);
-      toast(`${sym} closed at ${money(px)}.`, r.trade.pnl >= 0 ? 'up' : 'down');
+      toast(`${sym} closed at ${money(px)}: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.`, r.trade.pnl >= 0 ? 'up' : 'down');
       draw();
     }));
     $('#realReset', el)?.addEventListener('click', () => {
@@ -661,7 +661,7 @@ export async function render(el) {
       const r = closeManual(ms, cfg, sym, px);
       if (!r.ok) { toast(r.error, 'down'); return; }
       save(MY_KEY, ms);
-      toast(`Sold ${sym} — ${r.trade.pnl >= 0 ? 'profit' : 'loss'} ${r.trade.pnlPct}%.`, r.trade.pnl >= 0 ? 'up' : 'down');
+      toast(`Sold ${sym}: ${r.trade.pnl >= 0 ? 'a profit' : 'a loss'} of ${money(Math.abs(r.trade.pnl))} after fees.`, r.trade.pnl >= 0 ? 'up' : 'down');
       draw();
     }));
   }
