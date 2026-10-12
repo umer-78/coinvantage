@@ -87,7 +87,15 @@ export async function render(el) {
       <div class="card mt" style="background:var(--surface-2)">
         <h3>How much to trust this</h3>
         <p class="fine">The chart score is <b>not</b> part of any verdict here. Across 244,000 bars the share of bars that rose falls as the score rises, so it is shown as a reading and given no vote — the same accuracy gate every other component passes through.</p>
-        <p class="fine">Each verdict blends four readings, and each one is weighted by its own measured accuracy — a reading that has shown no edge barely moves the result. The forecast component scored <b>${TESTED_ACCURACY[st.interval] ?? TESTED_ACCURACY.all}%</b> on ${TESTED_ACCURACY.tests} out-of-sample tests across ${TESTED_ACCURACY.coins} coins, against a ${TESTED_ACCURACY.baseline[st.interval] ?? TESTED_ACCURACY.allBaseline}% baseline for simply naming the more common direction${(TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` — on ${esc(st.interval)} it did not beat that baseline either` : ''}. A BUY or AVOID only appears when a reading with a measured edge leans clearly; when the only lean comes from readings that barely count, the coin is marked "leans up" or "leans down" instead. Timing says when a move may peak, not which way it goes, so it is shown but never votes.</p>
+        <p class="fine">Each verdict blends four readings, and each one is weighted by its own measured accuracy — a reading that has shown no edge barely moves the result. ${(() => {
+          // one chart's score with that chart's own test count, the latest test where there is one
+          const r = TESTED_ACCURACY.recheck?.[st.interval];
+          const charts = Object.values(TESTED_ACCURACY.recheck || {}).filter((x) => typeof x?.hit === 'number').length;
+          const [hit, base, n] = r ? [r.hit, r.baseline, Math.round(TESTED_ACCURACY.recheck.tests / charts)]
+            : typeof TESTED_ACCURACY[st.interval] === 'number' ? [TESTED_ACCURACY[st.interval], TESTED_ACCURACY.baseline[st.interval], TESTED_ACCURACY.testsPerInterval]
+              : [TESTED_ACCURACY.all, TESTED_ACCURACY.allBaseline, TESTED_ACCURACY.tests];
+          return `The forecast component called the direction right <b>${hit}%</b> of the time in ${n} out-of-sample tests${r || typeof TESTED_ACCURACY[st.interval] === 'number' ? ` on ${esc(st.interval)}` : ''} across ${TESTED_ACCURACY.coins} coins${r ? ` (${TESTED_ACCURACY.recheck.measuredOn})` : ''}, against ${base}% for simply naming the more common direction${(TESTED_ACCURACY.noEdge || []).includes(st.interval) ? ` — on ${esc(st.interval)} it did not beat that baseline` : ''}.`;
+        })()} A BUY or AVOID only appears when a reading with a measured edge leans clearly; when the only lean comes from readings that barely count, the coin is marked "leans up" or "leans down" instead. Timing says when a move may peak, not which way it goes, so it is shown but never votes.</p>
         <p class="fine">${esc(ADVICE_DISCLAIMER)} ${wait.length} of ${done.length} coins scanned came back as "no edge — wait", which is usually the honest answer.${st.skipped ? ` ${st.skipped} more were skipped: they have no exchange candles on ${esc(st.interval)}, only CoinGecko's hourly line or demo data, which the forecast was never tested on.` : ''}</p>
       </div>`;
 

@@ -123,6 +123,34 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### AI signal, forecast display and accuracy figures (2026-10-12/13)
+Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measured:
+- **AI signal** (coin page, top of Trade signal): `aiSignal()` replays the chart's published
+  rules (never the user's own settings) on the coin's closed candles, one trade at a time →
+  BUY / HOLD / SELL / WAIT with entry, stop and exit rule. Its record is
+  `CHART_TESTED[chart].signals`: every coin alone, blocks the rules were not picked on. **No
+  chart beat chance on direction** (price higher H candles after a buy: 15m 45.6% vs 50.3%
+  any candle, 1h 47.0% vs 50.1%, 4h 46.7% vs 47.6%, 1d 48.3% vs 47.0%) and on none did a buy
+  beat a random buy held as long (1d +0.96% vs +1.82% a trade). The 1d account beat holding
+  by sitting out the 2022 fall (+3.3% vs −56.9%). The card says so; never present a BUY as a
+  forecast that the price will rise.
+- **No lean where the direction is not reliable** (`js/lib/forecastview.js`): ranges, path,
+  chart cone, scanner ranges and assistant facts are centred on today's price; no target or
+  expected move. Centred ranges held as well or better on every chart (1h 81.7% vs 82.5% with
+  the lean; 5m 83.3% vs 78.8%); the daily 80% range is too narrow either way (72.5%). Timing
+  (`priceless`) states only when the high/low came, never a price or "strength" — the timing
+  test measured the bar, not the direction. The raw forecast still goes to the ledgers.
+- **Move-size call** (`moveSizeCall()`): volatility now vs the coin's normal. Offered as a call
+  only on 5m, 1h, 4h, where the move after a "bigger" call was 1.4–1.6× usual vs 0.8–1.0× after
+  "smaller" (`FORECAST_TESTED.move`); elsewhere only the usual move size is shown.
+- **Removed as accuracy:** the forecast's per-coin recent check ("tested accuracy 71% on 87
+  unseen cases", and its "beats the baseline" note). When it read 60%+ forecasts were right
+  49.5% (196); otherwise 49.7% (1,244) — no information. Direction figures on the page now
+  come from one place: `TESTED_ACCURACY.recheck` (summary.js `accuracyOn`, advice page,
+  risk warnings). The history method's per-coin rate now shows its test count and 95% range.
+- 15m flipped again on the re-runs (own rules would have been adopted); the published
+  decision (standard rules) stands — re-running until a bar is cleared is not evidence.
+
 ### AI trader settings and expected yield (2026-10-12)
 - Settings now take effect and say what they do: every chart in `TRADER_CHARTS`
   (untested ones are labelled so), up to `MAX_COINS` (30) from the top 100, quick picks,
