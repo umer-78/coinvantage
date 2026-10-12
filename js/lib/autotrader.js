@@ -502,7 +502,17 @@ export function aiSignal(candles, interval, symbol = 'COIN') {
   for (let i = 210; i < candles.length; i++) advance(state, cfg, s, i, out);
   const i = candles.length - 1, last = candles[i];
   const tested = CHART_TESTED[interval];
-  const base = { interval, rules: cfg, tested: !!tested?.standard, record: tested?.signals || null, price: last.c, at: last.t };
+  // its trades on these candles, fees included: what it actually did on this coin
+  const net = (t) => round(t.notional > 0 ? (t.pnl / t.notional) * 100 : t.pnlPct, 2);
+  const done = state.closed.map((t) => ({ openedAt: t.openedAt, exitAt: t.exitAt, entry: t.entry, exit: t.exit, why: t.reason, netPct: net(t) }));
+  const from = candles[Math.min(210, i)];
+  const past = done.length ? {
+    trades: done.length, wins: done.filter((t) => t.netPct > 0).length,
+    avgPct: round(done.reduce((a, t) => a + t.netPct, 0) / done.length, 2),
+    from: from.t, holdPct: round((last.c / from.c - 1) * 100, 2),
+    recent: done.slice(-5).reverse(),
+  } : { trades: 0, from: from.t, holdPct: round((last.c / from.c - 1) * 100, 2), recent: [] };
+  const base = { interval, rules: cfg, tested: !!tested?.standard, record: tested?.signals || null, price: last.c, at: last.t, past };
   const pos = state.open[symbol];
   if (pos) {
     const k = candles.findIndex((c) => c.t === pos.openedAt);

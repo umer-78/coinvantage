@@ -523,6 +523,8 @@ export async function render(el, [symParam]) {
   // trade at a time). A definite answer, with the evidence for it.
   let aiSig = { key: '', v: null };
   function aiSignalHtml() {
+    // only on real exchange candles: on demo or CoinGecko data its trades would be invented
+    if (!st.tested) return `<div class="ai-signal fine" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px"><b>AI signal</b> — none here: ${esc(coin.symbol)} has no exchange candles on this chart (only CoinGecko's line or demo data), and the rules were only tested on exchange candles.</div>`;
     const closed = st.candles.slice(0, -1); // decided on closed candles only
     const key = `${st.interval}|${closed.length}|${closed.at(-1)?.t}`;
     if (aiSig.key !== key) aiSig = { key, v: aiSignal(closed, st.interval, coin.symbol) };
@@ -544,10 +546,22 @@ export async function render(el, [symParam]) {
     const rec = !a.tested ? `This rule was never tested on the ${esc(st.interval)} chart, so this signal has no record here. It was tested on ${Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard).join(', ')}.`
       : x ? `How buys like this did on candles the rules were not chosen on (${CHART_TESTED.coins} coins, ${t.from} → ${t.to}): ${x.n.toLocaleString('en-US')} buys, ${p1(x.winPct)}% won, average ${sg(x.avgR, 'R')} a trade (R = the amount risked between entry and stop; wins averaged ${sg(x.avgWinR, 'R')}, losses ${sg(x.avgLossR, 'R')}). The price was higher ${x.H} candles after a buy ${p1(x.fwdUpPct)}% of the time, against ${p1(x.baseUpPct)}% from any candle${x.fwdLo > x.baseUpPct ? ' — more often than chance.' : ` — no better than chance, so a BUY here is not a forecast that the price will rise.`} A buy at a random candle held as long made ${sg(x.randPct)} a trade, against ${sg(x.avgPct)} for these. As a whole account the rules made ${sg((t.adopt ? t.own : t.standard).ret)} per ${t.block} against ${sg(t.hold)} for holding the same coins.`
         : `Tested as the AI trader's rule: ${sg((t.adopt ? t.own : t.standard).ret)} per ${t.block} against ${sg(t.hold)} for holding the same coins.`;
+    // what it did on this coin's own candles: real prices, but the rules were
+    // chosen on history that includes many of them, so this flatters it
+    const pt = a.past;
+    const day = (t) => new Date(t).toISOString().slice(0, st.interval === '1d' || st.interval === '1w' ? 10 : 16).replace('T', ' ');
+    const past = pt.trades
+      ? `<details class="mt"><summary class="fine" style="cursor:pointer">Its trades on ${esc(coin.symbol)} over these candles: ${pt.trades}, ${pt.wins} won, average ${sg(pt.avgPct)} a trade after fees (holding ${esc(coin.symbol)} from ${esc(day(pt.from))}: ${sg(pt.holdPct)})</summary>
+        <div class="tbl-wrap"><table class="tbl fine"><thead><tr><th class="l">Bought</th><th class="l">Sold</th><th>Entry → exit</th><th>Result</th><th class="l">Why it sold</th></tr></thead><tbody>
+          ${pt.recent.map((t) => `<tr><td class="l">${esc(day(t.openedAt))}</td><td class="l">${esc(day(t.exitAt))}</td><td>${m(t.entry)} → ${m(t.exit)}</td><td class="${t.netPct >= 0 ? 'up' : 'down'}">${sg(t.netPct)}</td><td class="l">${esc(t.why)}</td></tr>`).join('')}
+        </tbody></table></div>
+        <p class="fine" style="margin:6px 0 0">The last ${pt.recent.length} shown. Real prices, but the rules were chosen on history that includes many of these candles, so this looks better than it will live; the record above is the one to expect.</p></details>`
+      : `<p class="fine" style="margin:6px 0 0">It made no trades on ${esc(coin.symbol)} over these candles (holding from ${esc(day(pt.from))}: ${sg(pt.holdPct)}).</p>`;
     return `<div class="ai-signal" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">
       <div class="row spread"><b>AI signal · tested ${esc(st.interval)} rule</b><span class="chip ${tone}" style="font-weight:700">${label}</span></div>
       <p style="margin:6px 0 0">${what}</p>
-      <p class="fine" style="margin:6px 0 0">${rec} Simulated, fees included; a record is not a promise.</p></div>`;
+      <p class="fine" style="margin:6px 0 0">${rec} Simulated, fees included; a record is not a promise.</p>
+      ${past}</div>`;
   }
 
   // What the AI trader does with this coin: whether it holds it, the rules it

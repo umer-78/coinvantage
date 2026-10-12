@@ -5,6 +5,7 @@ import { generateSignal, THRESHOLDS } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
 import { forecastForDisplay } from '../lib/forecastview.js';
+import { aiSignal } from '../lib/autotrader.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 import { $, $$, coinLogo, skeleton, bindSeg, icon, wireSortHeaders } from '../ui.js';
 import { esc, price, changeHtml, horizonText, money} from '../format.js';
@@ -24,12 +25,12 @@ export async function render(el) {
     </div>
     <div class="card">
       <div class="card-h">
-        <div class="seg" id="flt"><button data-v="all" class="on">All</button><button data-v="buy">Rising</button><button data-v="sell">Falling</button><button data-v="aiup">AI: likely up</button><button data-v="aidown">AI: likely down</button><button data-v="oversold">Oversold</button><button data-v="overbought">Overbought</button></div>
+        <div class="seg" id="flt"><button data-v="all" class="on">All</button><button data-v="buy">Rising</button><button data-v="sell">Falling</button><button data-v="aibuy">AI signal: BUY or HOLD</button><button data-v="aiup">AI: likely up</button><button data-v="aidown">AI: likely down</button><button data-v="oversold">Oversold</button><button data-v="overbought">Overbought</button></div>
         <span class="fine" id="prog"></span>
       </div>
       <div class="meter" id="meter" style="margin-bottom:10px"><i style="width:0%"></i></div>
       <div id="tbl">${skeleton(10, 26)}</div>
-      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across 244,000 bars, the share of bars that rose <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI up" is a fast version of the coin-page forecast for the next <span id="hz"></span>. "80% range" is where price should end up 8 times in 10 by then — the part of the forecast that tested accurate (it held 78.5% of real outcomes); sort by it to find the coins that swing most. "Move timing" is when that forecast expects the move to top out or bottom, from the shape of past look-alike charts. Open a coin for the full forecast with accuracy stats.</p>
+      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across 244,000 bars, the share of bars that rose <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI signal" is what the chart's tested trading rules do with the coin now — BUY, HOLD (in a trade), SELL or WAIT; in testing its buys picked direction no better than chance, and a coin's page shows the record. "AI up" is the coin page's forecast for the next <span id="hz"></span>, shown only where its direction held up in testing. "80% range" is where price should end up 8 times in 10 by then, centred on today's price where the direction is not reliable — the part of the forecast that tests accurate (in the latest test it held 79–83% of outcomes on 1m–4h, 72.5% on 1d); sort by it to find the coins that swing most. "Move timing" is when the high (or low) of that span came in similar past charts — when, not which way. Open a coin for the full forecast with accuracy stats.</p>
     </div>`;
 
   // How far price may travel by the horizon: the forecast's 80% range, as a
@@ -48,6 +49,16 @@ export async function render(el) {
     if (!g) return `<span class="muted" title="${esc(r.fc?.reason || 'No forecast on this chart, so there is no range to show.')}">—</span>`;
     const f = (v) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(1)}%`;
     return `<span title="8 times in 10, price should end the next ${esc(horizonText(st.interval, DEFAULT_HORIZON[st.interval]))} between ${money(r.fc.range.p10)} and ${money(r.fc.range.p90)}">${f(g.lo)} to ${f(g.hi)}</span>`;
+  };
+
+  // The coin page's AI signal: what the chart's tested rules do with this coin now.
+  const aiCell = (r) => {
+    const a = r.ai;
+    if (!a) return '<span class="muted" title="Not enough history for its rules on this chart.">—</span>';
+    const label = { buy: 'BUY', hold: 'HOLD', sell: 'SELL', wait: 'WAIT' }[a.action];
+    const tone = { buy: 'up', hold: 'up', sell: 'down', wait: '' }[a.action];
+    const why = a.action === 'wait' ? `No buy now: ${a.why}.` : a.action === 'sell' ? `Sold on the last candle (${a.why}).` : a.action === 'buy' ? 'Bought on the last closed candle.' : 'In a trade it bought earlier.';
+    return `<span class="chip ${tone}" title="${esc(`${why} ${a.tested ? 'In testing, buys like this picked direction no better than chance; the coin page shows the record.' : 'This rule was never tested on this chart.'}`)}">${label}</span>`;
   };
 
   // "peaks in 4 hours" — the answer to "for how long does it go up?"
@@ -76,6 +87,7 @@ export async function render(el) {
     const shown = (r) => (r.fc?.ok ? shownProbUp(r.fc.probUp, st.interval, trust) : null);
     if (f === 'buy') rows = rows.filter((r) => r.signal.score >= THRESHOLDS.normal);
     if (f === 'sell') rows = rows.filter((r) => r.signal.score <= -THRESHOLDS.normal);
+    if (f === 'aibuy') rows = rows.filter((r) => r.ai?.action === 'buy' || r.ai?.action === 'hold');
     if (f === 'aiup') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) >= 0.54);
     if (f === 'aidown') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) <= 0.46);
     // `null < 32` is true in JavaScript, so coins with no RSI yet were being
@@ -85,7 +97,8 @@ export async function render(el) {
     // (the filters used 32 / 68, so a coin could be listed as oversold without being shown as one)
     if (f === 'oversold') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) < 30);
     if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 70);
-    const key = { score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0, move: (r) => moveOf(r) ?? -1 }[st.sort];
+    const AI_RANK = { buy: 3, hold: 2, sell: 1, wait: 0 };
+    const key = { aisig: (r) => AI_RANK[r.ai?.action] ?? -1, score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0, move: (r) => moveOf(r) ?? -1 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
     // "for the next 1 day" → "for the next day"
     const hz = horizonText(st.interval, DEFAULT_HORIZON[st.interval]);
@@ -97,12 +110,12 @@ export async function render(el) {
       // list would come from positions, not measured trust.
       const trusted = Object.keys(TESTED_ACCURACY.directionTrust).filter((k) => directionReliable(k)).join(', ');
       $('#tbl', el).innerHTML = st.rows.length
-        ? `<div class="empty">${noDirection ? `The forecast has no reliable direction on ${esc(st.interval)} charts, so no coin is marked likely up or down. It has one on ${trusted}.` : 'No coins match this filter right now.'}</div>`
+        ? `<div class="empty">${noDirection ? `The forecast has no reliable direction on ${esc(st.interval)} charts, so no coin is marked likely up or down. It has one on ${trusted}.` : f === 'aibuy' ? `The tested ${esc(st.interval)} rules are not in a trade on any of these coins right now.` : 'No coins match this filter right now.'}</div>`
         : skeleton(10, 26);
       return;
     }
     const th = (k, label) => `<th data-sort="${k}" aria-sort="${st.sort === k ? 'descending' : 'none'}">${label}${st.sort === k ? ' ↓' : ''}</th>`;
-    $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('score', 'Score')}${th('ai', 'AI up')}${th('move', '80% range')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
+    $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('aisig', 'AI signal')}${th('score', 'Score')}${th('ai', 'AI up')}${th('move', '80% range')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
       ${rows.map((r) => {
         const s = r.signal;
         const trend = s.indicators.ema200 ? (s.price > s.indicators.ema200 ? '<span class="up">Above 200 EMA</span>' : '<span class="down">Below 200 EMA</span>') : '—';
@@ -114,6 +127,7 @@ export async function render(el) {
         return `<tr data-sym="${esc(r.coin.symbol)}"><td class="l"><div class="coin-cell">${coinLogo(r.coin, 24)}<b>${esc(r.coin.symbol)}</b><small class="hide-m">${esc(r.coin.name)}</small></div></td>
           <td>${money(s.price)}</td><td>${changeHtml(r.coin.change24h)}</td>
           <td class="l"><span class="chip ${s.tone === 'flat' ? '' : s.tone}">${s.text}</span></td>
+          <td>${aiCell(r)}</td>
           <td class="${s.tone}"><b>${s.score > 0 ? '+' : ''}${s.score}</b></td><td>${ai}</td><td class="fine">${rangeCell(r)}</td>
           <td class="l fine">${timingCell(r)}</td>
           <td class="${s.indicators.rsi < 30 ? 'up' : s.indicators.rsi > 70 ? 'down' : ''}">${s.indicators.rsi?.toFixed(0) ?? '—'}</td>
@@ -161,7 +175,8 @@ export async function render(el) {
           // The coin page's 1,500 candles, so both pages read the same chart.
           const res = await getCandles(coin, iv, 1500);
           if (run !== st.run || st.disposed) return;
-          if (isTestedSource(res)) st.rows.push({ coin, signal: generateSignal(res.candles, { interval: iv }), fc: undefined, candles: res.candles });
+          // the AI signal decides on closed candles only, as on the coin page
+          if (isTestedSource(res)) st.rows.push({ coin, signal: generateSignal(res.candles, { interval: iv }), ai: aiSignal(res.candles.slice(0, -1), iv, coin.symbol), fc: undefined, candles: res.candles });
           else st.skipped++;
         } catch { st.skipped++; }
         done++; setProg(); draw();

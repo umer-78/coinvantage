@@ -257,6 +257,18 @@ test('the AI signal is the chart\'s published rule replayed on the coin, with th
   const u = aiSignal(climb(400), '30m', 'X');
   assert.equal(u.tested, false);
   assert.equal(u.record, null);
+  // its own trades on these candles: newest first, at most five shown, fees counted
+  const wavy = [];
+  for (let i = 0, prev = 100; i < 700; i++) {
+    const c = 100 * (i < 300 ? 0.998 ** i : 0.998 ** 300 * 1.003 ** (i - 300)) * (1 + 0.02 * Math.sin(i / 5));
+    wavy.push({ t: T0 + i * H, o: prev, h: Math.max(prev, c) * 1.01, l: Math.min(prev, c) * 0.99, c, v: 1000 });
+    prev = c;
+  }
+  const pw = aiSignal(wavy, '4h', 'W').past;
+  assert.ok(pw.trades >= 2 && pw.recent.length === Math.min(5, pw.trades), `${pw.trades} trades`);
+  for (let j = 1; j < pw.recent.length; j++) assert.ok(pw.recent[j - 1].exitAt >= pw.recent[j].exitAt, 'newest first');
+  assert.ok(pw.recent.every((t) => t.netPct < (t.exit / t.entry - 1) * 100), 'after both fees, a trade made less than the price move');
+  assert.equal(pw.holdPct, +((wavy.at(-1).c / wavy[210].c - 1) * 100).toFixed(2));
   // every published signal record says what it says: no chart beat chance on direction
   for (const iv of ['15m', '1h', '4h', '1d']) {
     const r = CHART_TESTED[iv].signals;

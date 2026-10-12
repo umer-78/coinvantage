@@ -133,7 +133,10 @@ Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measur
   any candle, 1h 47.0% vs 50.1%, 4h 46.7% vs 47.6%, 1d 48.3% vs 47.0%) and on none did a buy
   beat a random buy held as long (1d +0.96% vs +1.82% a trade). The 1d account beat holding
   by sitting out the 2022 fall (+3.3% vs −56.9%). The card says so; never present a BUY as a
-  forecast that the price will rise.
+  forecast that the price will rise. It also lists the rule's last 5 trades on that coin's
+  own candles (fees included, against holding the coin), labelled as flattered because the
+  rules were chosen on history that includes them; nothing at all on demo/CoinGecko data.
+  The scanner has the same signal as a column, sortable, with a "BUY or HOLD" filter.
 - **No lean where the direction is not reliable** (`js/lib/forecastview.js`): ranges, path,
   chart cone, scanner ranges and assistant facts are centred on today's price; no target or
   expected move. Centred ranges held as well or better on every chart (1h 81.7% vs 82.5% with
