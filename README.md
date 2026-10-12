@@ -172,7 +172,7 @@ granted by hand from the admin panel, and news/track record keep working.
 ## Rebrand
 
 Edit `APP_NAME` / `TAGLINE` in `js/config.js`, the `<title>` and meta tags in `index.html`,
-the icons (`icon.svg`, `icon-192.png`, `icon-512.png`, `manifest.webmanifest`) and the
+the icons (`icon.svg`, `icon-192.png`, `icon-512.png`, `manifest.webmanifest`), the link-preview image `og-image.png` and the site address in the `og:` and canonical tags and the
 colours in `css/app.css` (`--accent`).
 
 ## Project layout

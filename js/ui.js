@@ -110,6 +110,9 @@ export function markdown(src) {
   let list = null;
   const inline = (s) => s
     .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // In-app links only ("[Track record](#/track)"): the address is limited to
+    // a hash route, so nothing written by a model can link off the site.
+    .replace(/\[([^\]\n]+)\]\((#\/[A-Za-z0-9/_-]*)\)/g, '<a href="$2">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
     .replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');

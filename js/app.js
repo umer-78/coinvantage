@@ -11,6 +11,7 @@ import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, applyDir } from './i18n.js';
 import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
 import { createSync, SYNCED_KEYS, TRADING_KEYS } from './lib/cloudsync.js';
+import { DEPS } from './deps.js';
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
@@ -33,26 +34,28 @@ const ADMIN_NAV = { path: 'admin', label: 'Admin', icon: 'chip', short: 'Admin' 
 // Four destinations plus "More" — five cells, which is what fits a phone row.
 const MOBILE = ['', 'advice', 'ai', 'wallet'];
 
+
+// Route name → page module in js/views/.
 const VIEWS = {
-  '': () => import('./views/markets.js'),
-  coin: () => import('./views/coin.js'),
-  advice: () => import('./views/advice.js'),
-  ai: () => import('./views/assistant.js'),
-  trader: () => import('./views/trader.js'),
-  learn: () => import('./views/learn.js'),
-  scanner: () => import('./views/scanner.js'),
-  track: () => import('./views/track.js'),
-  futures: () => import('./views/futures.js'),
-  news: () => import('./views/news.js'),
-  compare: () => import('./views/compare.js'),
-  tools: () => import('./views/tools.js'),
-  exchanges: () => import('./views/exchanges.js'),
-  wallet: () => import('./views/wallet.js'),
-  alerts: () => import('./views/alerts.js'),
-  premium: () => import('./views/premium.js'),
-  account: () => import('./views/account.js'),
-  admin: () => import('./views/admin.js'),
-  legal: () => import('./views/legal.js'),
+  '': 'markets',
+  coin: 'coin',
+  advice: 'advice',
+  ai: 'assistant',
+  trader: 'trader',
+  learn: 'learn',
+  scanner: 'scanner',
+  track: 'track',
+  futures: 'futures',
+  news: 'news',
+  compare: 'compare',
+  tools: 'tools',
+  exchanges: 'exchanges',
+  wallet: 'wallet',
+  alerts: 'alerts',
+  premium: 'premium',
+  account: 'account',
+  admin: 'admin',
+  legal: 'legal',
 };
 
 let cleanup = null;
@@ -87,19 +90,41 @@ function openMore() {
   $$('a', m.el).forEach((a) => a.addEventListener('click', () => m.close()));
 }
 
+// Ask for every module a page needs at once, rather than letting the browser
+// discover them one import level at a time.
+function preloadDeps(file) {
+  for (const f of [file, ...(DEPS[file] || [])]) {
+    const href = new URL(`./${f}`, import.meta.url).href;
+    if (document.querySelector(`link[rel="modulepreload"][href="${href}"]`)) continue;
+    const link = document.createElement('link');
+    link.rel = 'modulepreload';
+    link.href = href;
+    document.head.append(link);
+  }
+}
+
 // `keepScroll` redraws the page in place (after a sync) instead of opening it at the top.
 async function route(opts) {
   const seq = ++routeSeq;
   const keep = opts?.keepScroll === true ? window.scrollY : null;
   const [name = '', ...params] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
-  const loader = VIEWS[name] || VIEWS[''];
+  const file = `views/${VIEWS[name] || VIEWS['']}.js`;
+  preloadDeps(file);
   renderNav();
   if (typeof cleanup === 'function') { try { cleanup(); } catch (e) { console.error(e); } }
   cleanup = null;
   const view = $('#view');
+  // An address that names no page used to open Markets as if it were that page.
+  // (A sign-in token in the address, which contains "=", is not a page name.)
+  if (name && !VIEWS[name] && !name.includes('=')) {
+    view.innerHTML = `<div class="card empty"><h3>Page not found</h3><p>There is no page at <code>#/${esc(name)}</code>. The link may be old or mistyped.</p><a class="btn primary" href="#/">Go to Markets</a></div>`;
+    document.title = `Page not found · ${CONFIG.APP_NAME}`;
+    window.scrollTo({ top: 0 });
+    return;
+  }
   view.innerHTML = '<div class="skel-wrap"><div class="skel" style="height:28px;width:220px"></div><div class="skel" style="height:360px"></div></div>';
   try {
-    const mod = await loader();
+    const mod = await import(`./${file}`);
     if (seq !== routeSeq) return;
     // Each route renders into its own container, so a slow page that finishes
     // after the user has navigated away writes into a detached node, not the new page.
@@ -440,7 +465,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261012-024920";
+export const BUILD = "20261012-031154";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

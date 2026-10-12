@@ -29,6 +29,7 @@ if ! git --version >/dev/null 2>&1; then
 fi
 
 node tools/build-sitemap.mjs "$SITE"
+node tools/build-deps.mjs
 BUILD="$(date -u +%Y%m%d-%H%M%S)"
 printf '%s\n' "$BUILD" > version.txt
 node -e '

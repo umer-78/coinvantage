@@ -5,6 +5,7 @@ import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js'
 import { accuracyFor, TESTED_ACCURACY } from './predict.js';
 import { fx } from '../api/fx.js';
 import { isTickerMention } from './tickers.js';
+import { conversationalAnswer, termsIn } from './glossary.js';
 
 // Every price the assistant quotes — levels, stops, targets, EMAs, Bollinger
 // bands, ATR, forecast ranges — came out unconverted and labelled USD, while
@@ -15,6 +16,13 @@ const fmtNum = (v) => (v === null || v === undefined || !Number.isFinite(v) ? fm
 
 const DISCLAIMER = '_Signals are technical indicators, not financial advice. Always use a stop-loss and only risk what you can afford to lose._';
 
+// A true minus, like every other number on the site; `digits` significant
+// figures when given, else a whole number.
+const signed = (v, digits) => {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  const t = digits ? Math.abs(v).toPrecision(digits) : Math.abs(v).toFixed(0);
+  return v < 0 && +t !== 0 ? `−${t}` : t;
+};
 const money = (v) => Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 // "the next 1 day" reads as "the next day"
 const nextSpan = (h) => `next ${String(h).replace(/^1 /, '')}`;
@@ -65,9 +73,12 @@ export function detectCompare(q) {
   return uniq.length >= 2 && (asksToCompare || uniq.length >= 2) ? uniq.slice(0, 4) : null;
 }
 
+// "Should I sell everything?" is about the holdings, not the coin in focus.
+export const SELL_ALL = /\b(sell|exit|dump|cash out( of)?|get out of) (everything|it all|all of it|all my|all (my )?(coins|crypto))\b/i;
+
 function detectIntent(q) {
   const s = (q || '').toLowerCase();
-  if (/(portfolio|wallet|holding|my coins|my bag)/.test(s)) return 'portfolio';
+  if (SELL_ALL.test(s) || /(portfolio|wallet|holding|my coins|my bag)/.test(s)) return 'portfolio';
   if (detectCompare(q)) return 'compare';
   if (isMarketWide(s)) return 'market';
   // "How accurate are your predictions?" contains "predict", so it used to be
@@ -357,6 +368,10 @@ function sentimentLine(ctx) {
 }
 
 export function ruleBasedAnswer(question, ctx = {}) {
+  // Greetings, definitions, "how does it work" and "is it a scam" are not
+  // questions about a chart; answering them with one was the old behaviour.
+  const plain = conversationalAnswer(question, { symbol: ctx.coin?.symbol || null, named: namedCoins(question) });
+  if (plain) return plain;
   let intent = detectIntent(question);
   // A market-wide question that arrived with one coin's analysis and no scan
   // (the page decided a coin was named) is answered about that coin, instead of
@@ -529,8 +544,11 @@ export function ruleBasedAnswer(question, ctx = {}) {
     }
     case 'indicators': {
       const i = sig.indicators;
-      out.push(`**Indicator readout**\n- RSI(14): ${i.rsi?.toFixed(1) ?? '—'} ${i.rsi > 70 ? '(overbought)' : i.rsi < 30 ? '(oversold)' : ''}\n- MACD: ${i.macd?.toPrecision(4) ?? '—'} vs signal ${i.macdSignal?.toPrecision(4) ?? '—'} (histogram ${i.macdHist > 0 ? 'positive' : 'negative'})\n- EMA 20 / 50 / 200: ${fmtNum(i.ema20)} / ${fmtNum(i.ema50)} / ${fmtNum(i.ema200)}\n- Bollinger: ${fmtNum(i.bbLower)} – ${fmtNum(i.bbUpper)}\n- ADX: ${i.adx?.toFixed(0) ?? '—'} ${i.adx > 25 ? '(trending)' : '(ranging)'}\n- ATR: ${fmtNum(i.atr)} (${i.atrPct}%)\n- Volume vs 20-bar avg: ${i.volumeRatio ?? '—'}×${i.supertrendDir ? `\n- Supertrend: ${i.supertrendDir === 1 ? 'up' : 'down'} (flips at ${fmtNum(i.supertrend)})` : ''}${i.mfi !== null && i.mfi !== undefined ? `\n- Money Flow Index: ${i.mfi.toFixed(0)} ${i.mfi > 80 ? '(heavy buying)' : i.mfi < 20 ? '(heavy selling)' : ''}` : ''}${i.cci !== null && i.cci !== undefined ? `\n- CCI(20): ${i.cci.toFixed(0)} ${i.cci > 100 ? '(stretched up)' : i.cci < -100 ? '(stretched down)' : ''}` : ''}${i.willR !== null && i.willR !== undefined ? `\n- Williams %R: ${i.willR.toFixed(0)} ${i.willR > -20 ? '(near the top of its range)' : i.willR < -80 ? '(near the bottom of its range)' : ''}` : ''}${i.donchianHigh ? `\n- 20-bar breakout levels: ${fmtNum(i.donchianLow)} – ${fmtNum(i.donchianHigh)}` : ''}`);
+      out.push(`**Indicator readout**\n- RSI(14): ${i.rsi?.toFixed(1) ?? '—'} ${i.rsi > 70 ? '(overbought)' : i.rsi < 30 ? '(oversold)' : ''}\n- MACD: ${signed(i.macd, 4)} vs signal ${signed(i.macdSignal, 4)} (histogram ${i.macdHist > 0 ? 'positive' : 'negative'})\n- EMA 20 / 50 / 200: ${fmtNum(i.ema20)} / ${fmtNum(i.ema50)} / ${fmtNum(i.ema200)}\n- Bollinger: ${fmtNum(i.bbLower)} – ${fmtNum(i.bbUpper)}\n- ADX: ${i.adx?.toFixed(0) ?? '—'} ${i.adx > 25 ? '(trending)' : '(ranging)'}\n- ATR: ${fmtNum(i.atr)} (${i.atrPct}%)\n- Volume vs 20-bar avg: ${i.volumeRatio ?? '—'}×${i.supertrendDir ? `\n- Supertrend: ${i.supertrendDir === 1 ? 'up' : 'down'} (flips at ${fmtNum(i.supertrend)})` : ''}${i.mfi !== null && i.mfi !== undefined ? `\n- Money Flow Index: ${i.mfi.toFixed(0)} ${i.mfi > 80 ? '(heavy buying)' : i.mfi < 20 ? '(heavy selling)' : ''}` : ''}${i.cci !== null && i.cci !== undefined ? `\n- CCI(20): ${signed(i.cci)} ${i.cci > 100 ? '(stretched up)' : i.cci < -100 ? '(stretched down)' : ''}` : ''}${i.willR !== null && i.willR !== undefined ? `\n- Williams %R: ${signed(i.willR)} ${i.willR > -20 ? '(near the top of its range)' : i.willR < -80 ? '(near the bottom of its range)' : ''}` : ''}${i.donchianHigh ? `\n- 20-bar breakout levels: ${fmtNum(i.donchianLow)} – ${fmtNum(i.donchianHigh)}` : ''}`);
       out.push('These readings describe the chart; none of them was measured to predict the next move on its own.');
+      // "What is BTC's RSI?" gets the reading above and what the number means.
+      const asked = termsIn(question);
+      if (asked.length) out.push(`\n${asked.map((g) => `**${g.title}:** ${g.text}`).join('\n\n')}`);
       out.push(reasonsBlock(sig, 5));
       break;
     }

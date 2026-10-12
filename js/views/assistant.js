@@ -2,7 +2,8 @@ import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
 import { live } from '../api/live.js';
 import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti, compareCoins } from '../ai/context.js';
-import { ruleBasedAnswer, isMarketWide, detectCompare } from '../lib/analyst.js';
+import { ruleBasedAnswer, isMarketWide, detectCompare, namedCoins, SELL_ALL } from '../lib/analyst.js';
+import { conversationalAnswer, termsIn } from '../lib/glossary.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, customState, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
@@ -18,7 +19,7 @@ export async function render(el, [symParam]) {
   const s = settings.get();
 
   el.innerHTML = `
-    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built from live prices, signals, backtests and the forecast — and run on your device. No account, no API key, nothing sent to a server.</p></div><div class="row"><button class="btn sm" type="button" id="assistantStop" disabled>Stop</button><button class="btn sm ghost" type="button" id="assistantClear">Clear chat</button></div></div>
+    <div class="page-head"><div><h1>Assistant</h1><p>Answers are built on your device from live prices, signals, backtests and the forecast. Your questions stay on this device unless you connect your own AI service, and no account or API key is needed.</p></div><div class="row"><button class="btn sm" type="button" id="assistantStop" disabled>Stop</button><button class="btn sm ghost" type="button" id="assistantClear">Clear chat</button></div></div>
     <div class="chat">
       <div class="card chat-box">
         <div class="chat-log" id="log" aria-live="polite"></div>
@@ -43,7 +44,7 @@ export async function render(el, [symParam]) {
           <ol style="padding-left:18px;margin:6px 0 0">
             <li>Pulls live candles from Binance for the coin you ask about.</li>
             <li>Computes readings on 4 timeframes, a backtest, and the forecast (7 models including pattern matching, a neural network and gradient-boosted trees, each weighted by its measured accuracy).</li>
-            <li>The built-in language model turns those verified numbers into a plain-English answer.</li>
+            <li>A built-in analyst — or a language model running on your device, if you turn one on — turns those verified numbers into a plain-English answer.</li>
           </ol>
           <p class="mt">Not financial advice. The assistant cannot place trades.</p>
         </div>
@@ -166,8 +167,19 @@ Every answer is built from live prices, signals across four timeframes, a backte
     const bot = addMsg('bot', '<span class="typing"><i></i><i></i><i></i></span> <span class="fine" data-step>Thinking…</span>');
     const step = (t) => { const n = bot.querySelector('[data-step]'); if (n) n.textContent = t; };
     try {
-      const wantsPortfolio = /(portfolio|wallet|holding|my coins)/i.test(question);
-      const detected = await detectSymbol(question);
+      const wantsPortfolio = SELL_ALL.test(question) || /(portfolio|wallet|holding|my coins)/i.test(question);
+      const found = await detectSymbol(question);
+      // "What is ATR?" must not turn ATR into a coin when a token shares the name.
+      const detected = found && termsIn(found).length && !namedCoins(question).includes(found) ? null : found;
+      // Greetings, definitions, "how does it work" and "is it a scam" need no
+      // chart: answer at once instead of fetching and reading one.
+      const plain = conversationalAnswer(question, { symbol: st.symbol, named: detected ? [detected] : namedCoins(question) });
+      if (plain) {
+        const src = '<span>Built-in answer (instant)</span>';
+        history.push({ role: 'assistant', content: plain, meta: src });
+        bot.innerHTML = markdown(plain) + `<div class="src">${src}</div>`;
+        return;
+      }
       // "Which coin should I buy?" is about the whole market — only treat it as
       // a single-coin question when the user actually named a coin.
       const wantsMarket = isMarketWide(question) && !detected;

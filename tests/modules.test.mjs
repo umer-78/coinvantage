@@ -78,3 +78,12 @@ test('the server engine is a byte-identical copy of the browser engine', () => {
     assert.equal(readFileSync(join(FN, 'engine', `${f}.js`), 'utf8'), readFileSync(join(ROOT, 'js/lib', `${f}.js`), 'utf8'), `${f}.js differs`);
   }
 });
+
+test('the page preload manifest matches the imports', async () => {
+  // js/deps.js and the preload links in index.html are generated from the
+  // import graph; a new import that is not in them is fetched late, not lost.
+  const { buildDeps } = await import('../tools/build-deps.mjs');
+  const { js, html } = buildDeps();
+  assert.equal(readFileSync(join(ROOT, 'js/deps.js'), 'utf8'), js, 'run: node tools/build-deps.mjs');
+  assert.equal(readFileSync(join(ROOT, 'index.html'), 'utf8'), html, 'run: node tools/build-deps.mjs');
+});
