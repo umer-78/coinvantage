@@ -2,7 +2,8 @@ import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
 import { live } from '../api/live.js';
 import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti, compareCoins } from '../ai/context.js';
-import { ruleBasedAnswer, isMarketWide, detectCompare, namedCoins, SELL_ALL } from '../lib/analyst.js';
+import { ruleBasedAnswer, isMarketWide, detectCompare, namedCoins, SELL_ALL, AI_SYSTEM_PROMPT } from '../lib/analyst.js';
+import { unsupportedFigures, materialFigures } from '../lib/grounding.js';
 import { conversationalAnswer, termsIn } from '../lib/glossary.js';
 import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, customState, recommendedModelId } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
@@ -117,7 +118,7 @@ export async function render(el, [symParam]) {
           <label class="fld">Model name<input class="inp" name="model" placeholder="llama3.1" value="${esc(settings.get().customModel)}"></label>
           <label class="fld">API key (optional)<input class="inp" name="key" type="password" value="${esc(settings.get().customKey)}"></label>
           <div class="row"><button class="btn sm primary">Save</button><button class="btn sm" type="button" id="clearCustom">Remove</button></div>
-          <p class="fine">Works with Ollama, LM Studio, vLLM or any OpenAI-compatible service. The key stays in this browser.</p>
+          <p class="fine">Works with Ollama, LM Studio, vLLM or any OpenAI-compatible service. The key stays in this browser. Ollama only answers other websites when started with <code>OLLAMA_ORIGINS=${esc(location.origin)}</code>; in LM Studio, turn on CORS in the server settings.</p>
         </form></details>`;
     $('#startAi', card)?.addEventListener('click', async () => {
       try { await loadLocalModel($('#modelSel', card).value); toast('Built-in AI is ready', 'up'); }
@@ -217,7 +218,19 @@ Every answer is built from live prices, signals across four timeframes, a backte
           else if (market) data.marketPicks = market;
           if (portfolio.length) data.portfolio = portfolio.map((p) => ({ coin: p.symbol, valueUsd: Math.round(p.value), pnlPct: p.pnlPct !== null ? +p.pnlPct.toFixed(1) : null }));
           const r = await askLLM({ history: history.slice(0, -1), question, facts, data, signal: ac.signal, onText: (t) => { bot.innerHTML = markdown(t); log.scrollTop = log.scrollHeight; } });
-          if (r.text.trim().length > 20) { finalText = r.text; source = `${r.source} · built-in AI`; }
+          // A figure the model was not given is checked before the answer is
+          // kept: a few means the analyst's own answer is shown instead, one or
+          // two are pointed out under the answer.
+          const bad = r.text.trim().length > 20 ? unsupportedFigures(r.text, [facts, JSON.stringify(data), AI_SYSTEM_PROMPT, ...history.filter((m) => m.role === 'user').map((m) => m.content)]) : [];
+          if (r.text.trim().length <= 20) source = 'Rule-based analyst (the AI model gave no answer)';
+          else if (bad.length >= 3 || (bad.length === 2 && materialFigures(r.text) < 4)) source = `Rule-based analyst (the AI's answer quoted figures not in the data: ${bad.slice(0, 3).join(', ')})`;
+          else {
+            finalText = r.text;
+            if (r.cut) finalText += "\n\n_Cut short at the model's length limit; the full verified answer is under “show data used”._";
+            if (bad.length) finalText += `\n\n_Not in the verified data: ${bad.join(', ')}. Check against “show data used”._`;
+            if (!/not financial advice/i.test(finalText)) finalText += '\n\nNot financial advice.';
+            source = `${r.source} · ${r.where === 'device' ? 'language model on this device' : 'your AI server'}`;
+          }
         } catch (err) {
           if (ac.signal.aborted) source = 'Rule-based analyst (stopped)';
           else {

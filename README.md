@@ -64,9 +64,9 @@ computers alike.
    | 2B | ≈1.4 GB |
    | 4B | ≈2.6 GB |
 
-   The LLM rewrites verified numbers from the analyst, which keeps small models accurate.
+   The LLM rewrites verified numbers from the analyst, which keeps small models accurate. Each model has a 4,096-token window shared by the question and the answer, so the prompt is budgeted in tokens (instructions and question, then the analyst's answer, then the last turn of the chat, then the raw data with its least useful detail dropped first) and always leaves at least 700 tokens for the reply. Every price, percentage and level in the model's answer is checked against the data it was given: one or two unknown figures are pointed out under the answer, and more than that brings back the analyst's own answer instead.
 4. **Rule-based analyst** (`js/lib/analyst.js`) answers instantly on every device, including phones without WebGPU.
-5. *Optional:* any OpenAI-compatible endpoint (for example your own Ollama server) can be set under **AI Assistant → Advanced**.
+5. *Optional:* any OpenAI-compatible endpoint (for example your own Ollama server) can be set under **AI Assistant → Advanced**. Ollama only answers other websites when started with `OLLAMA_ORIGINS` set to the site's address; LM Studio needs CORS turned on.
 
 ### Measured accuracy (honest numbers)
 

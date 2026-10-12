@@ -98,6 +98,7 @@ export const DEPS = {
     'lib/compute.js',
     'lib/demo.js',
     'lib/glossary.js',
+    'lib/grounding.js',
     'lib/history.js',
     'lib/indicators.js',
     'lib/pooled.js',
