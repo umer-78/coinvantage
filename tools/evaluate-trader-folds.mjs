@@ -39,8 +39,8 @@ const CURRENT = { tag: 'current app rules' };
 const prep = (sym, c) => { const ind = computeAll(c); return { symbol: sym, candles: c, ind, atr: atr(c, 14), scores: c.map((_, i) => (i >= 210 ? scoreAt(c, ind, i).score : 0)) }; };
 
 // One account, all coins, shared cash, from candle `from` of every series.
-function account(rules, series, from) {
-  const cfg = { ...DEFAULT_CONFIG, ...rules, excluded: [], universe: series.map((x) => x.symbol) };
+function account(rules, series, from, extra = {}) {
+  const cfg = { ...DEFAULT_CONFIG, ...rules, ...extra, excluded: [], universe: series.map((x) => x.symbol) };
   const st = newState(cfg);
   const run = series.map((x) => ({ ...x, regime: cfg.marketFilter ? x.regime : null }));
   for (const x of run) st.cursor[x.symbol] = x.candles[from - 1].t;
@@ -55,6 +55,7 @@ function account(rules, series, from) {
   return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length, win: st.closed.length ? (wins / st.closed.length) * 100 : 0, fees: (fees / cfg.startingBalance) * 100 };
 }
 const objective = (m) => (m.trades < 10 ? -Infinity : m.ret - 0.5 * m.dd);
+const RISKS = [0.5, 1, 1.5, 2, 3, 5];
 const r2 = (v) => +v.toFixed(2);
 
 const out = { measuredOn: new Date().toISOString().slice(0, 10), configs: grid.length, timeframes: {} };
@@ -78,7 +79,11 @@ for (const iv of IVS) {
     const cur = account({}, test, WARM), mine = account(pick, test, WARM);
     const hold = test.reduce((a, x) => a + (x.candles.at(-1).c / x.candles[WARM].c - 1), 0) / test.length * 100;
     const pack = (m) => ({ ret: r2(m.ret), dd: r2(m.dd), trades: m.trades, win: r2(m.win), fees: r2(m.fees) });
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length });
+    // the same block at other risk levels, for the expected-yield estimate:
+    // both the chart's own pick and the standard rules, so whichever ships has one
+    const byRisk = {};
+    for (const risk of RISKS) byRisk[risk] = { own: pack(account(pick, test, WARM, { riskPct: risk })), standard: pack(account({}, test, WARM, { riskPct: risk })) };
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length, byRisk });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
@@ -90,6 +95,13 @@ for (const iv of IVS) {
   const sum = (k, m) => folds.reduce((a, x) => a + x[k][m], 0);
   const summary = (k) => ({ ret: mean(k, 'ret'), dd: mean(k, 'dd'), trades: sum(k, 'trades'), win: r2(folds.reduce((a, x) => a + x[k].win * x[k].trades, 0) / Math.max(1, sum(k, 'trades'))), fees: mean(k, 'fees') });
   const entry = { coins: coins.length, from: folds[0].from, to: folds.at(-1).to, folds, better, current: summary('current'), own: summary('own'), hold: r2(folds.reduce((a, x) => a + x.hold, 0) / folds.length), adopt };
+  // average, worst and best block at each risk level, for the rules this chart would trade
+  const which = adopt ? 'own' : 'standard';
+  entry.byRisk = Object.fromEntries(RISKS.map((risk) => {
+    const rs = folds.map((x) => x.byRisk[risk][which]);
+    return [risk, { ret: r2(rs.reduce((a, m) => a + m.ret, 0) / rs.length), lo: r2(Math.min(...rs.map((m) => m.ret))), hi: r2(Math.max(...rs.map((m) => m.ret))), dd: r2(rs.reduce((a, m) => a + m.dd, 0) / rs.length) }];
+  }));
+  console.log(`  by risk per trade (${which} rules): ${RISKS.map((risk) => `${risk}% → ${entry.byRisk[risk].ret}% (worst block ${entry.byRisk[risk].lo}%, drop ${entry.byRisk[risk].dd}%)`).join(' · ')}`);
   if (adopt) {
     // what this chart would get: the same pick on the full history
     const full = withRegime(coins.map((s) => prep(s, all[s])));
