@@ -46,6 +46,10 @@ export function tripleBarrier(candles, i, atr, { up = 2, down = 1, maxBars = 24 
   }
   const close = candles[last].c;
   const ret = (close - entry) / entry;
+  // Near the end of the data the time limit has not been reached yet: the
+  // trade is still open, so it has no label. It used to be scored on the few
+  // candles that existed, as if time had run out.
+  if (i + maxBars > n - 1) return { label: null, touched: 'time', bars: last - i, ret };
   return { label: ret > 0 ? 1 : 0, touched: 'time', bars: last - i, ret };
 }
 

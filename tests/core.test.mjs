@@ -1521,3 +1521,17 @@ import { supertrend, keltner, donchian, mfi, cci, williamsR, ema as emaFn } from
     assert.ok(cci(upThenDown)[110] < 0);
   });
 }
+
+test('triple barrier: a trade whose time limit has not passed yet has no label', async () => {
+  const { tripleBarrier } = await import('../js/lib/barrier.js');
+  // flat candles that never touch either barrier
+  const flat = Array.from({ length: 40 }, (_, i) => ({ t: i, o: 100, h: 100.1, l: 99.9, c: 100 + (i % 2 ? 0.05 : -0.05) }));
+  const done = tripleBarrier(flat, 5, 1, { up: 2, down: 1, maxBars: 10 });
+  assert.equal(done.touched, 'time');
+  assert.notEqual(done.label, null, 'a full time limit gives a label');
+  const open = tripleBarrier(flat, 35, 1, { up: 2, down: 1, maxBars: 10 });
+  assert.equal(open.label, null, 'only 4 of 10 candles exist yet');
+  // but a barrier touched within the candles that do exist still counts
+  const spike = flat.map((c, i) => (i === 37 ? { ...c, h: 103 } : c));
+  assert.equal(tripleBarrier(spike, 35, 1, { up: 2, down: 1, maxBars: 10 }).label, 1);
+});
