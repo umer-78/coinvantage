@@ -1,5 +1,5 @@
 import { markets, cachedMarkets, getGlobal, getFearGreed, getTrending, isStable } from '../api/market.js';
-import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg } from '../ui.js';
+import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, wireSortHeaders } from '../ui.js';
 import { esc, price, compact, pct, changeHtml, money, dateTime } from '../format.js';
 import { sparkline, gauge, treemap, changeColor } from '../charts/small.js';
 import { watchlist } from '../store.js';
@@ -46,7 +46,9 @@ export async function render(el) {
     }
     const key = state.sort;
     rows = [...rows].sort((a, b) => ((a[key] ?? -Infinity) > (b[key] ?? -Infinity) ? 1 : -1) * state.dir * (key === 'rank' || key === 'name' ? 1 : -1));
-    const th = (k, label, cls = '') => `<th data-sort="${k}" class="${cls}">${label}${state.sort === k ? (state.dir === 1 ? ' ↓' : ' ↑') : ''}</th>`;
+    // rank and name read top-down when dir is 1; every other column reads largest first
+    const order = (k) => (state.sort !== k ? 'none' : (state.dir === 1) === (k === 'rank' || k === 'name') ? 'ascending' : 'descending');
+    const th = (k, label, cls = '') => `<th data-sort="${k}" class="${cls}" aria-sort="${order(k)}">${label}${state.sort === k ? (state.dir === 1 ? ' ↓' : ' ↑') : ''}</th>`;
     area.innerHTML = `<div class="tbl-wrap"><table class="tbl" id="mkt">
       <thead><tr><th class="l" style="width:28px"></th>${th('rank', '#', 'l')}${th('name', 'Coin', 'l')}${th('price', 'Price')}${th('change1h', '1h', 'hide-m')}${th('change24h', '24h')}${th('change7d', '7d', 'hide-m')}${th('marketCap', 'Market cap')}${th('volume24h', 'Volume 24h', 'hide-m')}<th class="hide-m">Last 7 days</th></tr></thead>
       <tbody>${rows.slice(0, state.limit).map((r) => `
@@ -63,9 +65,7 @@ export async function render(el) {
           <td class="hide-m">${sparkline(r.sparkline, { w: 128, h: 38 })}</td>
         </tr>`).join('')}</tbody></table></div>
       ${rows.length > state.limit ? `<div class="row" style="justify-content:center;margin-top:12px"><button class="btn" id="more">Show more (${rows.length - state.limit})</button></div>` : ''}`;
-    $$('th[data-sort]', area).forEach((h) => h.addEventListener('click', () => {
-      const k = h.dataset.sort; state.dir = state.sort === k ? -state.dir : 1; state.sort = k; drawTable();
-    }));
+    wireSortHeaders(area, (k) => { state.dir = state.sort === k ? -state.dir : 1; state.sort = k; drawTable(); });
     $('#mkt tbody', area).addEventListener('click', (e) => {
       const star = e.target.closest('[data-star]');
       if (star) { e.stopPropagation(); star.classList.toggle('on', watchlist.toggle(star.dataset.star)); if (state.scope === 'watch') drawTable(); return; }

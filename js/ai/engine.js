@@ -143,6 +143,10 @@ export async function askLLM({ history, question, facts, data, onText, signal })
     const delta = chunk.choices?.[0]?.delta?.content || '';
     if (delta) { text += delta; onText?.(stripThink(text)); }
   }
+  // A stopped answer is unfinished. It used to come back as if complete and
+  // replace the analyst's answer; Stop now ends with the analyst's, as it
+  // already did for a connected endpoint.
+  if (signal?.aborted) throw new DOMException('Stopped', 'AbortError');
   return { text: stripThink(text), source: aiState.model };
 }
 

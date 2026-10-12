@@ -5,7 +5,7 @@ import { generateSignal } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
-import { $, $$, coinLogo, skeleton, bindSeg, icon } from '../ui.js';
+import { $, $$, coinLogo, skeleton, bindSeg, icon, wireSortHeaders } from '../ui.js';
 import { esc, price, changeHtml, horizonText, money} from '../format.js';
 
 export const title = 'Scanner';
@@ -96,7 +96,7 @@ export async function render(el) {
         : skeleton(10, 26);
       return;
     }
-    const th = (k, label) => `<th data-sort="${k}">${label}${st.sort === k ? ' ↓' : ''}</th>`;
+    const th = (k, label) => `<th data-sort="${k}" aria-sort="${st.sort === k ? 'descending' : 'none'}">${label}${st.sort === k ? ' ↓' : ''}</th>`;
     $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('score', 'Score')}${th('ai', 'AI up')}${th('move', '80% range')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-m">Trend</th><th class="hide-m l">Top reason</th></tr></thead><tbody>
       ${rows.map((r) => {
         const s = r.signal;
@@ -114,7 +114,7 @@ export async function render(el) {
           <td class="${s.indicators.rsi < 30 ? 'up' : s.indicators.rsi > 70 ? 'down' : ''}">${s.indicators.rsi?.toFixed(0) ?? '—'}</td>
           <td class="hide-m">${trend}</td><td class="l hide-m muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${esc(reason)}</td></tr>`;
       }).join('')}</tbody></table></div>`;
-    $$('th[data-sort]', el).forEach((h) => h.addEventListener('click', () => { st.sort = h.dataset.sort; draw(); }));
+    wireSortHeaders($('#tbl', el), (k) => { st.sort = k; draw(); });
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
   };
 

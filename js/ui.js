@@ -103,6 +103,24 @@ export function bindSeg(root, onChange) {
   }));
 }
 
+/**
+ * Sortable table headers (th[data-sort]) that work from the keyboard too:
+ * Tab reaches them, Enter or Space sorts, and focus returns to the same header
+ * after the table is redrawn. They used to answer the mouse only.
+ */
+export function wireSortHeaders(root, onSort) {
+  for (const h of root.querySelectorAll('th[data-sort]')) {
+    h.tabIndex = 0;
+    const go = (byKey) => {
+      const k = h.dataset.sort;
+      onSort(k);
+      if (byKey) root.querySelector(`th[data-sort="${CSS.escape(k)}"]`)?.focus();
+    };
+    h.addEventListener('click', () => go(false));
+    h.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(true); } });
+  }
+}
+
 // Minimal safe markdown → HTML (escape first, then format)
 export function markdown(src) {
   const lines = esc(src || '').replace(/<think>[\s\S]*?<\/think>/g, '').split('\n');
