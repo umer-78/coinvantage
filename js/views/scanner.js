@@ -4,6 +4,7 @@ import { directionTrustFor } from '../lib/selfimprove.js';
 import { generateSignal, THRESHOLDS } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
+import { forecastForDisplay } from '../lib/forecastview.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 import { $, $$, coinLogo, skeleton, bindSeg, icon, wireSortHeaders } from '../ui.js';
 import { esc, price, changeHtml, horizonText, money} from '../format.js';
@@ -60,6 +61,8 @@ export async function render(el) {
     if (!t?.ok) return `<span class="muted" title="${esc(t?.reason || 'No forecast on this chart, so there is nothing to time.')}">—</span>`;
     if (!t.shaped) return `<span class="muted" title="${esc(`The matched past charts drifted ${t.endPct >= 0 ? 'up' : 'down'} steadily rather than spiking, so there is no clear turning point to call inside this horizon.`)}">—</span>`;
     const m = t.rising ? t.peak : t.trough;
+    // where the direction is not reliable only the timing was measured, so no arrow or colour
+    if (t.priceless) return `<span title="In similar past charts the ${t.rising ? 'high' : 'low'} of this horizon came about this far in. When, not which way.">${t.rising ? 'high' : 'low'} in ${esc(horizonText(st.interval, m.bar))}</span>`;
     return `<span class="${t.rising ? 'up' : 'down'}">${t.rising ? '▲ peaks' : '▼ bottoms'} in ${esc(horizonText(st.interval, m.bar))}</span>`;
   };
 
@@ -170,8 +173,10 @@ export async function render(el) {
       if (run !== st.run || st.disposed) return;
       try {
         // The full forecast the coin page runs; `fast` mode was never tested.
-        row.fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], intervalMs: INTERVAL_MS[iv] });
-        row.tm = row.fc?.ok ? timingOutlook(row.fc, { intervalMs: INTERVAL_MS[iv] }) : null;
+        const fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], intervalMs: INTERVAL_MS[iv] });
+        row.tm = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv], interval: iv }) : null;
+        // shown without the lean where the direction is not reliable, as on the coin page
+        row.fc = fc?.ok ? forecastForDisplay(fc, iv, directionTrustFor(iv).trust) : fc;
       } catch { row.fc = null; row.tm = null; }
       row.candles = null;
       draw();

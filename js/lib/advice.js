@@ -114,10 +114,12 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
     parts.push({ key: 'timing', value: timing.rising ? room * 0.6 : -0.5, weight: 0, measuredEdge: tt ? +(tt.hitPct - tt.baselinePct).toFixed(1) : null });
     timingNote = timing;
     reasons.push({
-      tone: timing.rising ? 'good' : 'bad',
-      text: timing.rising
-        ? `Timing: strength expected to run ${timing.peak.bar} more candle${timing.peak.bar === 1 ? '' : 's'} before topping out.`
-        : `Timing: weakness expected for the next ${timing.trough.bar} candle${timing.trough.bar === 1 ? '' : 's'} — a better entry may come.`,
+      tone: timing.priceless ? 'flat' : timing.rising ? 'good' : 'bad',
+      text: timing.priceless
+        ? `Timing: in similar past charts the ${timing.rising ? 'high' : 'low'} of this horizon came about ${(timing.rising ? timing.peak : timing.trough).bar} candle${(timing.rising ? timing.peak : timing.trough).bar === 1 ? '' : 's'} in — when, not which way.`
+        : timing.rising
+          ? `Timing: strength expected to run ${timing.peak.bar} more candle${timing.peak.bar === 1 ? '' : 's'} before topping out.`
+          : `Timing: weakness expected for the next ${timing.trough.bar} candle${timing.trough.bar === 1 ? '' : 's'} — a better entry may come.`,
     });
   }
 

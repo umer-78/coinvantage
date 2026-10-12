@@ -209,6 +209,13 @@ export function analyzeHistory(daily, { window = 45, horizons = [7, 30, 90], hor
 }
 
 /** Compact version for the AI assistant / LLM context. */
+/** 95% Wilson range of a hit rate over n tests, in %. */
+export function wilsonPct(p, n) {
+  if (!(n > 0)) return null;
+  const z = 1.96, d = 1 + (z * z) / n, mid = (p + (z * z) / (2 * n)) / d, half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+  return [Math.round((mid - half) * 100), Math.round((mid + half) * 100)];
+}
+
 export function summarizeHistory(analogs, season, validation, horizon = 30) {
   const v = historyVerdict(analogs, season, validation, horizon);
   if (!v) return null;
@@ -222,6 +229,9 @@ export function summarizeHistory(analogs, season, validation, horizon = 30) {
     bestCasePct: +v.bestPct.toFixed(1),
     worstCasePct: +v.worstPct.toFixed(1),
     methodAccuracyPct: v.accuracy !== null ? +(v.accuracy * 100).toFixed(1) : null,
+    // how many non-overlapping past tests that rate rests on, and its 95% range
+    methodTests: v.accuracy !== null ? validation.tests : null,
+    methodRangePct: v.accuracy !== null ? wilsonPct(validation.accuracy, validation.tests) : null,
     thisMonthHistoricalAvgPct: v.seasonalAvgPct === null ? null : +v.seasonalAvgPct.toFixed(2),
     // The anchor date is the day the past chart matched today's, not the start
     // of the window — that is the date the "and then…" outcome is measured from.

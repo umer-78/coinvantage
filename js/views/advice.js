@@ -154,7 +154,7 @@ export async function render(el) {
       let fc = null, tm = null;
       try {
         fc = await runForecast(row.candles, { horizon: DEFAULT_HORIZON[iv], intervalMs: INTERVAL_MS[iv] });
-        tm = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
+        tm = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv], interval: iv }) : null;
       } catch { /* the advice still works without it */ }
       row.advice = adviseCoin({ signal: row.signal, forecast: fc, timing: tm, interval: iv, trust: directionTrustFor(iv).trust });
       row.candles = null;

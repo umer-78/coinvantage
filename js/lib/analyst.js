@@ -129,14 +129,15 @@ function forecastBlock(f, ctx) {
   if (!f) return '';
   const dirWord = f.direction === 'UP' ? 'higher' : f.direction === 'DOWN' ? 'lower' : 'roughly flat';
   const horizon = ctx.horizonText || `${f.horizonBars} candles`;
-  const acc = f.validatedAccuracyPct !== null ? `${f.validatedAccuracyPct}% direction accuracy on recent unseen data (naive baseline ${f.baselineAccuracyPct}%)` : 'accuracy not measured';
+  const tested = f.testedDirectionPct ?? f.validatedAccuracyPct ?? null;
+  const acc = tested !== null ? `the direction was right ${tested}% of the time on this chart in testing, against ${f.testedBaselinePct ?? f.baselineAccuracyPct}% for always naming the commoner direction` : 'accuracy not measured';
   const lines = [
     f.directionReliable === false
       ? `**AI forecast (${nextSpan(horizon)}):** no reliable direction on this chart (raw model lean ${f.rawProbUpPct}% up, not a chance of anything) · the ranges below are the useful part`
       : `**AI forecast (${nextSpan(horizon)}):** ${f.probUpPct}% chance of going up → leans **${dirWord}** · confidence ${f.confidence}`,
-    `- Expected move: ${pct(f.expectedMovePct)} → target ≈ ${fmtNum(f.targetPrice)}`,
+    f.expectedMovePct === null || f.expectedMovePct === undefined ? '- No expected move or target: the ranges are centred on today\'s price, because the direction is not reliable here.' : `- Expected move: ${pct(f.expectedMovePct)} → target ≈ ${fmtNum(f.targetPrice)}`,
     `- Likely range (50%): ${fmtNum(f.likelyRange[0])} – ${fmtNum(f.likelyRange[1])}; wide range (80%): ${fmtNum(f.wideRange[0])} – ${fmtNum(f.wideRange[1])}`,
-    `- Track record: ${acc}${f.accuracyWhenConfidentPct !== null ? `; ${f.accuracyWhenConfidentPct}% when the models agreed strongly` : ''}`,
+    `- Track record: ${acc}${f.accuracyWhenConfidentPct !== null && f.accuracyWhenConfidentPct !== undefined ? `; ${f.accuracyWhenConfidentPct}% when the models agreed strongly` : ''}`,
   ];
   if (f.patternMatches?.length) {
     const ups = f.patternMatches.filter((m) => m.thenMovedPct > 0).length;
@@ -160,7 +161,7 @@ function historyBlock(h) {
   if (h.examples?.length) lines.push(`- Closest matches (date the chart matched → move over the following ${h.horizonDays} days): ${h.examples.map((e) => `${e.date}, ${e.similarityPct}% similar → ${pct(e.thenMovedPct)}`).join('; ')}`);
   if (h.thisMonthHistoricalAvgPct !== null && h.thisMonthHistoricalAvgPct !== undefined) lines.push(`- Seasonality: this calendar month has averaged ${pct(h.thisMonthHistoricalAvgPct)} for this coin across its history.`);
   lines.push(h.methodAccuracyPct !== null && h.methodAccuracyPct !== undefined
-    ? `- Honesty check: replayed through this coin's past, this comparison method called the ${h.horizonDays}-day direction right **${h.methodAccuracyPct}%** of the time${h.methodAccuracyPct < 55 ? ' — close to a coin flip, so use it as context, not a trigger' : ''}.`
+    ? `- Honesty check: replayed through this coin's past, this comparison method called the ${h.horizonDays}-day direction right **${h.methodAccuracyPct}%** of the time${h.methodTests ? ` in ${h.methodTests} past tests (95% range ${h.methodRangePct[0]}–${h.methodRangePct[1]}%)` : ''}${h.methodAccuracyPct < 55 ? ' — close to a coin flip, so use it as context, not a trigger' : h.methodRangePct && h.methodRangePct[0] <= 50 ? ' — with so few tests that is still within reach of a coin flip' : ''}.`
     : '- Honesty check: too few past tests to score this method on this coin.');
   return `\n${lines.join('\n')}\n`;
 }
@@ -325,8 +326,8 @@ export function conflictCheck(sig, forecast) {
   const forecastSide = probUp >= 55 ? 'long' : probUp <= 45 ? 'short' : null;
   if (!forecastSide || forecastSide === side) return null;
 
-  const acc = forecast.validatedAccuracyPct;
-  const forecastIsWeak = acc === null || acc === undefined || acc < 52;
+  const acc = forecast.testedDirectionPct ?? forecast.validatedAccuracyPct;
+  const forecastIsWeak = forecast.directionReliable === false || acc === null || acc === undefined || acc < 52;
   return { side, forecastSide, probUp, acc, forecastIsWeak };
 }
 

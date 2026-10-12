@@ -13,6 +13,8 @@
 // move, which keeps the humps and dips while staying consistent with the
 // direction probability shown everywhere else.
 
+import { directionReliable } from './predict.js';
+
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 function weightedQuantile(pairs, q) {
@@ -30,9 +32,9 @@ function weightedQuantile(pairs, q) {
 
 /**
  * @param {object} fc  the object returned by forecast()
- * @param {object} opts { intervalMs, minMatches }
+ * @param {object} opts { intervalMs, minMatches, interval }
  */
-export function timingOutlook(fc, { intervalMs = null, minMatches = 4 } = {}) {
+export function timingOutlook(fc, { intervalMs = null, minMatches = 4, interval = null } = {}) {
   if (!fc?.ok) return { ok: false, reason: 'No forecast to time.' };
   const matches = fc.patterns?.matches || [];
   const H = fc.horizon;
@@ -132,6 +134,10 @@ export function timingOutlook(fc, { intervalMs = null, minMatches = 4 } = {}) {
     hold: holdFrom === null ? null : { fromBar: holdFrom, toBar: holdTo, fromT: at(holdFrom), toT: at(holdTo) },
     endPct: adj[H] * 100,
     path: pathOut,
+    // Where the forecast's direction did not hold up in testing, only WHEN
+    // the high (or low) comes is a measured claim (TESTED_TIMING); how far
+    // and which way are not, so nothing downstream states a price for it.
+    priceless: !!fc.leanRemoved || (interval !== null && !directionReliable(interval)),
   };
 }
 
@@ -142,6 +148,7 @@ export function timingOutlook(fc, { intervalMs = null, minMatches = 4 } = {}) {
 export function condenseTiming(t) {
   if (!t?.ok || !t.shaped) return null;
   const p = t.rising ? t.peak : t.trough;
+  if (t.priceless) return { rising: t.rising, bars: p.bar, targetPrice: null, turnBars: null, priceless: true, horizonBars: t.horizonBars };
   return { rising: t.rising, bars: p.bar, targetPrice: p.price, turnBars: t.turn?.bar ?? null };
 }
 
@@ -153,6 +160,7 @@ export function timingText(t, fmtDuration, fmtMoney) {
       ? `Past look-alikes drifted up steadily rather than spiking — no clear peak-and-drop pattern within this horizon.`
       : `Past look-alikes drifted down steadily — no clear dip-and-bounce pattern within this horizon.`;
   }
+  if (t.priceless) return `In similar past charts the ${t.rising ? 'high' : 'low'} of the next ${fmtDuration(t.horizonBars)} came about **${fmtDuration((t.rising ? t.peak : t.trough).bar)}** in. That is when, not which way or how far: the direction is not reliable on this chart.`;
   // "+0.7%", "−1.0%", and no sign on a move that rounds to zero ("-0.0%").
   const sp = (v) => { const a = Math.abs(v).toFixed(1); return +a === 0 ? '0.0%' : `${v < 0 ? '−' : '+'}${a}%`; };
   const parts = [];
@@ -171,6 +179,15 @@ export function timingText(t, fmtDuration, fmtMoney) {
 /** Compact form for the AI assistant / LLM context. */
 export function summarizeTiming(t) {
   if (!t?.ok || !t.shaped) return null;
+  if (t.priceless) {
+    return {
+      basedOnSimilarPastCharts: t.matchesUsed,
+      extreme: t.rising ? 'high' : 'low',
+      barsToExtreme: (t.rising ? t.peak : t.trough).bar,
+      horizonBars: t.horizonBars,
+      note: 'Only when the high or low comes is measured on this chart; which way and how far are not, so no price is given.',
+    };
+  }
   return {
     basedOnSimilarPastCharts: t.matchesUsed,
     direction: t.rising ? 'rise then fade' : t.falling ? 'fall then bounce' : 'flat',

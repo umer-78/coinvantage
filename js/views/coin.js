@@ -6,7 +6,7 @@ import { generateSignal, confluence, geometryFor, upRateFor, scoreAt } from '../
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
 import { computeAll } from '../lib/indicators.js';
-import { TESTED_ACCURACY, summarizeForecast, shownProbUp, directionReliable } from '../lib/predict.js';
+import { TESTED_ACCURACY, shownProbUp, directionReliable } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust, condenseTiming } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
@@ -18,7 +18,8 @@ import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
 import { tradeSummary } from '../lib/summary.js';
-import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE, rulesForChart, rulesFor, rulesInWords, entryBlocker, blockerText, PER_COIN_RULES } from '../lib/autotrader.js';
+import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE, rulesForChart, rulesFor, rulesInWords, entryBlocker, blockerText, PER_COIN_RULES, aiSignal, CHART_TESTED } from '../lib/autotrader.js';
+import { forecastForDisplay, forecastFacts, moveSizeCall, FORECAST_TESTED } from '../lib/forecastview.js';
 import { fx } from '../api/fx.js';
 import {
   loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger, directionTrustFor, MIN_GRADED_FOR_TRUST,
@@ -344,7 +345,7 @@ export async function render(el, [symParam]) {
 
   async function loadInterval() {
     const iv = st.interval;
-    st.forecast = null;
+    st.forecast = null; st.fcView = null; st.moveCall = null;
     chart.setProjection(null); chart.setMarkers([]); chart.setLevels([]);
     chart.setData([]);
     $('#signalCard', el).innerHTML = skeleton(6);
@@ -516,6 +517,39 @@ export async function render(el, [symParam]) {
     }
   }
 
+  // The AI signal: what the chart's published trading rule does with this
+  // coin right now — buy, hold, sell or wait — and that rule's record on
+  // candles it was not picked on, measured exactly this way (one coin, one
+  // trade at a time). A definite answer, with the evidence for it.
+  let aiSig = { key: '', v: null };
+  function aiSignalHtml() {
+    const closed = st.candles.slice(0, -1); // decided on closed candles only
+    const key = `${st.interval}|${closed.length}|${closed.at(-1)?.t}`;
+    if (aiSig.key !== key) aiSig = { key, v: aiSignal(closed, st.interval, coin.symbol) };
+    const a = aiSig.v;
+    if (!a) return '';
+    const m = (v) => money(v, { dp: st.dp });
+    const sg = (v, unit = '%') => `${v >= 0 ? '+' : '−'}${Math.abs(+(+v).toFixed(2))}${unit}`;
+    const p1 = (v) => +(+v).toFixed(1);
+    const r = a.rules;
+    const exitWords = `${r.trailAtr ? `a stop trailing ${r.trailAtr} ATR under the highest price since it bought` : `the target`}${r.signalExitBars ? ` or after ${r.signalExitBars} candles of signal reversal` : ''}`;
+    const label = { buy: 'BUY', hold: 'HOLD', sell: 'SELL', wait: 'WAIT' }[a.action];
+    const tone = { buy: 'up', hold: 'up', sell: 'down', wait: '' }[a.action];
+    const what = a.action === 'buy' ? `It bought on the last closed candle at ${m(a.entry)}. Stop ${m(a.stop)} (${sg(+((a.stop / a.entry - 1) * 100).toFixed(2))}); it sells at ${a.target ? `the target ${m(a.target)}, ` : ''}${exitWords}.`
+      : a.action === 'hold' ? `In a trade: bought ${a.barsHeld ?? '?'} candle${a.barsHeld === 1 ? '' : 's'} ago at ${m(a.entry)}, ${sg(a.openPct)} since. Stop now ${m(a.stop)}${a.target ? `, target ${m(a.target)}` : ''}; it sells at ${exitWords}.`
+        : a.action === 'sell' ? `Its trade closed on the last candle (${esc(a.why)}) at ${m(a.exit)}: ${sg(p1(a.pnlPct))} from ${m(a.entry)}${a.r !== null ? `, ${sg(a.r, 'R')}` : ''}.`
+          : `No buy now: ${esc(a.why)}.${a.last ? ` Its last ${esc(coin.symbol)} trade closed ${ago(a.last.exitAt)} (${esc(a.last.why)}, ${sg(p1(a.last.pnlPct))}).` : ''}`;
+    const t = CHART_TESTED[st.interval];
+    const x = a.record;
+    const rec = !a.tested ? `This rule was never tested on the ${esc(st.interval)} chart, so this signal has no record here. It was tested on ${Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard).join(', ')}.`
+      : x ? `How buys like this did on candles the rules were not chosen on (${CHART_TESTED.coins} coins, ${t.from} → ${t.to}): ${x.n.toLocaleString('en-US')} buys, ${p1(x.winPct)}% won, average ${sg(x.avgR, 'R')} a trade (R = the amount risked between entry and stop; wins averaged ${sg(x.avgWinR, 'R')}, losses ${sg(x.avgLossR, 'R')}). The price was higher ${x.H} candles after a buy ${p1(x.fwdUpPct)}% of the time, against ${p1(x.baseUpPct)}% from any candle${x.fwdLo > x.baseUpPct ? ' — more often than chance.' : ` — no better than chance, so a BUY here is not a forecast that the price will rise.`} A buy at a random candle held as long made ${sg(x.randPct)} a trade, against ${sg(x.avgPct)} for these. As a whole account the rules made ${sg((t.adopt ? t.own : t.standard).ret)} per ${t.block} against ${sg(t.hold)} for holding the same coins.`
+        : `Tested as the AI trader's rule: ${sg((t.adopt ? t.own : t.standard).ret)} per ${t.block} against ${sg(t.hold)} for holding the same coins.`;
+    return `<div class="ai-signal" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div class="row spread"><b>AI signal · tested ${esc(st.interval)} rule</b><span class="chip ${tone}" style="font-weight:700">${label}</span></div>
+      <p style="margin:6px 0 0">${what}</p>
+      <p class="fine" style="margin:6px 0 0">${rec} Simulated, fees included; a record is not a promise.</p></div>`;
+  }
+
   // What the AI trader does with this coin: whether it holds it, the rules it
   // uses for it, and on the chart it trades, whether its buy rule is met on
   // the last closed candle — asked of the same engine function the trader
@@ -571,17 +605,21 @@ export async function render(el, [symParam]) {
     const meter = signalMeter(sig.score);
     const meterTone = meter.tone === 'up' ? 'up' : meter.tone === 'down' ? 'down' : 'flat';
     const warnings = riskWarnings({
-      signal: sig, forecast: st.forecast, backtest: st.backtest, interval: st.interval,
+      signal: sig, forecast: st.fcView || st.forecast, backtest: st.backtest, interval: st.interval,
       trust: directionTrustFor(st.interval, st.ledger || loadLedger()).trust,
       anomalies: st.anomalies || [],
       noEdgeTimeframe: (TESTED_ACCURACY.noEdge || []).includes(st.interval) || (['1s', '5s', '10s', '1m', '5m', '1w'].includes(st.interval)),
       // Say which kind of "no edge": tested and lost to the baseline, or never tested.
-      noEdgeText: typeof TESTED_ACCURACY[st.interval] === 'number'
+      noEdgeText: TESTED_ACCURACY.recheck?.[st.interval]
+        ? `In the latest test (${TESTED_ACCURACY.recheck.measuredOn}, 240 forecasts on ${st.interval}) the forecast engine called the direction right ${TESTED_ACCURACY.recheck[st.interval].hit}% of the time against ${TESTED_ACCURACY.recheck[st.interval].baseline}% for always naming the commoner direction, so it has no measured edge on this chart and no direction is shown.`
+        : typeof TESTED_ACCURACY[st.interval] === 'number'
         ? `In the release test (${TESTED_ACCURACY.testsPerInterval} forecasts on ${st.interval}) the forecast engine was right ${TESTED_ACCURACY[st.interval]}% of the time against a ${TESTED_ACCURACY.baseline[st.interval]}% baseline, so it has no measured edge on this chart. A probability shown here is background, not a reason to act.`
         : `The forecast engine has never been tested on the ${st.interval} chart, so it has no measured accuracy here. A probability shown here is background, not a reason to act.`,
     });
     card.innerHTML = `
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
+      ${aiSignalHtml()}
+      <div class="fine" style="margin-bottom:4px"><b>Chart reading</b> — what the indicators say now, not a trade call</div>
       <div class="verdict">
         <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
         <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Strong fall</span><span>No clear trend</span><span>Strong rise</span></div></div>
@@ -616,7 +654,7 @@ export async function render(el, [symParam]) {
   function summaryHtml(sig) {
     const sum = tradeSummary({
       signal: { ...sig, coinSymbol: coin.symbol },
-      forecast: st.forecast ? summarizeForecast(st.forecast, st.interval, directionTrustFor(st.interval, st.ledger || loadLedger()).trust) : null,
+      forecast: st.forecast?.ok ? forecastFacts(st.forecast, st.interval, directionTrustFor(st.interval, st.ledger || loadLedger()).trust) : null,
       timing: condenseTiming(st.timing),
       interval: st.interval,
       horizonText: st.forecast ? horizonText(st.interval, st.forecast.horizon) : null,
@@ -659,7 +697,7 @@ export async function render(el, [symParam]) {
     }
     if (st.disposed || iv !== st.interval || H !== st.horizon) return;
     st.forecast = fc;
-    st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv] }) : null;
+    st.timing = fc.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[iv], interval: iv }) : null;
 
     // Local self-improvement ledger: resolve forecasts whose horizon has passed
     // on this coin/interval, then record the new one before its outcome is known.
@@ -698,18 +736,23 @@ export async function render(el, [symParam]) {
         horizonAt: fc.path[fc.path.length - 1]?.t, modelAccuracy: fc.ensemble?.accuracy ?? null,
       });
     }
-    remember(coin.symbol, iv, { forecast: fc, timing: st.timing });
+    // what is shown: without the lean where the direction is not reliable
+    st.fcView = fc.ok ? forecastForDisplay(fc, iv, directionTrustFor(iv, st.ledger || loadLedger()).trust) : fc;
+    st.moveCall = fc.ok ? moveSizeCall(st.candles, fc.horizon, iv) : null;
+    remember(coin.symbol, iv, { forecast: st.fcView, timing: st.timing });
     // the summary reads the forecast, so redraw the signal card now it exists
     if (st.signal?.ok && !st.disposed && iv === st.interval) updateSignal();
     if (!fc.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(fc.reason)}</p>`; return; }
-    chart.setProjection(fc.path);
-    drawForecastCard(fc);
+    chart.setProjection(st.fcView.path);
+    drawForecastCard(st.fcView);
     if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
   }
 
   // Measured share of real outcomes that landed inside a forecast range: this
   // chart's own test where it was run, and the whole release test beside it.
   function coverage(band) {
+    const c = (st.fcView || st.forecast)?.leanRemoved && FORECAST_TESTED.centred[st.interval]?.[band];
+    if (typeof c === 'number') return `held ${c}% of the time on ${esc(st.interval)} in the ${FORECAST_TESTED.measuredOn} test of ${FORECAST_TESTED.perChart} forecasts`;
     const own = TESTED_ACCURACY[band]?.[st.interval];
     const all = `${TESTED_ACCURACY.bandsAll[band]}% across all ${TESTED_ACCURACY.tests.toLocaleString()} tests`;
     return typeof own === 'number' ? `held ${own}% of the time on ${esc(st.interval)} · ${all}` : `held ${all} (${esc(st.interval)} itself was not tested)`;
@@ -718,7 +761,7 @@ export async function render(el, [symParam]) {
   // The lean in plain words where it is not trusted: tested and empty, or never tested.
   function rawLeanNote(fc) {
     const why = st.interval in TESTED_ACCURACY.directionTrust
-      ? `in the release test its leans on ${esc(st.interval)} carried no information`
+      ? `in testing its leans on ${esc(st.interval)} carried no information`
       : `it was never tested on ${esc(st.interval)}`;
     return `Raw model lean: ${(fc.probUp * 100).toFixed(1)}% up. Not shown as a chance, because ${why}.`;
   }
@@ -739,6 +782,25 @@ export async function render(el, [symParam]) {
     return `<div class="prob-ring"><svg width="116" height="116" viewBox="0 0 116 116"><circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="10"/>
       <circle cx="58" cy="58" r="${r}" fill="none" stroke="var(--${up ? 'up' : 'down'})" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(up ? prob : 1 - prob) * c} ${c}"/></svg>
       <div class="c"><div><b class="${up ? 'up' : 'down'}">${Math.round((up ? prob : 1 - prob) * 100)}%</b><small>chance ${up ? 'UP' : 'DOWN'}</small></div></div></div>`;
+  }
+
+  // Is a bigger or smaller move than usual coming? Shown as a call only on
+  // the charts where it told the two apart in testing (FORECAST_TESTED.move).
+  function moveCallHtml(fc) {
+    const m = st.moveCall;
+    if (!m) return '';
+    const h = horizonText(st.interval, fc.horizon);
+    if (!m.useful) return `<div class="fine">${esc(coin.symbol)}'s usual move over ${esc(h)}: about ±${m.usualPct}%. Whether a bigger or smaller one is coming was not told apart on ${esc(st.interval)} in testing.</div>`;
+    const t = m.tested;
+    return `<div class="fine"><b class="${m.bigger ? 'warn' : ''}">${m.bigger ? 'Bigger' : 'Smaller'} move than usual likely</b>: volatility is ${m.ratio}× ${esc(coin.symbol)}'s normal, and its usual move over ${esc(h)} is about ±${m.usualPct}%. In the latest test the move after a "${m.bigger ? 'bigger' : 'smaller'}" call averaged ${m.bigger ? t.big : t.small}× the usual size, against ${m.bigger ? t.small : t.big}× after the opposite call (${FORECAST_TESTED.perChart} forecasts on ${esc(st.interval)}). Size, not direction.</div>`;
+  }
+
+  // The direction's measured record on this chart: the latest test where it exists.
+  function directionTestedText() {
+    const r = TESTED_ACCURACY.recheck?.[st.interval];
+    if (r) return `Direction in the latest test (${TESTED_ACCURACY.recheck.measuredOn}): right ${r.hit}% of the time on ${esc(st.interval)}, against ${r.baseline}% for always naming the commoner direction.`;
+    if (typeof TESTED_ACCURACY[st.interval] === 'number') return `Direction in the release test: right ${TESTED_ACCURACY[st.interval]}% of the time on ${esc(st.interval)}, against ${TESTED_ACCURACY.baseline[st.interval]}% for always naming the commoner direction.`;
+    return `The direction was never tested on ${esc(st.interval)}.`;
   }
 
   function drawForecastCard(fc) {
@@ -762,7 +824,7 @@ export async function render(el, [symParam]) {
     // labelled high-confidence however strongly the models lean right now.
     const tfNoEdge = (TESTED_ACCURACY.noEdge || []).includes(st.interval) || !(st.interval in (TESTED_ACCURACY.baseline || {}));
     const conf = !reliable ? 'Low' : fc.confidence === 'High' && tfNoEdge ? 'Moderate' : fc.confidence;
-    const confWhy = (!reliable ? `No reliable direction on ${st.interval} in the release test. ` : tfNoEdge ? `Capped: the release test found no edge on ${st.interval}. ` : '') + (e.provenEdge ? 'Recent unseen cases beat the baseline by more than luck would explain.' : 'Recent unseen cases have not beaten the baseline by more than luck would explain.');
+    const confWhy = (!reliable ? `No reliable direction on ${st.interval} in testing. ` : tfNoEdge ? `Capped: the release test found no edge on ${st.interval}. ` : '') + 'The coin\'s own recent check is not used: in testing it did not tell right forecasts from wrong ones.';
     const winHtml = (w) => {
       const r = ls.windows[w];
       if (r.pct === null) return '<span class="muted">—</span>';
@@ -778,8 +840,9 @@ export async function render(el, [symParam]) {
       <div class="prob mt">${ring(reliable ? shown : null)}
         <div class="stack" style="gap:4px">
           <div>Next <b>${horizonText(st.interval, fc.horizon)}</b>: ${dirTxt}</div>
-          <div class="fine">Target ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)})</div>
-          <div class="fine">Tested accuracy: <b>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'}</b> on ${e.samples} unseen cases</div>
+          ${fc.leanRemoved ? `<div class="fine">Half the time it ends between <b>${usd(fc.range.p25)} – ${usd(fc.range.p75)}</b> — ${coverage('band50')}</div>` : `<div class="fine">Target ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)})</div>`}
+          ${moveCallHtml(fc)}
+          <div class="fine">${directionTestedText()}</div>
           ${reliable ? `<div class="fine">${trustNote(trust)}</div>` : `<div class="fine">${rawLeanNote(fc)}</div>`}
         </div>
       </div>
@@ -876,8 +939,8 @@ export async function render(el, [symParam]) {
     const trust = timingTrust(st.interval);
     return `
       <div class="timing-box mt">
-        <div class="row spread"><b>${t.rising ? 'How long the rise lasts' : 'How long the drop lasts'}</b>
-          <span class="chip ${cls}">${t.rising ? 'peaks' : 'bottoms'} in ${esc(dur(main.bar))}</span></div>
+        <div class="row spread"><b>${t.priceless ? `When the ${t.rising ? 'high' : 'low'} comes` : t.rising ? 'How long the rise lasts' : 'How long the drop lasts'}</b>
+          <span class="chip ${t.priceless ? '' : cls}">${t.priceless ? `${t.rising ? 'high' : 'low'} in` : t.rising ? 'peaks in' : 'bottoms in'} ${esc(dur(main.bar))}</span></div>
         <div class="tl mt">
           <i class="tl-bar"></i>
           <span class="tl-mark ${cls}" style="left:${(main.bar / t.horizonBars) * 100}%" title="${t.rising ? 'peak' : 'low'}"></span>
@@ -886,14 +949,22 @@ export async function render(el, [symParam]) {
         </div>
         <div class="row spread fine" style="margin-top:3px"><span>now</span><span>${esc(dur(t.horizonBars))}</span></div>
         <p class="fine" style="margin:8px 0 0">
-          ${t.rising
+          ${t.priceless
+            ? `In similar past charts the ${t.rising ? 'high' : 'low'} of the next ${esc(dur(t.horizonBars))} came about <b>${esc(dur(main.bar))}</b> in. That is when, not which way or how far: the direction is not reliable on this chart.`
+            : t.rising
             ? `Expect strength for about <b>${esc(dur(main.bar))}</b>, topping near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.turn ? `, then fading back to ${pct(t.turn.pct, 1)} by <b>${esc(dur(t.turn.bar))}</b>` : ', holding rather than reversing inside this horizon'}.`
             : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting in about <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
-          ${main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
+          ${!t.priceless && main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
         </p>
         <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% on ${esc(st.interval)} charts against a ${TESTED_TIMING.byInterval[st.interval].baselinePct}% random baseline.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts — the 4h chart is the one it tested best on.` : trust.level === 'unknown' ? 'Timing has not been measured on this timeframe.' : `Timing barely clears chance here${TESTED_TIMING.byInterval[st.interval] ? ` (${TESTED_TIMING.byInterval[st.interval].hitPct}% against ${TESTED_TIMING.byInterval[st.interval].baselinePct}%)` : ''}.`}</p>
       </div>`;
   }
+
+  // 95% Wilson range of a hit rate over n tests, as "56–84%".
+  const wilson95 = (p, n) => {
+    const z = 1.96, d = 1 + (z * z) / n, mid = (p + (z * z) / (2 * n)) / d, half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+    return `${Math.round((mid - half) * 100)}–${Math.round((mid + half) * 100)}%`;
+  };
 
   // One-line cross-check from the long-range history study, shown next to the forecast.
   async function paintHistLine() {
@@ -914,7 +985,7 @@ export async function render(el, [symParam]) {
     target.innerHTML = `
       <div style="padding:10px;border-radius:10px;background:var(--surface-2)">
         <div class="row spread"><b>Previous years say</b><span class="chip ${cls === 'flat' ? '' : cls}">${v.direction === 'UP' ? 'higher' : v.direction === 'DOWN' ? 'lower' : 'mixed'} in ${h.horizon}d</span></div>
-        <p class="fine" style="margin:6px 0 0">${h.weak ? `No past chart closely resembles today (best match ${Math.round(h.analogs.matches[0].similarity * 100)}%), so this is background only. ` : ''}${s.upCount} of ${s.total} past look-alikes rose, median ${pct(s.median, 1)}. ${v.accuracy !== null ? `This method has been right ${(v.accuracy * 100).toFixed(0)}% of the time on ${esc(coin.symbol)}.` : 'Too few past tests to score this method here.'}</p>
+        <p class="fine" style="margin:6px 0 0">${h.weak ? `No past chart closely resembles today (best match ${Math.round(h.analogs.matches[0].similarity * 100)}%), so this is background only. ` : ''}${s.upCount} of ${s.total} past look-alikes rose, median ${pct(s.median, 1)}. ${v.accuracy !== null ? `This method has been right ${(v.accuracy * 100).toFixed(0)}% of the time in ${h.validation.tests} past tests on ${esc(coin.symbol)} (95% range ${wilson95(h.validation.accuracy, h.validation.tests)}); across many coins this kind of matching did not beat always naming the commoner direction.` : 'Too few past tests to score this method here.'}</p>
         <button class="btn sm ghost" style="margin-top:8px" id="openHist">See the matching charts →</button>
       </div>`;
     $('#openHist', el)?.addEventListener('click', () => {
@@ -944,7 +1015,7 @@ export async function render(el, [symParam]) {
     if (tabCleanup) { tabCleanup(); tabCleanup = null; }
     destroyCharts();
     const body = $('#tabBody', el);
-    const fc = st.forecast;
+    const fc = st.fcView || st.forecast;
     const accent = cssVar('--accent'), muted = cssVar('--text-muted');
 
     if (st.tab === 'forecast') {
@@ -965,8 +1036,11 @@ export async function render(el, [symParam]) {
               <div class="stat"><span class="k">Chance of rise</span>${reliable
                 ? `<span class="v ${shown >= 0.5 ? 'up' : 'down'}">${(shown * 100).toFixed(1)}%</span>`
                 : `<span class="v flat">—</span><span class="s fine">No reliable direction on this chart. ${rawLeanNote(fc)}</span>`}</div>
-              <div class="stat"><span class="k">Expected move</span><span class="v ${fc.expectedReturnPct >= 0 ? 'up' : 'down'}">${pct(fc.expectedReturnPct)}</span></div>
-              <div class="stat"><span class="k">Target</span><span class="v">${usd(fc.targetPrice)}</span></div>
+              ${fc.leanRemoved
+                ? `<div class="stat"><span class="k">Usual move</span><span class="v">${st.moveCall ? `±${st.moveCall.usualPct}%` : '—'}</span><span class="s fine">${st.moveCall?.useful ? `${st.moveCall.bigger ? 'bigger' : 'smaller'} than usual likely` : 'size, either way'}</span></div>
+              <div class="stat"><span class="k">Half the time between</span><span class="v" style="font-size:15px">${usd(fc.range.p25)} – ${usd(fc.range.p75)}</span><span class="s fine">centred on today's price</span></div>`
+                : `<div class="stat"><span class="k">Expected move</span><span class="v ${fc.expectedReturnPct >= 0 ? 'up' : 'down'}">${pct(fc.expectedReturnPct)}</span></div>
+              <div class="stat"><span class="k">Target</span><span class="v">${usd(fc.targetPrice)}</span></div>`}
             </div>
             <div class="kv">
               <dt>80% range at horizon</dt><dd>${usd(fc.range.p10)} – ${usd(fc.range.p90)} <span class="muted">(${coverage('band80')})</span></dd>
@@ -983,7 +1057,7 @@ export async function render(el, [symParam]) {
               <dt>Test period</dt><dd>${(() => { const sameDay = new Date(e.validationFrom).toDateString() === new Date(e.validationTo).toDateString(); return sameDay ? `${dateTime(e.validationFrom)} → ${new Date(e.validationTo).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `${dateTime(e.validationFrom, false)} → ${dateTime(e.validationTo, false)}`; })()}</dd>
               <dt>Candles analysed</dt><dd>${fc.candlesUsed.toLocaleString()} · ${fc.computeMs} ms</dd>
             </div>
-            ${fc.notes.length ? `<ul class="reasons">${fc.notes.map((n) => `<li class="s">${esc(n)}</li>`).join('')}</ul>` : ''}
+            ${fc.notes.filter((n) => !/recent unseen cases/.test(n)).length ? `<ul class="reasons">${fc.notes.filter((n) => !/recent unseen cases/.test(n)).map((n) => `<li class="s">${esc(n)}</li>`).join('')}</ul>` : ''}
           </div>
         </div>
         <h3 class="mt" style="margin-bottom:6px">The models behind the forecast</h3>

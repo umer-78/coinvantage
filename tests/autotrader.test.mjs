@@ -227,3 +227,39 @@ test('the expected yield comes from the walk-forward test of the rules the chart
   }
   assert.equal(expectedYield({ ...DEFAULT_CONFIG, interval: '1d', maxPositionPct: 50 }).capsDiffer, true);
 });
+
+test('the AI signal is the chart\'s published rule replayed on the coin, with that rule\'s measured record', async () => {
+  const { aiSignal, CHART_TESTED, rulesForChart } = await import('../js/lib/autotrader.js');
+  assert.equal(aiSignal(climb(100), '1d'), null, 'too little history');
+  // a fall, then a climb: the trend rule is in a trade it bought during the climb
+  const up = [];
+  for (let i = 0, prev = 100; i < 700; i++) {
+    const c = 100 * (i < 300 ? 0.998 ** i : 0.998 ** 300 * 1.003 ** (i - 300)) * (1 + 0.004 * Math.sin(i / 2));
+    up.push({ t: T0 + i * H, o: prev, h: Math.max(prev, c) * 1.001, l: Math.min(prev, c) * 0.999, c, v: 1000 });
+    prev = c;
+  }
+  const a = aiSignal(up, '1h', 'X');
+  assert.ok(['buy', 'hold'].includes(a.action), a.action);
+  assert.ok(a.entry > 0 && a.initialStop < a.entry, 'the stop starts below the entry (a trailing stop may since have passed it)');
+  assert.deepEqual(a.record, CHART_TESTED['1h'].signals);
+  assert.equal(a.tested, true);
+  // the published rules, never anyone's own settings
+  for (const k of ['entryMode', 'atrStop', 'trailAtr']) assert.equal(a.rules[k], rulesForChart({ ...DEFAULT_CONFIG }, '1h')[k]);
+  // buy means bought on the last candle; cut the series there and it must agree
+  const k = up.findIndex((c) => c.t === a.openedAt);
+  assert.equal(aiSignal(up.slice(0, k + 1), '1h', 'X').action, 'buy');
+  // a fall: no position, and the reason in words
+  const down = climb(400).map((c) => ({ ...c, o: 10000 / c.o, h: 10000 / c.l, l: 10000 / c.h, c: 10000 / c.c }));
+  const w = aiSignal(down, '1h', 'Y');
+  assert.equal(w.action, 'wait');
+  assert.ok(w.why && w.code);
+  // an untested chart says so instead of borrowing a record
+  const u = aiSignal(climb(400), '30m', 'X');
+  assert.equal(u.tested, false);
+  assert.equal(u.record, null);
+  // every published signal record says what it says: no chart beat chance on direction
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const r = CHART_TESTED[iv].signals;
+    assert.ok(r.n > 100 && r.fwdLo <= r.baseUpPct, `${iv}: the record is published as measured`);
+  }
+});

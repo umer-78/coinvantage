@@ -78,17 +78,33 @@ export const CHART_RULES = {
  * block, average worst drop, blocks with a gain, trades a block. These are
  * from a re-run that day on slightly newer candles; it made the same
  * decisions and the same picks as the first.
+ *
+ * `signals`: what followed each buy of those rules on its own (every coin run
+ * alone, one trade at a time, blocks the rules were not picked on; a later
+ * re-run the same day). R is the result over the amount risked at entry, fees
+ * included; `fwdUpPct` the share of buys followed by a higher price H candles
+ * later (95% range fwdLo–fwdHi) against `baseUpPct` from any candle; `randPct`
+ * a buy at a random candle of the block held as long. On no chart did a buy
+ * pick direction better than chance, and on none did it beat a random buy
+ * held as long: the 1d account beat holding by sitting out the 2022 fall
+ * (+3.3% against −56.9%), not by picking winners. The coin page shows it.
+ * (That re-run would have adopted own rules on 15m — the third different
+ * answer there in a day of 10-day blocks; the published decision stands.)
  */
 export const CHART_TESTED = {
   measuredOn: '2026-10-12', coins: 24, configs: 432, blocks: 3,
   '15m': { range: [-9.86, 27.09], up: 1, from: '2026-09-11', to: '2026-10-12', block: '10 days', better: 1, adopt: false, hold: 7.79, standard: { ret: 5.45, dd: 11.3, trades: 288, win: 26.7, fees: 3.83 }, own: { ret: 4.34, dd: 7.97, trades: 282, win: 28.7, fees: 4.03 },
-    byRisk: { 0.5: { ret: 1.96, lo: -9.76, hi: 16.15, dd: 8.84, up: 1, trades: 96 }, 1: { ret: 4.94, lo: -9.71, hi: 25.92, dd: 9.59, up: 1, trades: 95 }, 1.5: { ret: 5.45, lo: -9.86, hi: 27.09, dd: 11.3, up: 1, trades: 96 }, 2: { ret: 5.61, lo: -10.03, hi: 26.49, dd: 11.96, up: 2, trades: 93 }, 3: { ret: 5.99, lo: -8.9, hi: 26.49, dd: 11.93, up: 2, trades: 93 }, 5: { ret: 5.99, lo: -8.9, hi: 26.49, dd: 11.93, up: 2, trades: 93 } } },
+    byRisk: { 0.5: { ret: 1.96, lo: -9.76, hi: 16.15, dd: 8.84, up: 1, trades: 96 }, 1: { ret: 4.94, lo: -9.71, hi: 25.92, dd: 9.59, up: 1, trades: 95 }, 1.5: { ret: 5.45, lo: -9.86, hi: 27.09, dd: 11.3, up: 1, trades: 96 }, 2: { ret: 5.61, lo: -10.03, hi: 26.49, dd: 11.96, up: 2, trades: 93 }, 3: { ret: 5.99, lo: -8.9, hi: 26.49, dd: 11.93, up: 2, trades: 93 }, 5: { ret: 5.99, lo: -8.9, hi: 26.49, dd: 11.93, up: 2, trades: 93 } },
+    signals: { n: 803, winPct: 24.28, avgR: -0.08, avgWinR: 2.42, avgLossR: -0.89, holdMedian: 24, avgPct: 0.18, randPct: 0.35, H: 8, fwdN: 802, fwdUpPct: 45.64, fwdLo: 42.22, fwdHi: 49.1, baseUpPct: 50.3 } },
   '1h': { range: [-6.36, 21.4], up: 2, from: '2026-06-09', to: '2026-10-12', block: '6 weeks', better: 2, adopt: true, hold: 14.76, standard: { ret: -0.19, dd: 15.76, trades: 254, win: 26.8, fees: 3.52 }, own: { ret: 8.21, dd: 12.09, trades: 235, win: 30.6, fees: 3.49 },
-    byRisk: { 0.5: { ret: 6.45, lo: -4.97, hi: 17.12, dd: 8, up: 2, trades: 80 }, 1: { ret: 6.37, lo: -7.99, hi: 19.22, dd: 12.78, up: 2, trades: 79 }, 1.5: { ret: 8.21, lo: -6.36, hi: 21.4, dd: 12.09, up: 2, trades: 78 }, 2: { ret: 8.47, lo: -6.36, hi: 21.38, dd: 11.81, up: 2, trades: 78 }, 3: { ret: 8.33, lo: -6.36, hi: 21.38, dd: 12.17, up: 2, trades: 77 }, 5: { ret: 8.33, lo: -6.36, hi: 21.38, dd: 12.17, up: 2, trades: 77 } } },
+    byRisk: { 0.5: { ret: 6.45, lo: -4.97, hi: 17.12, dd: 8, up: 2, trades: 80 }, 1: { ret: 6.37, lo: -7.99, hi: 19.22, dd: 12.78, up: 2, trades: 79 }, 1.5: { ret: 8.21, lo: -6.36, hi: 21.4, dd: 12.09, up: 2, trades: 78 }, 2: { ret: 8.47, lo: -6.36, hi: 21.38, dd: 11.81, up: 2, trades: 78 }, 3: { ret: 8.33, lo: -6.36, hi: 21.38, dd: 12.17, up: 2, trades: 77 }, 5: { ret: 8.33, lo: -6.36, hi: 21.38, dd: 12.17, up: 2, trades: 77 } },
+    signals: { n: 621, winPct: 29.63, avgR: -0.01, avgWinR: 2.51, avgLossR: -1.07, holdMedian: 21, avgPct: 0.47, randPct: 0.83, H: 12, fwdN: 621, fwdUpPct: 47.02, fwdLo: 43.13, fwdHi: 50.95, baseUpPct: 50.08 } },
   '4h': { range: [-15.08, 20.73], up: 1, from: '2025-08-01', to: '2026-10-12', block: '5 months', better: 0, adopt: false, hold: -10.72, standard: { ret: -0.65, dd: 22.72, trades: 215, win: 24.7, fees: 2.55 }, own: { ret: -14.56, dd: 25.65, trades: 205, win: 27.8, fees: 2.9 },
-    byRisk: { 0.5: { ret: 2.45, lo: -4.67, hi: 14.51, dd: 9.65, up: 1, trades: 72 }, 1: { ret: 1.25, lo: -11.18, hi: 19.6, dd: 17.57, up: 1, trades: 72 }, 1.5: { ret: -0.65, lo: -15.08, hi: 20.73, dd: 22.72, up: 1, trades: 72 }, 2: { ret: -4.9, lo: -17.93, hi: 14.62, dd: 26.93, up: 1, trades: 72 }, 3: { ret: -8.74, lo: -19.57, hi: 12.29, dd: 31.44, up: 1, trades: 72 }, 5: { ret: -11.29, lo: -27.39, hi: 11.01, dd: 33.75, up: 1, trades: 69 } } },
+    byRisk: { 0.5: { ret: 2.45, lo: -4.67, hi: 14.51, dd: 9.65, up: 1, trades: 72 }, 1: { ret: 1.25, lo: -11.18, hi: 19.6, dd: 17.57, up: 1, trades: 72 }, 1.5: { ret: -0.65, lo: -15.08, hi: 20.73, dd: 22.72, up: 1, trades: 72 }, 2: { ret: -4.9, lo: -17.93, hi: 14.62, dd: 26.93, up: 1, trades: 72 }, 3: { ret: -8.74, lo: -19.57, hi: 12.29, dd: 31.44, up: 1, trades: 72 }, 5: { ret: -11.29, lo: -27.39, hi: 11.01, dd: 33.75, up: 1, trades: 69 } },
+    signals: { n: 547, winPct: 21.39, avgR: -0.06, avgWinR: 2.49, avgLossR: -0.75, holdMedian: 22, avgPct: -0.41, randPct: 0.22, H: 6, fwdN: 546, fwdUpPct: 46.7, fwdLo: 42.56, fwdHi: 50.9, baseUpPct: 47.6 } },
   '1d': { range: [3.34, 24.42], up: 3, from: '2022-04-07', to: '2026-10-12', block: '18 months', better: 2, adopt: true, hold: 9.82, standard: { ret: 12.72, dd: 16.95, trades: 134, win: 27.6, fees: 0.97 }, own: { ret: 16.64, dd: 14.22, trades: 176, win: 34.7, fees: 2.55 },
-    byRisk: { 0.5: { ret: 8.82, lo: 1.02, hi: 13.68, dd: 5.19, up: 3, trades: 59 }, 1: { ret: 16.1, lo: 2.19, hi: 23.65, dd: 10.01, up: 3, trades: 59 }, 1.5: { ret: 16.64, lo: 3.34, hi: 24.42, dd: 14.22, up: 3, trades: 59 }, 2: { ret: 17.8, lo: 4.75, hi: 35.83, dd: 17.76, up: 3, trades: 59 }, 3: { ret: 9.35, lo: 3.3, hi: 20.5, dd: 22.04, up: 3, trades: 59 }, 5: { ret: 10.12, lo: -0.97, hi: 26.18, dd: 23.47, up: 2, trades: 56 } } },
+    byRisk: { 0.5: { ret: 8.82, lo: 1.02, hi: 13.68, dd: 5.19, up: 3, trades: 59 }, 1: { ret: 16.1, lo: 2.19, hi: 23.65, dd: 10.01, up: 3, trades: 59 }, 1.5: { ret: 16.64, lo: 3.34, hi: 24.42, dd: 14.22, up: 3, trades: 59 }, 2: { ret: 17.8, lo: 4.75, hi: 35.83, dd: 17.76, up: 3, trades: 59 }, 3: { ret: 9.35, lo: 3.3, hi: 20.5, dd: 22.04, up: 3, trades: 59 }, 5: { ret: 10.12, lo: -0.97, hi: 26.18, dd: 23.47, up: 2, trades: 56 } },
+    signals: { n: 325, winPct: 31.69, avgR: 0.21, avgWinR: 2.52, avgLossR: -0.87, holdMedian: 8, avgPct: 0.96, randPct: 1.82, H: 7, fwdN: 323, fwdUpPct: 48.3, fwdLo: 42.9, fwdHi: 53.73, baseUpPct: 46.98 } },
 };
 
 /**
@@ -465,6 +481,38 @@ export function blockerText(code, cfg, score) {
     rsi: `RSI is above ${cfg.maxEntryRsi}`,
     excluded: 'its self-review stopped trading this coin after a run of losses',
   }[code] || code;
+}
+
+/**
+ * The AI signal for one coin on one chart: what the chart's published rules
+ * (CHART_RULES, else the standard rules; never anyone's own settings) did
+ * with this coin's closed candles, replayed alone with one trade at a time.
+ * That is how CHART_TESTED[chart].signals was measured, so the record shown
+ * with a signal is the record of exactly this. Actions: 'buy' (bought on the
+ * last closed candle), 'hold' (in a trade bought earlier), 'sell' (the trade
+ * closed on the last closed candle) and 'wait' (no trade, with the reason).
+ * Null with too little history.
+ */
+export function aiSignal(candles, interval, symbol = 'COIN') {
+  if (!Array.isArray(candles) || candles.length < 220) return null;
+  const cfg = rulesFor({ ...rulesForChart({ ...DEFAULT_CONFIG, excluded: [], universe: [symbol], maxPositions: 1, maxPositionPct: 100 }, interval), perCoin: null }, symbol);
+  const state = newState(cfg);
+  const s = { symbol, candles, ind: computeAll(candles), atr: atr(candles, 14), scores: null, regime: null };
+  const out = { processed: 0, lastScore: null };
+  for (let i = 210; i < candles.length; i++) advance(state, cfg, s, i, out);
+  const i = candles.length - 1, last = candles[i];
+  const tested = CHART_TESTED[interval];
+  const base = { interval, rules: cfg, tested: !!tested?.standard, record: tested?.signals || null, price: last.c, at: last.t };
+  const pos = state.open[symbol];
+  if (pos) {
+    const k = candles.findIndex((c) => c.t === pos.openedAt);
+    return { ...base, action: pos.openedAt === last.t ? 'buy' : 'hold', entry: pos.entry, stop: pos.stop, initialStop: pos.initialStop, target: pos.tp, openedAt: pos.openedAt, barsHeld: k < 0 ? null : i - k, openPct: round((last.c / pos.entry - 1) * 100, 2) };
+  }
+  const t = state.closed[state.closed.length - 1];
+  if (t && t.exitAt === last.t) return { ...base, action: 'sell', entry: t.entry, exit: t.exit, why: t.reason, openedAt: t.openedAt, pnlPct: t.pnlPct, r: t.riskCash > 0 ? round(t.pnl / t.riskCash, 2) : null };
+  const score = out.lastScore ?? scoreAt(candles, s.ind, i).score;
+  const code = entryBlocker(cfg, s, i, score);
+  return { ...base, action: 'wait', code, why: code ? blockerText(code, cfg, score) : 'the rule found no entry on it', last: t ? { exitAt: t.exitAt, pnlPct: t.pnlPct, why: t.reason } : null };
 }
 
 function stepBar(state, cfg, s, i, score) {
