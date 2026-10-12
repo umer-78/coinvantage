@@ -1048,10 +1048,15 @@ test('the shape matcher is published as a picture, not as an edge it failed to e
 test('the track record reads the outcome words the scorer actually writes', async () => {
   const fs = await import('node:fs/promises');
   const scorer = await fs.readFile(new URL('../supabase/functions/cv/track.ts', import.meta.url), 'utf8');
+  // the server scores plans with the shared engine module
+  const planscore = await fs.readFile(new URL('../supabase/functions/cv/engine/planscore.js', import.meta.url), 'utf8');
   const view = await fs.readFile(new URL('../js/views/track.js', import.meta.url), 'utf8');
 
   // Every literal the server can store in plan_result.
-  const written = new Set([...scorer.matchAll(/planResult = '([a-z0-9]+)'/g)].map((m) => m[1]));
+  const written = new Set([
+    ...[...scorer.matchAll(/(?:planResult = |result: )'([a-z0-9]+)'/g)].map((m) => m[1]),
+    ...[...planscore.matchAll(/result: '([a-z0-9]+)'/g)].map((m) => m[1]),
+  ]);
   assert.ok(written.size >= 4, `expected the scorer to write several outcomes, found ${[...written]}`);
 
   // The page used to test for 'win' and 'loss', which the scorer has never

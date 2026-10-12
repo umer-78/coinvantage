@@ -121,6 +121,17 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### Track record plan scoring (2026-10-12)
+Plans are scored the way the long plan's own exit rules say to manage them
+(`js/lib/planscore.js`, mirrored to `supabase/functions/cv/engine/`): half closes
+at target 1, the stop on the rest moves to entry, the rest closes at target 2,
+back at entry, or at the horizon. The old scorer counted a stop after target 1 as
+a full loss and a target-2 finish as the whole position at target 2, and the
+Track page claimed that was "more pessimistic" than the plan, which it was not
+overall. `signal_log.plan_v` marks the rule a row was scored by (1 old, 2 new);
+`track.ts` re-scores six old rows per run, newest first, and the page says how
+many of the rows it shows still carry the old scoring.
+
 ### Backend deploy as it stands (2026-10-12)
 The live edge function `cv` (version 11) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com

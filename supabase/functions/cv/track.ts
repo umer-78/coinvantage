@@ -3,6 +3,7 @@
 import { admin, json, requireCron, klines, setting } from './lib.ts';
 import { generateSignal } from './engine/signals.js';
 import { forecast } from './engine/predict.js';
+import { scorePlan } from './engine/planscore.js';
 
 // Candle lengths, so the horizon is computed from the interval being logged
 // rather than from a constant. The old code hardcoded four hours: the interval
@@ -83,30 +84,37 @@ export async function trackSignals(req: Request): Promise<Response> {
       const outcome = hourly[hourly.length - 1].c;
       const up = outcome > Number(r.price);
       const forecastCorrect = r.prob_up === null ? null : (Number(r.prob_up) >= 0.5) === up;
-      let planResult = 'none', planReturn: number | null = null;
-      if (r.plan) {
-        const { side, entry, stop, tp1, tp2 } = r.plan;
-        const long = side === 'long';
-        const pctOf = (p: number) => (long ? p / entry - 1 : 1 - p / entry) * 100;
-        planResult = 'expired';
-        planReturn = pctOf(outcome);
-        for (const c of hourly) {
-          const hitStop = long ? c.l <= stop : c.h >= stop;
-          const hitTp2 = long ? c.h >= tp2 : c.l <= tp2;
-          const hitTp1 = long ? c.h >= tp1 : c.l <= tp1;
-          if (hitStop) { planResult = 'stop'; planReturn = pctOf(stop); break; } // conservative: stop first if both in one candle
-          if (hitTp2) { planResult = 'tp2'; planReturn = pctOf(tp2); break; }
-          if (hitTp1 && planResult !== 'tp1') { planResult = 'tp1'; planReturn = pctOf(tp1); }
-        }
-      }
+      // scored the way the plan says to manage it (engine/planscore.js)
+      const scored = r.plan ? scorePlan(r.plan, hourly, outcome) : { result: 'none', returnPct: null };
+      const planResult = scored.result, planReturn = scored.returnPct;
       await admin.from('signal_log').update({
         resolved: true, resolved_at: new Date().toISOString(), outcome_price: outcome,
         forecast_correct: forecastCorrect, plan_result: planResult, plan_return_pct: planReturn === null ? null : +planReturn.toFixed(3),
+        plan_v: 2,
       }).eq('id', r.id);
       resolved++;
     } catch (e) {
       console.error('resolve', r.id, e);
     }
   }
-  return json({ batch, logged, resolved });
+
+  // Plans resolved before the scoring followed the plan's own management rule
+  // (plan_v 1) are re-scored a few per run, newest first, from the same hourly
+  // candles, until none are left.
+  const { data: old } = await admin.from('signal_log').select('id,symbol,interval,candle_time,horizon_at,plan')
+    .eq('resolved', true).eq('plan_v', 1).not('plan', 'is', null).order('horizon_at', { ascending: false }).limit(6);
+  let rescored = 0;
+  for (const r of old || []) {
+    try {
+      const start = new Date(r.candle_time).getTime() + (IV_MS[r.interval] || IV_MS['4h']);
+      const hourly = await klines(r.symbol, '1h', 1000, start, new Date(r.horizon_at).getTime() - 1);
+      if (!hourly.length) continue;
+      const s = scorePlan(r.plan, hourly, hourly[hourly.length - 1].c);
+      await admin.from('signal_log').update({ plan_result: s.result, plan_return_pct: s.returnPct === null ? null : +s.returnPct.toFixed(3), plan_v: 2 }).eq('id', r.id);
+      rescored++;
+    } catch (e) {
+      console.error('rescore', r.id, e);
+    }
+  }
+  return json({ batch, logged, resolved, rescored });
 }

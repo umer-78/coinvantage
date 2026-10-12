@@ -93,6 +93,8 @@ export async function render(el) {
     const hit = fc.filter((r) => r.forecast_correct).length;
 
     const plans = done.filter((r) => r.plan_result && r.plan_result !== 'none');
+    // rows the server has not yet re-scored under the plan's own rule (plan_v 2)
+    const oldRule = plans.filter((r) => (r.plan_v ?? 1) < 2).length;
     const wins = plans.filter((r) => PLAN_WIN.has(r.plan_result)).length;
     const losses = plans.filter((r) => PLAN_LOSS.has(r.plan_result)).length;
     const expired = plans.filter((r) => r.plan_result === 'expired').length;
@@ -158,7 +160,7 @@ export async function render(el) {
           ? 'That is ahead of the baseline, which is the only comparison that means anything — but it is a small lead over a short sample, not a reason to size up.'
           : 'That is <b>behind</b> the baseline. On this sample the model has not earned its place: a constant answer would have done better, and no amount of being above 50% changes that.'}</p>
         <p class="fine">Two things make this sample weaker than its row count suggests. The rows cover ${Math.max(1, Math.round((Date.now() - new Date(all[all.length - 1]?.candle_time || Date.now()).getTime()) / 864e5))} day${Math.round((Date.now() - new Date(all[all.length - 1]?.candle_time || Date.now()).getTime()) / 864e5) === 1 ? '' : 's'} of one market, and crypto moves together — twelve coins falling in the same week is closer to one observation than to twelve. Treat every number on this page as provisional until the sample spans several different market conditions.${all.length - done.length > 0 ? ` ${all.length - done.length} signal${all.length - done.length === 1 ? ' is' : 's are'} still open and counted in no percentage here.` : ''}</p>
-        <p class="fine">One detail that makes the plan column harsher than the plan itself: the scorer walks each candle and records a stop as a loss even when the first target was reached earlier, while the plan's own exit rules say to take partial profit at target 1 and move the stop to break-even. So the average result above is more pessimistic than following the plan would have been. It is left that way deliberately — the numbers already scored under this rule stay comparable, and erring against ourselves is the safer error.</p>
+        <p class="fine">Plans are scored the way the plan says to manage them: half the position closes at target 1 and the stop on the rest moves to the entry price; the rest closes at target 2, back at the entry, or at the horizon's close. When one candle touches the stop and a target, the stop is assumed to come first. Fees are not included. Until 12 October 2026 a different rule was used — a stop after target 1 counted as a full loss, and a plan that reached target 2 counted as if the whole position closed there — and older plans are being re-scored under the plan's rule a few at a time${oldRule ? `: <b>${oldRule} of the ${plans.length} plans shown here</b> still carry the old scoring` : '; all the plans shown here are done'}.</p>
         <p class="fine">The offline back-test, run over ${TESTED_ACCURACY.tests} forecasts on ${TESTED_ACCURACY.coins} coins before any of this was live, scored ${tested ? `${tested}%` : '—'} on this timeframe. Where the live number disagrees with it, the live number is the one that counts.</p>`}
       </div>
 
