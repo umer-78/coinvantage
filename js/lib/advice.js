@@ -12,7 +12,7 @@
 
 import { upRateFor } from './signals.js';
 import { accuracyFor, shownProbUp, directionReliable } from './predict.js';
-import { TESTED_TIMING } from './timing.js';
+import { TESTED_TIMING, condenseTiming } from './timing.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -164,12 +164,7 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
       riskPct: plan.riskPct, rewardRisk: plan.rewardRisk,
     },
     waitFor: plan ? null : signal.waitFor,
-    timing: timingNote && {
-      rising: timingNote.rising,
-      bars: timingNote.rising ? timingNote.peak.bar : timingNote.trough.bar,
-      targetPrice: timingNote.rising ? timingNote.peak.price : timingNote.trough.price,
-      turnBars: timingNote.turn?.bar ?? null,
-    },
+    timing: condenseTiming(timingNote),
     reasons,
     parts,
   };

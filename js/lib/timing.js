@@ -135,6 +135,16 @@ export function timingOutlook(fc, { intervalMs = null, minMatches = 4 } = {}) {
   };
 }
 
+/**
+ * The few numbers the plain-English summaries need: which way, how many
+ * candles to the high (or the low), the price there, and when it turns.
+ */
+export function condenseTiming(t) {
+  if (!t?.ok || !t.shaped) return null;
+  const p = t.rising ? t.peak : t.trough;
+  return { rising: t.rising, bars: p.bar, targetPrice: p.price, turnBars: t.turn?.bar ?? null };
+}
+
 /** Human sentence for the UI, given a bar→duration formatter. */
 export function timingText(t, fmtDuration, fmtMoney) {
   if (!t?.ok) return t?.reason || '';

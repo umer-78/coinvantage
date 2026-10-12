@@ -224,7 +224,7 @@ function confidenceFor({ interval, strength, conflict, coinAcc, relation, expect
  *   confidence: string, confidenceWhy: string, reconciled: object|null
  * }}
  */
-export function tradeSummary({ signal, forecast, timing, interval, horizonText, mtf = null, fmt = (v) => String(v) }) {
+export function tradeSummary({ signal, forecast, timing, interval, horizonText, mtf = null, fmt = (v) => String(v), dur = (bars) => `${bars} candle${bars === 1 ? '' : 's'}` }) {
   if (!signal?.ok) {
     return {
       verdict: 'NO READING', tone: 'flat',
@@ -328,12 +328,16 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     });
   }
 
-  if (timing && !conflict) {
+  // `timing` is the condensed form from condenseTiming(). The coin page used
+  // to pass the raw timing model, whose fields are named differently, so this
+  // said "topping near —", gave the forecast horizon as the length of the
+  // move, and with no timing reading at all claimed weakness had typically run.
+  if (timing?.bars > 0 && !conflict) {
     steps.push({
       label: 'How long',
       text: timing.rising
-        ? `Strength has typically lasted about ${horizonText || `${timing.bars} candles`} in similar past setups, topping near ${fmt(timing.targetPrice)}${timing.turnBars ? ', then turning down' : ''}. Timing is the least reliable part of any forecast — use it to plan an exit, never to skip the stop.`
-        : `Weakness has typically run about ${horizonText || `${timing.bars} candles`} in similar setups; waiting may get a better price, but that is a pattern, not a forecast.`,
+        ? `Strength has typically lasted about ${dur(timing.bars)} in similar past setups, topping near ${fmt(timing.targetPrice)}${timing.turnBars ? `, then turning down about ${dur(timing.turnBars)} from now` : ''}. Timing is the least reliable part of any forecast — use it to plan an exit, never to skip the stop.`
+        : `Weakness has typically run about ${dur(timing.bars)} in similar setups, bottoming near ${fmt(timing.targetPrice)}; waiting may get a better price, but that is a pattern, not a forecast.`,
     });
   }
 

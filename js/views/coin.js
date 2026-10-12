@@ -7,7 +7,7 @@ import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
 import { computeAll } from '../lib/indicators.js';
 import { TESTED_ACCURACY, summarizeForecast, shownProbUp, directionReliable } from '../lib/predict.js';
-import { timingOutlook, TESTED_TIMING, timingTrust } from '../lib/timing.js';
+import { timingOutlook, TESTED_TIMING, timingTrust, condenseTiming } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
 import { LineChart } from '../charts/line.js';
@@ -577,11 +577,12 @@ export async function render(el, [symParam]) {
     const sum = tradeSummary({
       signal: { ...sig, coinSymbol: coin.symbol },
       forecast: st.forecast ? summarizeForecast(st.forecast, st.interval, directionTrustFor(st.interval, st.ledger || loadLedger()).trust) : null,
-      timing: st.timing || null,
+      timing: condenseTiming(st.timing),
       interval: st.interval,
       horizonText: st.forecast ? horizonText(st.interval, st.forecast.horizon) : null,
       mtf: mtfCache,
       fmt: (v) => money(v, { dp: st.dp }),
+      dur: (bars) => horizonText(st.interval, bars),
     });
     if (!sum.steps.length && sum.verdict === 'NO READING') return '';
     return `
