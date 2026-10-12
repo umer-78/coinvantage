@@ -39,6 +39,13 @@ export function save(key, value) {
   return storageState.persists;
 }
 
+/** Forget a key, so the next load() returns its fallback again. */
+export function remove(key) {
+  delete mem[key];
+  try { localStorage.removeItem(PREFIX + key); } catch { /* storage blocked: mem was all there was */ }
+  window.dispatchEvent(new CustomEvent('cv:store', { detail: { key } }));
+}
+
 export const watchlist = {
   all: () => load('watchlist', ['BTC', 'ETH', 'SOL']),
   has: (sym) => watchlist.all().includes(sym),

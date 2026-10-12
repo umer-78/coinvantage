@@ -97,17 +97,26 @@ export async function updateProfile(patch) {
 }
 
 // ---------------------------------------------------------------- cloud sync
+// Both throw when the server cannot be reached or refuses: a failed read used to
+// look like an account with no saved data, and a failed save like a saved one.
 export async function pullUserData() {
   const client = await sb();
   if (!client || !auth.user) return null;
-  const { data } = await client.from('user_data').select('*').eq('user_id', auth.user.id).maybeSingle();
+  const { data, error } = await client.from('user_data').select('*').eq('user_id', auth.user.id).maybeSingle();
+  if (error) throw new Error(error.message);
   return data;
 }
 
-export async function pushUserData(patch) {
+/**
+ * Saves what changed on this device: `cols` replaces whole columns (watchlist,
+ * holdings, wallets, drawings, settings) and `trading` replaces only the trading
+ * keys it names, so two devices saving at once keep each other's other keys.
+ */
+export async function pushUserData({ cols = {}, trading = {} } = {}) {
   const client = await sb();
-  if (!client || !auth.user) return;
-  await client.from('user_data').upsert({ user_id: auth.user.id, ...patch, updated_at: new Date().toISOString() });
+  if (!client || !auth.user) throw new Error('Not signed in.');
+  const { error } = await client.rpc('sync_user_data', { p_cols: cols, p_trading: trading });
+  if (error) throw new Error(error.message);
 }
 
 // ---------------------------------------------------------------- password recovery

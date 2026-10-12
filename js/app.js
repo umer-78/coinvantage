@@ -3,13 +3,14 @@
 import { CONFIG } from './config.js';
 import { $, $$, icon, coinLogo, toast, modal } from './ui.js';
 import { esc, price, changeHtml, money, pct } from './format.js';
-import { settings, load, save } from './store.js';
+import { settings, load, save, remove } from './store.js';
 import { markets, searchCoins, dataStatus, syncExchangeClock, findCoin, getCandles } from './api/market.js';
 import { generateSignal } from './lib/signals.js';
 import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, applyDir } from './i18n.js';
 import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
+import { createSync, SYNCED_KEYS, TRADING_KEYS } from './lib/cloudsync.js';
 
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
@@ -86,8 +87,10 @@ function openMore() {
   $$('a', m.el).forEach((a) => a.addEventListener('click', () => m.close()));
 }
 
-async function route() {
+// `keepScroll` redraws the page in place (after a sync) instead of opening it at the top.
+async function route(opts) {
   const seq = ++routeSeq;
+  const keep = opts?.keepScroll === true ? window.scrollY : null;
   const [name = '', ...params] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
   const loader = VIEWS[name] || VIEWS[''];
   renderNav();
@@ -115,6 +118,7 @@ async function route() {
       document.getElementById('errReload')?.addEventListener('click', () => location.reload());
     }
   }
+  if (keep !== null) { if (seq === routeSeq) window.scrollTo({ top: keep }); return; }
   window.scrollTo({ top: 0 });
   trackPageView(location.hash || '#/');
 }
@@ -196,56 +200,76 @@ function initAccount() {
     $$('a', m.el).forEach((a) => a.addEventListener('click', () => m.close()));
     $('#so', m.el).addEventListener('click', async () => { m.close(); await signOut(); toast('Signed out.', 'info'); });
   });
-  auth.addEventListener('change', () => { paint(); syncFromCloud(); });
+  auth.addEventListener('change', () => { paint(); syncNow({ signedIn: true }); });
   paint();
   sb();
 }
 
 // ---------------------------------------------------------------- cloud sync
-const SYNC_KEYS = ['watchlist', 'holdings', 'wallets', 'drawings', 'settings'];
-let syncing = false, pushTimer = null;
+// What a signed-in user keeps (watchlist, portfolio, wallets, drawings, the
+// settings that follow the account, and the Trading page's three accounts)
+// merges with their account key by key; lib/cloudsync.js holds the rules.
+// Which pages show each piece, so a sync redraws only the page it changed.
+const SHOWN_ON = {
+  '': ['watchlist'],
+  coin: ['watchlist', 'drawings'],
+  advice: ['holdings'],
+  wallet: ['holdings', 'wallets'],
+  account: ['holdings', 'wallets'],
+  trader: TRADING_KEYS,
+  learn: TRADING_KEYS,
+};
+let syncTimer = null, lastSyncAt = 0, redrawAll = false;
 
-async function syncFromCloud() {
+const cloudSync = createSync({
+  store: { load, save, remove },
+  cloud: { user: () => auth.user?.id || null, pull: pullUserData, push: pushUserData },
+  settings,
+  onApplied(keys) {
+    const s = settings.get();
+    if (keys.includes('settings')) {
+      applyTheme(s.theme || 'dark');
+      // A currency picked on another device: load its rate, then redraw in it.
+      if (s.currency && s.currency !== fx.code) {
+        setCurrency(s.currency).then((ok) => {
+          if (!ok) return;
+          $('#curSel').value = fx.code;
+          refreshTickerPrices();
+          route({ keepScroll: true });
+        });
+      }
+    }
+    const view = location.hash.replace(/^#\/?/, '').split('/')[0];
+    // Signing in redraws whatever is open; later syncs only redraw a page that
+    // shows what arrived, keeping the reader's place on it.
+    if (redrawAll || keys.some((k) => (SHOWN_ON[view] || []).includes(k))) route({ keepScroll: !redrawAll });
+    redrawAll = false;
+  },
+});
+
+function syncNow({ signedIn = false } = {}) {
   if (!auth.user) return;
-  syncing = true;
-  try {
-    const remote = await pullUserData();
-    if (remote) {
-      const localAt = load('syncedAt', 0);
-      const remoteAt = new Date(remote.updated_at || 0).getTime();
-      if (remoteAt > localAt) {
-        if (Array.isArray(remote.watchlist) && remote.watchlist.length) save('watchlist', remote.watchlist);
-        if (Array.isArray(remote.holdings)) save('holdings', remote.holdings);
-        if (Array.isArray(remote.wallets)) save('wallets', remote.wallets);
-        if (remote.drawings && typeof remote.drawings === 'object') save('drawings', remote.drawings);
-        if (remote.settings && typeof remote.settings === 'object') settings.set(remote.settings);
-        save('syncedAt', remoteAt);
-        route();
-      } else queuePush();
-    } else queuePush();
-  } catch { /* offline — local data stays authoritative */ }
-  syncing = false;
+  clearTimeout(syncTimer);
+  lastSyncAt = Date.now();
+  if (signedIn) redrawAll = true;
+  cloudSync.sync().catch(() => { /* offline: this device's data stays as it is and goes up on the next sync */ })
+    .finally(() => { redrawAll = false; });
 }
 
-function queuePush() {
-  if (!auth.user || syncing) return;
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(async () => {
-    try {
-      const s = settings.get();
-      await pushUserData({
-        watchlist: load('watchlist', []),
-        holdings: load('holdings', []),
-        wallets: load('wallets', []),
-        drawings: load('drawings', {}),
-        settings: { theme: s.theme, interval: s.interval, currency: s.currency, lang: s.lang, llmModel: s.llmModel },
-      });
-      save('syncedAt', Date.now());
-    } catch { /* keep local */ }
-  }, 1200);
-}
+// An edit here goes up a moment later (several quick edits go up together).
+window.addEventListener('cv:store', (e) => {
+  if (cloudSync.applying || !auth.user || !SYNCED_KEYS.includes(e.detail.key)) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 1200);
+});
 
-window.addEventListener('cv:store', (e) => { if (SYNC_KEYS.includes(e.detail.key)) queuePush(); });
+// Sync used to run only at sign-in, so a tab left open never saw what another
+// device changed. It now also runs on coming back to the tab, and every two
+// minutes while the tab is in view.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && Date.now() - lastSyncAt > 20e3) syncNow();
+});
+setInterval(() => { if (!document.hidden && Date.now() - lastSyncAt > 100e3) syncNow(); }, 120e3);
 
 // ---------------------------------------------------------------- live ticker + alerts
 let tickerCoins = [];
@@ -403,7 +427,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261012-001853";
+export const BUILD = "20261012-005127";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

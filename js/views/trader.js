@@ -9,7 +9,10 @@ import { LineChart } from '../charts/line.js';
 import { $, $$, icon, toast, skeleton, coinLogo, modal, bindSeg } from '../ui.js';
 import { esc, pct, money, compact, dateTime, ago, amount, price } from '../format.js';
 import { fx } from '../api/fx.js';
-import { load, save } from '../store.js';
+import { load, save, remove } from '../store.js';
+import { auth, backendEnabled } from '../api/backend.js';
+import { backupFor, restoreBackup, missingTrades } from '../lib/cloudsync.js';
+import { openAuth } from './auth.js';
 import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger, recordForecast, resolveDueLedger } from '../lib/selfimprove.js';
 import { runForecast } from '../lib/compute.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
@@ -72,7 +75,8 @@ export async function render(el) {
   el.innerHTML = `
     <div class="page-head">
       <div><h1>Trading</h1>
-        <p>Three accounts, side by side: the practice trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p></div>
+        <p>Three accounts, side by side: the practice trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p>
+        <p class="fine" id="syncNote">${syncNote()}</p></div>
       <div class="row">
         <span class="session-chip ${session.status}" id="sessionChip"><i></i>${sessionLabel(session.status)}</span>
         <button class="btn" id="cfgBtn">${icon('chip', 16)} Settings</button>
@@ -150,6 +154,41 @@ export async function render(el) {
     </div>`;
   }
 
+  // Tells people where their trades are kept, on the page where they look for them.
+  function syncNote() {
+    if (auth.user) return 'Saved to your account: every device you sign in on shows these same trades.';
+    if (backendEnabled()) return 'Saved in this browser only. <a href="#" id="syncSignIn">Sign in</a> to see the same trades on every device.';
+    return 'Saved in this browser only.';
+  }
+
+  // Trades this device had that the account did not, set aside when another
+  // device's copy was saved first (see lib/cloudsync.js).
+  function backupCard() {
+    const b = auth.user ? backupFor(load, auth.user.id) : null;
+    if (!b) return '';
+    const NAMES = { myDemoState: 'your demo account', realTradeState: 'your real account' };
+    const parts = Object.entries(b.keys).map(([k, v]) => [k, missingTrades(v, load(k, null)).length]).filter(([, n]) => n)
+      .map(([k, n]) => `${n} trade${n === 1 ? '' : 's'} in ${NAMES[k]}`);
+    if (!parts.length) return '';
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+    return `<div class="card" id="backupCard" style="border-color:var(--warn)">
+      <div class="card-h"><h3>${icon('info', 16)} Trades from this device were set aside</h3><span class="fine">${dateTime(b.at, false)}</span></div>
+      <p class="fine">Another device saved a different copy of your trades before this one could. The saved copy is the one shown here and on your other devices. This device's copy has ${esc(list)} that the saved copy does not.</p>
+      <p class="fine">Use this device's copy to replace the saved one everywhere, or keep the saved copy and drop this one.</p>
+      <div class="row mt" style="gap:8px"><button class="btn sm" id="bkUse">Use this device's copy</button><button class="btn sm ghost" id="bkDrop">Keep the saved copy</button></div>
+    </div>`;
+  }
+
+  function wireBackup() {
+    $('#bkUse', el)?.addEventListener('click', () => {
+      if (!auth.user) return;
+      restoreBackup({ load, save, remove }, auth.user.id);
+      toast("This device's copy is now the saved copy on every device.", 'up');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));   // redraw from the restored accounts
+    });
+    $('#bkDrop', el)?.addEventListener('click', () => { remove('syncBackup'); draw(); });
+  }
+
   function startCard() {
     return `<div class="card empty">
       <h3>Run the strategy on play money</h3>
@@ -197,6 +236,10 @@ export async function render(el) {
         forecastInputs.push({ sym, candles });
       } catch { failed.push(sym); }
     }
+    // The page was closed or redrawn (a sync brought newer trades) while the last
+    // coin loaded: saving now would put this older copy back over them. Nothing
+    // is lost, since the next check replays the same candles.
+    if (st.disposed) return;
     // One line per check in the activity feed, with the real time of the check.
     const best = scores.sort((a, b) => b.score - a.score)[0];
     logCheck(state, {
@@ -624,12 +667,13 @@ export async function render(el) {
   }
 
   function draw() {
-    if (!state) { $('#body', el).innerHTML = `${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${startCard()}`; wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
+    if (!state) { $('#body', el).innerHTML = `${backupCard()}${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${startCard()}`; wireBackup(); wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
     const s = stats(state, st.prices);
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
 
     $('#body', el).innerHTML = `
+      ${backupCard()}
       ${myDemoCard()}
       ${realCard()}
       <h3 class="mt" style="margin-bottom:8px">The AI's own account</h3>
@@ -692,6 +736,7 @@ export async function render(el) {
       ${learningCard()}`;
 
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
+    wireBackup();
     wireMyDemo();
     wireReal();
     wireExports();
@@ -826,6 +871,11 @@ export async function render(el) {
     }
   };
   window.addEventListener('cv:tickers', onTick);
+  // Signing in or out here changes where the trades are kept.
+  const wireSyncNote = () => $('#syncSignIn', el)?.addEventListener('click', (e) => { e.preventDefault(); openAuth(); });
+  const onAuth = () => { const n = $('#syncNote', el); if (n) { n.innerHTML = syncNote(); wireSyncNote(); } };
+  auth.addEventListener('change', onAuth);
+  wireSyncNote();
   const timer = setInterval(() => { if (!st.disposed && state && autoOn) catchUp(); }, 5 * 60e3);
 
   // draw() renders the demo and real accounts too, so it has to run whether or
@@ -849,6 +899,7 @@ export async function render(el) {
     st.disposed = true;
     clearInterval(timer);
     window.removeEventListener('cv:tickers', onTick);
+    auth.removeEventListener('change', onAuth);
     st.charts.forEach((c) => c.destroy());
   };
 }

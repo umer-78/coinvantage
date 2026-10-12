@@ -35,7 +35,7 @@ computers alike.
 | **Track record** | Public page scoring every signal the server logged *before* the outcome was known, against the hit rate of always calling the more common outcome. A live check fits the same trust the coin page uses to the graded rows, counting coins on one candle as one observation, and says whether the live record supports showing a direction on each timeframe |
 | **News** | Headlines from 5 crypto outlets, tagged by coin, refreshed every 20 minutes |
 | **AI Assistant** | Chat about any coin. Answers are grounded in live data, signals, backtest, the forecast and the multi-year history study |
-| **Accounts** | Optional sign-in syncs watchlist, holdings, wallet addresses and settings across devices |
+| **Accounts** | Optional sign-in keeps the watchlist, holdings, wallet addresses, chart drawings, settings and all three Trading accounts the same on every device |
 | **Premium** | One-off payment for server-side alerts, VIP trade ideas and the full track record (Stripe or manual activation) |
 | **Admin panel** | Traffic, users, premium grants, trade-idea publishing, site settings, API keys and manual job runs |
 | **16 currencies** | Prices convert to USD, PKR, EUR, GBP, AED, SAR, INR, TRY, NGN, IDR, BRL, JPY, CNY, RUB, ZAR, BDT |
@@ -132,6 +132,17 @@ The site degrades gracefully without it — every backend call fails soft.
 - `/cv/selftest` returns a fixed result computed by the deployed engine. If it ever stops
   matching `{"score":-20,"action":"SELL","probUp":0.964211}`, the server engine has drifted
   from the browser engine.
+- The whole database schema is in `supabase/migrations/`, in the order it was applied.
+  To run your own copy, create a Supabase project, apply them in order (SQL editor, or
+  `supabase link` then `supabase db push`), change the project address inside
+  `private.call_cv()` (in `20260912115252_schedule_background_jobs.sql`) to your own, and
+  put your project URL and publishable key in `js/config.js`.
+- Sync merges each piece of a user's data separately (`js/lib/cloudsync.js`): whichever
+  device changed something since the two last agreed wins. When two devices changed the
+  same thing, the saved copy is kept, and demo or real trades only the other device had
+  are set aside for the Trading page to offer back; two AI accounts meeting for the first
+  time keep the one that has run longest. Saves go through `public.sync_user_data()`,
+  which only writes the keys that changed.
 
 ### First-run checklist (Admin panel)
 
@@ -174,6 +185,7 @@ js/charts/              canvas candlestick chart, line chart, sparkline/donut/ga
 js/views/               pages: markets, coin, scanner, track, futures, news, compare, tools, exchanges,
                         wallet, alerts, premium, account, admin, legal, auth, assistant
 supabase/functions/cv/  edge function: account, admin, alerts, news, track, telegram, stripe + engine copy
+supabase/migrations/    the database schema, one file per change, in the order applied
 tools/                  local server, accuracy evaluation, sitemap builder, browser smoke test
 tests/                  unit tests (node --test)
 ```
