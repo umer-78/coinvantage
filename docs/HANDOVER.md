@@ -170,6 +170,17 @@ ones; each bar to adopt was written in the script before the run.
   daily rules. It follows the chart the account runs on (changes only on Reset).
 - The 24 coins are today's survivors; that flatters every backtest that holds them.
 
+### The track record's forecast variant (2026-10-12)
+- `supabase/functions/cv/track.ts` logs `forecast(..., { fast: true })` on 700 candles to stay in
+  the edge function's time limit; coin pages run the full model on 1,500. On simulated candles
+  the two agreed on direction in 60 of 60 cases, probabilities ~10 points apart; the Track
+  page says so. Live record (2026-10-12): 4h 53.4% vs 53.0% baseline over 2,115 calls (177
+  candles), 1d 51.7% vs 55.0% over 240 — consistent with the release test's zero direction
+  trust on both, so nothing in the app's trust changed. 1m/5m/15m, the only charts with
+  some direction trust, are not logged live; adding a 15m plan to `app_settings.tracking`
+  would check them, at the cost of more forecasts per run (CPU limit) — not done without
+  the owner's say-so, since it changes their database settings.
+
 ### Backend deploy as it stands (2026-10-12)
 The live edge function `cv` (version 13) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com
