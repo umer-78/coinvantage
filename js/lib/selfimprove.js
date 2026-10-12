@@ -31,7 +31,7 @@ export function newLedger() {
  * Record a forecast BEFORE its outcome is known (the honest way to measure hit rate).
  * `horizonAt` is the candle time when the horizon completes.
  */
-export function recordForecast(ledger, { symbol, interval, price, probUp, horizonBars, horizonAt, modelKey = 'ensemble' }) {
+export function recordForecast(ledger, { symbol, interval, price, probUp, horizonBars, horizonAt, modelKey = 'ensemble', families = null }) {
   const base = ledger?.entries ? ledger : newLedger();
   if (!Number.isFinite(price) || !Number.isFinite(probUp) || !horizonAt) return base;
   const id = `${symbol}:${interval}:${horizonAt}:${modelKey}`;
@@ -49,6 +49,9 @@ export function recordForecast(ledger, { symbol, interval, price, probUp, horizo
     actualUp: null,
     correct: null,
     outcomePrice: null,
+    // What each model of the three-family cross-check said at the same moment,
+    // so each one can be graded on its own record (see adaptiveWeights).
+    families: cleanFamilies(families),
   };
   const entries = [...base.entries, entry];
   while (entries.length > LEDGER_CAP) {
@@ -233,18 +236,60 @@ export function dampenConfidence(probUp, ledger) {
   return 0.5 + (probUp - 0.5) * shrink;
 }
 
+export const FAMILY_KEYS = ['momentum', 'reversion', 'pattern'];
+/** Graded calls a model needs on this device before its record moves its weight. */
+export const MIN_FAMILY_CALLS = 20;
+
+function cleanFamilies(f) {
+  if (!f || typeof f !== 'object') return null;
+  const out = {};
+  for (const k of [...FAMILY_KEYS, 'blend']) if (Number.isFinite(f[k]) && f[k] >= 0 && f[k] <= 1) out[k] = +f[k].toFixed(4);
+  return Object.keys(out).length ? out : null;
+}
+
 /**
- * Family weights for the three-model ensemble, steered by rolling accuracy:
- * below 40% → more mean-reversion, less momentum; above 60% → more momentum.
+ * Each model's own record on this device: how often its lean (above or below
+ * 50%) matched what the price did, over the last `window` graded forecasts
+ * that carry the models' calls. A call within half a point of 50% is no call.
+ */
+export function familyRecord(ledger, window = 150) {
+  const rows = (ledger?.entries ?? []).filter((e) => e.resolved && e.families && typeof e.actualUp === 'boolean').slice(-window);
+  const out = {};
+  for (const k of [...FAMILY_KEYS, 'blend']) {
+    let n = 0, hits = 0;
+    for (const e of rows) {
+      const p = e.families[k];
+      if (!Number.isFinite(p) || Math.abs(p - 0.5) < 0.005) continue;
+      n++;
+      if ((p > 0.5) === e.actualUp) hits++;
+    }
+    out[k] = { n, hits, rate: n ? hits / n : null };
+  }
+  return out;
+}
+
+/**
+ * Weights for the three-model cross-check, learned from each model's OWN record
+ * on this device. They used to follow the main forecast's hit rate (below 40%
+ * leaned on mean-reversion, above 60% on momentum), which says nothing about
+ * which of these three models is working. Now a model right 60% of the time
+ * heads toward double weight and one right 40% toward a quarter, shrunk toward
+ * equal weights while its sample is small; until a model has MIN_FAMILY_CALLS
+ * graded calls it keeps weight 1.
  */
 export function adaptiveWeights(ledger) {
-  const st = learningStatus(ledger);
-  const acc = st.windows[50].pct ?? st.windows[20].pct;
+  const record = familyRecord(ledger);
   const w = { momentum: 1, reversion: 1, pattern: 1 };
-  if (acc === null || st.resolved < 10) return { ...w, source: 'default', accuracy: null };
-  if (acc < 40) { w.momentum = 0.5; w.reversion = 1.5; }
-  else if (acc > 60) { w.momentum = 1.5; w.reversion = 0.75; }
-  return { ...w, source: 'adaptive', accuracy: acc };
+  const graded = Math.max(...FAMILY_KEYS.map((k) => record[k].n));
+  if (graded < MIN_FAMILY_CALLS) return { ...w, source: 'default', record, graded };
+  for (const k of FAMILY_KEYS) {
+    const r = record[k];
+    if (r.n < MIN_FAMILY_CALLS) continue;
+    const edge = (r.rate - 0.5) / 0.1;
+    const raw = clamp(1 + edge * (edge >= 0 ? 1 : 0.75), 0.25, 2);
+    w[k] = +(1 + (raw - 1) * (r.n / (r.n + 50))).toFixed(3);
+  }
+  return { ...w, source: 'adaptive', record, graded };
 }
 
 // ---------------------------------------------------------------- 3-model ensemble
@@ -291,7 +336,11 @@ export function threeModelEnsemble(candles, { ledger = null, horizon = 12, windo
   let sum = 0, wsum = 0;
   for (const k of keys) { sum += probs[k] * w[k]; wsum += w[k]; }
   const raw = wsum ? sum / wsum : 0.5;
-  const probUp = dampenConfidence(raw, ledger);
+  // Dampened by the blend's OWN record on this device (it was the main
+  // forecast's): below 55% right over 15+ calls, its lean is shrunk toward 50%.
+  const blendRec = w.record?.blend;
+  const blendAcc = blendRec && blendRec.n >= 15 ? blendRec.rate * 100 : null;
+  const probUp = blendAcc === null || blendAcc >= 55 ? raw : 0.5 + (raw - 0.5) * (blendAcc < 40 ? 0.5 : 0.75);
 
   return {
     ok: true,
@@ -307,6 +356,7 @@ export function threeModelEnsemble(candles, { ledger = null, horizon = 12, windo
     })),
     patternMatches: pat.matches?.length ?? 0,
     dampened: Math.abs(probUp - raw) > 1e-9,
+    blendAccuracy: blendAcc,
     rawProbUp: raw,
     experimental: true,
   };

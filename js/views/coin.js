@@ -22,7 +22,7 @@ import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE 
 import { fx } from '../api/fx.js';
 import {
   loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger, directionTrustFor, MIN_GRADED_FOR_TRUST,
-  rollingAccuracy, learningStatus, accuracySparkline, adaptiveWeights,
+  rollingAccuracy, learningStatus, accuracySparkline, adaptiveWeights, MIN_FAMILY_CALLS,
   dampenConfidence, threeModelEnsemble, signalMeter, riskWarnings, anomalyFlags,
   sparklineSvg,
 } from '../lib/selfimprove.js';
@@ -617,18 +617,23 @@ export async function render(el, [symParam]) {
     // forecast against them would teach the device's learning made-up outcomes.
     try {
       let ledger = loadLedger();
-      if (st.tested && !stable) {
-        ledger = resolveDueLedger(ledger, st.candles, { symbol: coin.symbol, interval: iv });
+      const learn = st.tested && !stable;
+      if (learn) ledger = resolveDueLedger(ledger, st.candles, { symbol: coin.symbol, interval: iv });
+      st.ensemble3 = threeModelEnsemble(st.candles, { ledger, horizon: H });
+      if (learn) {
         if (fc.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
+          // the three cross-check models' calls go in with the forecast, so each
+          // is graded on its own record and earns its own weight
+          const e3 = st.ensemble3;
           ledger = recordForecast(ledger, {
             symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
             horizonBars: fc.horizon, horizonAt: fc.path[fc.path.length - 1]?.t,
+            families: e3?.ok ? { ...Object.fromEntries(e3.models.map((m) => [m.key, m.probUp])), blend: e3.probUp } : null,
           });
         }
         saveLedger(ledger);
       }
       st.ledger = ledger;
-      st.ensemble3 = threeModelEnsemble(st.candles, { ledger, horizon: H });
       st.anomalies = anomalyFlags(st.candles);
     } catch { /* ledger is a convenience, never load-bearing */ }
     // AI learning center: this chart's readings and forecast are logged for grading.
@@ -745,7 +750,7 @@ export async function render(el, [symParam]) {
         <dl class="kv" style="margin-top:8px">
           ${ens3.models.map((m) => `<dt>${esc(m.name)}</dt><dd><span class="${m.probUp >= 0.5 ? 'up' : 'down'}">${(m.probUp * 100).toFixed(1)}% up</span> <span class="fine">· weight ${m.weightPct}%</span></dd>`).join('')}
         </dl>
-        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b>.${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} ${ens3.weights.source === 'default' ? 'Its three models (momentum, mean-reversion and past patterns) count equally until this device has graded 10 forecasts.' : `Its weights follow this device's recent hit rate (${esc(String(ens3.weights.accuracy))}%): below 40% leans on mean-reversion, above 60% on momentum.`} Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? 'Confidence dampened toward 50% because the recent local record has not earned high confidence.' : ''}</p>
+        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b>.${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} ${ens3.weights.source === 'default' ? `Its three models (momentum, mean-reversion and past patterns) count equally until each has ${MIN_FAMILY_CALLS} graded calls on this device (most so far: ${ens3.weights.graded}).` : `Each model's weight comes from its own record on this device: ${ens3.models.map((m) => { const r = ens3.weights.record[m.key]; return `${m.key === 'reversion' ? 'mean-reversion' : m.key === 'pattern' ? 'patterns' : 'momentum'} ${r.n ? `${Math.round(r.rate * 100)}% right over ${r.n} calls` : 'no graded calls yet'}`; }).join(', ')}.`} Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? `Its lean is shrunk toward 50% because the blend itself has been right only ${Math.round(ens3.blendAccuracy)}% of the time on this device.` : ''}</p>
       </div>` : ''}
       <dl class="kv mt">
         <dt>Brier score (lower is better)</dt><dd>${brier !== null ? brier.toFixed(3) : '—'}</dd>
