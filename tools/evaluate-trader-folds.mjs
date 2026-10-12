@@ -50,7 +50,9 @@ function account(rules, series, from) {
   let eq = cfg.startingBalance, peak = eq, dd = 0;
   for (const t of [...st.closed].sort((a, b) => a.exitAt - b.exitAt)) { eq += t.pnl; peak = Math.max(peak, eq); dd = Math.max(dd, (peak - eq) / peak); }
   dd = Math.max(dd, (peak - eqEnd) / peak);
-  return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length };
+  const wins = st.closed.filter((t) => t.pnl > 0).length;
+  const fees = st.closed.reduce((a, t) => a + (t.feePaid || 0), 0);
+  return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length, win: st.closed.length ? (wins / st.closed.length) * 100 : 0, fees: (fees / cfg.startingBalance) * 100 };
 }
 const objective = (m) => (m.trades < 10 ? -Infinity : m.ret - 0.5 * m.dd);
 const r2 = (v) => +v.toFixed(2);
@@ -75,7 +77,8 @@ for (const iv of IVS) {
     const pick = scored.sort((a, b) => objective(b.m) - objective(a.m))[0].g;
     const cur = account({}, test, WARM), mine = account(pick, test, WARM);
     const hold = test.reduce((a, x) => a + (x.candles.at(-1).c / x.candles[WARM].c - 1), 0) / test.length * 100;
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: { ret: r2(cur.ret), dd: r2(cur.dd), trades: cur.trades }, own: { ret: r2(mine.ret), dd: r2(mine.dd), trades: mine.trades }, hold: r2(hold), coins: test.length });
+    const pack = (m) => ({ ret: r2(m.ret), dd: r2(m.dd), trades: m.trades, win: r2(m.win), fees: r2(m.fees) });
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
@@ -84,7 +87,9 @@ for (const iv of IVS) {
   console.log(`\n== ${iv}: ${coins.length} coins in one account, ${grid.length} rule sets`);
   for (const x of folds) console.log(`  test ${x.from} → ${x.to}: current ${String(x.current.ret).padStart(7)}% (dd ${x.current.dd}%, ${x.current.trades} trades)  own ${String(x.own.ret).padStart(7)}% (dd ${x.own.dd}%, ${x.own.trades} trades)  hold ${x.hold}%   picked: ${x.pick}`);
   console.log(`  own better in ${better} of 3; average current ${mean('current', 'ret')}% (dd ${mean('current', 'dd')}%) vs own ${mean('own', 'ret')}% (dd ${mean('own', 'dd')}%) → ${adopt ? 'ADOPT' : 'KEEP CURRENT'}`);
-  const entry = { coins: coins.length, folds, better, current: { ret: mean('current', 'ret'), dd: mean('current', 'dd') }, own: { ret: mean('own', 'ret'), dd: mean('own', 'dd') }, adopt };
+  const sum = (k, m) => folds.reduce((a, x) => a + x[k][m], 0);
+  const summary = (k) => ({ ret: mean(k, 'ret'), dd: mean(k, 'dd'), trades: sum(k, 'trades'), win: r2(folds.reduce((a, x) => a + x[k].win * x[k].trades, 0) / Math.max(1, sum(k, 'trades'))), fees: mean(k, 'fees') });
+  const entry = { coins: coins.length, from: folds[0].from, to: folds.at(-1).to, folds, better, current: summary('current'), own: summary('own'), hold: r2(folds.reduce((a, x) => a + x.hold, 0) / folds.length), adopt };
   if (adopt) {
     // what this chart would get: the same pick on the full history
     const full = withRegime(coins.map((s) => prep(s, all[s])));
