@@ -1,16 +1,23 @@
 name: Evaluate
 
-# Re-measures the AI trader's rules on fresh Binance candles. Start it from the
-# Actions tab (Run workflow). The report is in the job log and in the
-# "evaluation" artifact; nothing is committed.
+# Re-measures the AI trader on fresh Binance candles. Start it from the Actions
+# tab (Run workflow) and pick which evaluation to run. The report is in the job
+# log and in the uploaded artifact; nothing is committed.
 on:
   workflow_dispatch:
+    inputs:
+      job:
+        description: Which evaluation to run
+        type: choice
+        options: [selection, trader-rules, all]
+        default: selection
 
 permissions:
   contents: read
 
 jobs:
   trader-rules:
+    if: inputs.job == 'trader-rules' || inputs.job == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -30,3 +37,30 @@ jobs:
         with:
           name: evaluation
           path: trader-rules.txt
+
+  selection:
+    if: inputs.job == 'selection' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 24 large coins that have traded on Binance for years. Coins picked today
+      # are the ones that survived, which flatters any backtest that holds them.
+      - name: Download candles
+        env:
+          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
+          PLAN: '{"1h":4000,"4h":3500,"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Choose what to trade on older data, test it on newer data
+        run: node tools/evaluate-selection.mjs klines.json | tee selection.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: selection
+          path: selection.txt

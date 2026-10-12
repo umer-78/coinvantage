@@ -1,7 +1,8 @@
 // Downloads Binance candles for the accuracy evaluation: node tools/fetch-klines.mjs klines.json
 import fs from 'node:fs';
-const coins = ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'LTC', 'TRX', 'DOT'];
-const plan = { '15m': 4000, '1h': 4000, '4h': 3500, '1d': 2200 };
+// COINS=BTC,ETH,... and PLAN='{"1d":2200}' override the defaults.
+const coins = process.env.COINS ? process.env.COINS.split(',') : ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'LTC', 'TRX', 'DOT'];
+const plan = process.env.PLAN ? JSON.parse(process.env.PLAN) : { '15m': 4000, '1h': 4000, '4h': 3500, '1d': 2200 };
 const out = {};
 for (const [iv, total] of Object.entries(plan)) {
   for (const c of coins) {
