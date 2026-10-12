@@ -133,13 +133,11 @@ overall. `signal_log.plan_v` marks the rule a row was scored by (1 old, 2 new);
 many of the rows it shows still carry the old scoring.
 
 ### Backend deploy as it stands (2026-10-12)
-The live edge function `cv` (version 11) is a one-line entry that imports
+The live edge function `cv` (version 12) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com
-(ea81f80), so what runs is exactly what was committed. To deploy newer server
+(8d69509, the plan-scoring change), so what runs is exactly what was committed. To deploy newer server
 code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
-`/functions/v1/cv/selftest` returns 200. Since ea81f80 the only server-side change
-is the unresolved-trade fix in `engine/barrier.js` (barrier labels, which the server
-never uses), so the live function has not needed a redeploy. Vault holds `cron_secret` and
+`/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
 `telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
 token, Resend key and Stripe keys are added under Admin → API keys.
 
