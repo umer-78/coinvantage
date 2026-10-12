@@ -1,7 +1,7 @@
 import { markets, getCandles, isStable, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { TESTED_ACCURACY, shownProbUp, directionReliable } from '../lib/predict.js';
 import { directionTrustFor } from '../lib/selfimprove.js';
-import { generateSignal } from '../lib/signals.js';
+import { generateSignal, THRESHOLDS } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
@@ -71,15 +71,17 @@ export async function render(el) {
     const trust = directionTrustFor(st.interval).trust;
     const reliable = directionReliable(st.interval, trust);
     const shown = (r) => (r.fc?.ok ? shownProbUp(r.fc.probUp, st.interval, trust) : null);
-    if (f === 'buy') rows = rows.filter((r) => r.signal.score >= 18);
-    if (f === 'sell') rows = rows.filter((r) => r.signal.score <= -18);
+    if (f === 'buy') rows = rows.filter((r) => r.signal.score >= THRESHOLDS.normal);
+    if (f === 'sell') rows = rows.filter((r) => r.signal.score <= -THRESHOLDS.normal);
     if (f === 'aiup') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) >= 0.54);
     if (f === 'aidown') rows = rows.filter((r) => reliable && shown(r) !== null && shown(r) <= 0.46);
     // `null < 32` is true in JavaScript, so coins with no RSI yet were being
     // listed as oversold.
     const rsiOf = (r) => (Number.isFinite(r.signal.indicators.rsi) ? r.signal.indicators.rsi : null);
-    if (f === 'oversold') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) < 32);
-    if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 68);
+    // the same 30 / 70 lines as the RSI column's colours, the analyst and the glossary
+    // (the filters used 32 / 68, so a coin could be listed as oversold without being shown as one)
+    if (f === 'oversold') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) < 30);
+    if (f === 'overbought') rows = rows.filter((r) => rsiOf(r) !== null && rsiOf(r) > 70);
     const key = { score: (r) => r.signal.score, ai: (r) => shown(r) ?? 0.5, rsi: (r) => r.signal.indicators.rsi ?? 50, chg: (r) => r.coin.change24h ?? 0, move: (r) => moveOf(r) ?? -1 }[st.sort];
     rows.sort((a, b) => key(b) - key(a));
     // "for the next 1 day" → "for the next day"

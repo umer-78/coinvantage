@@ -327,6 +327,7 @@ export const DEPS = {
     'lib/pooled.js',
     'lib/predict.js',
     'lib/selfimprove.js',
+    'lib/signals.js',
     'store.js',
     'ui.js'
   ],

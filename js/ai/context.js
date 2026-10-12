@@ -42,7 +42,8 @@ export async function analyzeCoin(symbol, { interval = '4h', withForecast = true
   const horizon = DEFAULT_HORIZON[interval] || 12;
   if (withForecast && !forecast) {
     onStep?.('Running AI forecast (pattern matching + ML models)…');
-    forecast = await runForecast(main.candles, { horizon });
+    // the timeframe is passed, not guessed from the spacing of the last two candles
+    forecast = await runForecast(main.candles, { horizon, intervalMs: INTERVAL_MS[interval] });
   }
   // Long-range study on daily candles: what happened the last times this chart
   // looked like today, plus this coin's seasonality. Never blocks the answer.

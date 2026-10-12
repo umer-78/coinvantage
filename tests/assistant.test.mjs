@@ -88,3 +88,28 @@ test('markdown links stay inside the app', () => {
   assert.doesNotMatch(markdown('[click](https://evil.example)'), /<a /);
   assert.doesNotMatch(markdown('[x](javascript:alert(1))'), /<a /);
 });
+
+test('the language model gets valid data that keeps the comparison, scan and portfolio', async () => {
+  const { fitJson } = await import('../js/ai/engine.js');
+  const big = {
+    coin: 'Bitcoin (BTC)', signal: { verdict: 'Rising', score: 30 },
+    aiForecast: { probUpPct: 52, models: Array.from({ length: 7 }, (_, i) => ({ model: `m${i}`, note: 'x'.repeat(300) })), notes: ['n'.repeat(800)] },
+    recentHeadlines: Array.from({ length: 5 }, () => 'h'.repeat(200)), multiYearHistory: 'y'.repeat(2000),
+    comparison: [{ sym: 'BTC', verdict: 'WAIT' }, { sym: 'ETH', verdict: 'WAIT' }],
+    portfolio: [{ coin: 'ETH', valueUsd: 500 }],
+  };
+  const s = fitJson(big, 5000);
+  assert.ok(s.length <= 5000);
+  const o = JSON.parse(s); // the old cut at 5,000 characters left broken JSON
+  assert.deepEqual(o.comparison, big.comparison);
+  assert.deepEqual(o.portfolio, big.portfolio);
+  assert.equal(o.aiForecast.probUpPct, 52, 'the forecast itself stays; only its per-model detail goes');
+  assert.equal(o.aiForecast.models, undefined);
+  // a whole-market scan too large for the limit is shortened, not cut mid-value
+  const scan = { marketByTimeframe: { frames: Array.from({ length: 3 }, (_, f) => ({ interval: `f${f}`, picks: Array.from({ length: 20 }, (_, i) => ({ sym: `C${i}`, plan: 'p'.repeat(60) })) })) } };
+  const t = fitJson(scan, 5000);
+  assert.ok(t.length <= 5000);
+  assert.equal(JSON.parse(t).marketByTimeframe.frames.length, 3);
+  // small data passes through unchanged
+  assert.equal(fitJson({ a: 1 }), '{"a":1}');
+});

@@ -70,3 +70,11 @@ test('risk warnings: a losing backtest that trailed a losing hold is flagged too
   assert.match(geo(-0.02), /about break-even/);
   assert.match(geo(-0.4), /— negative before fees/);
 });
+
+test('the strength meter and the engine label agree at every score', async () => {
+  const { signalMeter } = await import('../js/lib/selfimprove.js');
+  const { labelFor } = await import('../js/lib/signals.js');
+  for (let s = -100; s <= 100; s++) {
+    assert.equal(signalMeter(s).tone, labelFor(s).tone, `score ${s}`);
+  }
+});

@@ -338,7 +338,7 @@ export async function render(el) {
       for (const { sym, candles } of inputs) {
         if (st.disposed) return;
         ledger = resolveDueLedger(ledger, candles, { symbol: sym, interval });
-        const fc = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12 }).catch(() => null);
+        const fc = await runForecast(candles, { horizon: DEFAULT_HORIZON[interval] || 12, intervalMs: INTERVAL_MS[interval] }).catch(() => null);
         if (fc?.ok && Number.isFinite(fc.probUp) && fc.path?.length) {
           ledger = recordForecast(ledger, {
             symbol: sym, interval, price: fc.lastPrice, probUp: fc.probUp,

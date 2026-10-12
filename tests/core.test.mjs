@@ -492,10 +492,15 @@ test('VWAP resets each day and Ichimoku projects its cloud forward', async () =>
   assert.equal(v[47], 200);
 
   const ich = ichimoku(candles);
-  assert.equal(ich.senkouA.length, candles.length + 26, 'the cloud is plotted 26 bars ahead');
+  // "26 periods ahead" counts the current bar: 25 bars, as TradingView and the
+  // exchanges' charts plot it
+  assert.equal(ich.displacement, 25);
+  assert.equal(ich.senkouA.length, candles.length + 25, 'the cloud runs 25 bars past the last candle');
+  const i = 30;
+  assert.equal(ich.senkouA[i + 25], (ich.tenkan[i] + ich.kijun[i]) / 2, 'span A from bar i is drawn at bar i + 25');
   assert.equal(ich.tenkan[0], null, 'no value before there is enough history');
   assert.ok(ich.kijun.at(-1) !== null);
-  assert.equal(ich.chikou[0], candles[26].c, 'the lagging line is shifted back');
+  assert.equal(ich.chikou[0], candles[25].c, 'the lagging line is shifted back 25 bars');
 });
 
 test('a model with nothing to say abstains instead of voting zero', async () => {
@@ -1539,4 +1544,13 @@ test('triple barrier: a trade whose time limit has not passed yet has no label',
   // but a barrier touched within the candles that do exist still counts
   const spike = flat.map((c, i) => (i === 37 ? { ...c, h: 103 } : c));
   assert.equal(tripleBarrier(spike, 35, 1, { up: 2, down: 1, maxBars: 10 }).label, 1);
+});
+
+test('RSI of a price that never moved is a neutral 50, not overbought', () => {
+  const flat = Array.from({ length: 40 }, () => 100);
+  const r = rsi(flat, 14);
+  assert.equal(r[14], 50);
+  assert.equal(r.at(-1), 50);
+  // one rise after a flat stretch is pure gain: 100
+  assert.equal(rsi([...flat, 101], 14).at(-1), 100);
 });

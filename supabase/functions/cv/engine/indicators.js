@@ -50,12 +50,15 @@ export function rsi(closes, period = 14) {
     if (d >= 0) gain += d; else loss -= d;
   }
   gain /= period; loss /= period;
-  out[period] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+  // A price that did not move at all has no momentum either way: 50, not the
+  // 100 ("extremely overbought") that dividing by a zero loss used to give.
+  const value = () => (gain === 0 && loss === 0 ? 50 : loss === 0 ? 100 : 100 - 100 / (1 + gain / loss));
+  out[period] = value();
   for (let i = period + 1; i < closes.length; i++) {
     const d = closes[i] - closes[i - 1];
     gain = (gain * (period - 1) + Math.max(d, 0)) / period;
     loss = (loss * (period - 1) + Math.max(-d, 0)) / period;
-    out[i] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+    out[i] = value();
   }
   return out;
 }
@@ -248,11 +251,14 @@ export function vwap(candles) {
  * shifted forward it also shows where support and resistance will sit before
  * price gets there — the reason it survives as an indicator.
  *
- * `senkouA`/`senkouB` are returned already shifted forward, so the arrays run
- * `displacement` entries longer than `candles`; `chikou` is shifted back.
+ * `senkouA`/`senkouB` are returned already shifted forward and `chikou` back.
+ * "26 periods ahead" counts the current bar, so the shift is 25 bars, which is
+ * how TradingView and the exchanges' own charts plot it (this used to shift 26,
+ * one bar off from them). The returned `displacement` is the shift in bars.
  */
 export function ichimoku(candles, { conversion = 9, base = 26, spanB = 52, displacement = 26 } = {}) {
   const n = candles.length;
+  const shift = displacement - 1;
   const midpoint = (period, i) => {
     if (i < period - 1) return null;
     let hi = -Infinity, lo = Infinity;
@@ -261,18 +267,18 @@ export function ichimoku(candles, { conversion = 9, base = 26, spanB = 52, displ
   };
   const tenkan = new Array(n).fill(null);
   const kijun = new Array(n).fill(null);
-  const senkouA = new Array(n + displacement).fill(null);
-  const senkouB = new Array(n + displacement).fill(null);
+  const senkouA = new Array(n + shift).fill(null);
+  const senkouB = new Array(n + shift).fill(null);
   const chikou = new Array(n).fill(null);
   for (let i = 0; i < n; i++) {
     tenkan[i] = midpoint(conversion, i);
     kijun[i] = midpoint(base, i);
-    if (tenkan[i] !== null && kijun[i] !== null) senkouA[i + displacement] = (tenkan[i] + kijun[i]) / 2;
+    if (tenkan[i] !== null && kijun[i] !== null) senkouA[i + shift] = (tenkan[i] + kijun[i]) / 2;
     const b = midpoint(spanB, i);
-    if (b !== null) senkouB[i + displacement] = b;
-    if (i - displacement >= 0) chikou[i - displacement] = candles[i].c;
+    if (b !== null) senkouB[i + shift] = b;
+    if (i - shift >= 0) chikou[i - shift] = candles[i].c;
   }
-  return { tenkan, kijun, senkouA, senkouB, chikou, displacement };
+  return { tenkan, kijun, senkouA, senkouB, chikou, displacement: shift };
 }
 
 /**

@@ -78,9 +78,53 @@ export async function loadLocalModel(modelId) {
   return loadingPromise;
 }
 
+// Detail the language model can do without, least useful first.
+const TRIM = [['aiForecast', 'models'], ['aiForecast', 'patternMatches'], ['aiForecast', 'notes'], ['recentHeadlines'], ['multiYearHistory'], ['moveTiming'], ['timeframes']];
+
+function shortenArrays(v, max) {
+  if (Array.isArray(v)) return v.slice(0, max).map((x) => shortenArrays(x, max));
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shortenArrays(x, max)]));
+  return v;
+}
+
+/**
+ * The data as JSON within `limit` characters, still valid JSON. It used to be
+ * cut at 5,000 characters mid-value, and the comparison, market scan and
+ * portfolio are added last, so they were what got lost. Now the bulkiest
+ * detail goes first, then long lists are shortened, then whole low-priority
+ * sections are left out.
+ */
+export function fitJson(data, limit = 5000) {
+  let d = JSON.parse(JSON.stringify(data ?? {}));
+  let s = JSON.stringify(d);
+  for (const path of TRIM) {
+    if (s.length <= limit) return s;
+    const parent = path.length > 1 ? d[path[0]] : d;
+    if (parent && typeof parent === 'object') delete parent[path[path.length - 1]];
+    s = JSON.stringify(d);
+  }
+  for (const max of [8, 5, 3]) {
+    if (s.length <= limit) return s;
+    d = shortenArrays(d, max);
+    s = JSON.stringify(d);
+  }
+  const keep = ['coin', 'question', 'comparison', 'marketByTimeframe', 'marketPicks', 'portfolio', 'signal', 'aiForecast', 'price', 'chart'];
+  for (const k of Object.keys(d).filter((key) => !keep.includes(key))) {
+    if (s.length <= limit) return s;
+    delete d[k];
+    s = JSON.stringify(d);
+  }
+  for (const k of [...keep].reverse()) {
+    if (s.length <= limit) return s;
+    delete d[k];
+    s = JSON.stringify(d);
+  }
+  return s.length <= limit ? s : '{}';
+}
+
 function buildMessages(history, question, facts, data) {
   const recent = history.slice(-6).map((m) => ({ role: m.role, content: m.content.slice(0, 1500) }));
-  const user = `FACTS (verified analysis):\n${facts}\n\nDATA (JSON):\n${JSON.stringify(data).slice(0, 5000)}\n\nQUESTION: ${question}`;
+  const user = `FACTS (verified analysis):\n${facts}\n\nDATA (JSON):\n${fitJson(data)}\n\nQUESTION: ${question}`;
   return [{ role: 'system', content: AI_SYSTEM_PROMPT }, ...recent, { role: 'user', content: user }];
 }
 

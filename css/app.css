@@ -217,6 +217,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .cc-legend .k1 { color: var(--series-1); } .cc-legend .k2 { color: var(--series-2); } .cc-legend .k7 { color: var(--series-7); }
 .toggles { display: flex; gap: 6px; flex-wrap: wrap; }
 .toggle { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: transparent; color: var(--text-muted); }
+.toggle:disabled { opacity: .45; cursor: not-allowed; }
 .toggle.on { color: var(--text); background: var(--surface-2); }
 .toggle i { width: 10px; height: 3px; border-radius: 2px; }
 

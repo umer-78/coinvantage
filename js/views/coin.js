@@ -360,6 +360,15 @@ export async function render(el, [symParam]) {
         $$('#toggles .toggle', el).forEach((b) => b.classList.toggle('on', !!chart.opts[b.dataset.k]));
         st.wasFast = fast;
       }
+      // VWAP restarts every UTC day, so on a daily or weekly candle it is just
+      // that candle's average price; the toggle is switched off there.
+      const daily = (INTERVAL_MS[iv] || 0) >= 864e5;
+      const vwapBtn = $('#toggles .toggle[data-k="vwap"]', el);
+      if (vwapBtn) {
+        vwapBtn.disabled = daily;
+        vwapBtn.title = daily ? 'VWAP restarts each day, so on daily or weekly candles it would only repeat each candle\'s average price.' : '';
+        if (daily && chart.opts.vwap) { chart.setOptions({ vwap: false }); vwapBtn.classList.remove('on'); }
+      }
       const r = await getCandles(coin, iv, isSecondInterval(iv) ? (MAX_BARS[iv] || 600) : 1500);
       if (st.disposed || iv !== st.interval) return;
       st.candles = r.candles; st.source = r.source; st.tested = isTestedSource(r);

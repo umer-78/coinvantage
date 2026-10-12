@@ -1,7 +1,7 @@
 // Rule-based analyst. Produces a markdown answer from the same context that
 // is sent to the language model, so the assistant works even without an API key.
 
-import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
+import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED, THRESHOLDS } from './signals.js';
 import { accuracyFor, TESTED_ACCURACY } from './predict.js';
 import { fx } from '../api/fx.js';
 import { isTickerMention } from './tickers.js';
@@ -488,7 +488,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
     case 'exit': {
       out.push(signalLine(sig, ctx.interval));
       out.push(conflictBlock(ctx));
-      if (sig.score <= -18) {
+      if (sig.score <= -THRESHOLDS.normal) {
         out.push(`\nMomentum has turned against longs. If you hold ${ctx.coin?.symbol || 'this coin'}, **consider closing or reducing** the position, or at least tighten your stop.`);
       } else if ((sig.indicators.rsi ?? 50) > 72) {
         out.push(`\nThe trend is still up but RSI is overbought (${sig.indicators.rsi?.toFixed(0)}). A common approach is to **take partial profit** and trail the stop on the rest.`);
@@ -570,7 +570,7 @@ export function ruleBasedAnswer(question, ctx = {}) {
     default: {
       out.push(signalLine(sig, ctx.interval));
       out.push(conflictBlock(ctx));
-      const bias = sig.score >= 18 ? 'leaning up' : sig.score <= -18 ? 'leaning down' : 'range-bound / undecided';
+      const bias = sig.score >= THRESHOLDS.normal ? 'leaning up' : sig.score <= -THRESHOLDS.normal ? 'leaning down' : 'range-bound / undecided';
       out.push(`\nOverall the indicators are **${bias}** — a description of where price sits, not a forecast of where it goes next.`);
       out.push(reasonsBlock(sig, 4));
       out.push(mtfBlock(ctx));

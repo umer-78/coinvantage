@@ -10,6 +10,7 @@
 
 import { computeAll } from './indicators.js';
 import { findPatterns, shownProbUp, TESTED_ACCURACY } from './predict.js';
+import { THRESHOLDS } from './signals.js';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -377,10 +378,10 @@ export function signalMeter(score) {
   // Momentum words, not orders: measured, the highest scores were the LEAST
   // likely to keep rising (see SCORE_BUCKETS_TESTED), so "Strong buy" said the
   // opposite of the data.
-  if (s >= 45) { label = 'Strong rise'; tone = 'up'; }
-  else if (s >= 18) { label = 'Rising'; tone = 'up'; }
-  else if (s <= -45) { label = 'Strong fall'; tone = 'down'; }
-  else if (s <= -18) { label = 'Falling'; tone = 'down'; }
+  if (s >= THRESHOLDS.strong) { label = 'Strong rise'; tone = 'up'; }
+  else if (s >= THRESHOLDS.normal) { label = 'Rising'; tone = 'up'; }
+  else if (s <= -THRESHOLDS.strong) { label = 'Strong fall'; tone = 'down'; }
+  else if (s <= -THRESHOLDS.normal) { label = 'Falling'; tone = 'down'; }
   else { label = 'Flat'; tone = 'flat'; }
   return { score: s, pos, label, tone };
 }
@@ -442,7 +443,7 @@ export function riskWarnings({ signal = null, forecast = null, backtest = null, 
   if (forecast?.ok && forecast.confidence === 'Low') {
     out.push({ key: 'low-conf', level: 'warn', text: 'Forecast confidence is low — models barely agree or recent accuracy is weak. Size down or wait.' });
   }
-  if (signal?.ok && Math.abs(signal.score) >= 45 && forecast?.ok) {
+  if (signal?.ok && Math.abs(signal.score) >= THRESHOLDS.strong && forecast?.ok) {
     const leanUp = signal.score > 0;
     const shown = shownProbUp(forecast.probUp, interval, trust);
     const fcLeanUp = shown >= 0.54;
