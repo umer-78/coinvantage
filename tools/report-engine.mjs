@@ -44,6 +44,17 @@ for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
       bigCalls: callBig.length, sizeWhenBig: +mean(callBig.map((z) => z.move.absRet / z.move.usual)).toFixed(2), sizeWhenSmall: +mean(callSmall.map((z) => z.move.absRet / z.move.usual)).toFixed(2) };
     console.log(`     move size: call right ${x.move.hitPct}% vs ${x.move.baselinePct}% baseline (n ${mv.length}), rank correlation ${x.move.spearman}; the move was ${x.move.sizeWhenBig}× usual after "bigger" calls and ${x.move.sizeWhenSmall}× after "smaller"`);
   }
+  // The same ranges centred on today's price instead of the model's lean
+  // (its drift): what the coin page shows where it has no reliable direction.
+  const qs = r.filter((z) => z.q);
+  if (qs.length) {
+    const end = (z) => 1 + z.ret;
+    const inBand = (z, a, b) => end(z) >= z.q[a] / z.q.p50 && end(z) <= z.q[b] / z.q.p50;
+    x.centred = { n: qs.length, band50: pct(qs.filter((z) => inBand(z, 'p25', 'p75')).length / qs.length), band80: pct(qs.filter((z) => inBand(z, 'p10', 'p90')).length / qs.length),
+      leanBand50: pct(qs.filter((z) => end(z) >= z.q.p25 && end(z) <= z.q.p75).length / qs.length), leanBand80: pct(qs.filter((z) => end(z) >= z.q.p10 && end(z) <= z.q.p90).length / qs.length),
+      medianLeanPct: +(([...qs.map((z) => Math.abs(z.q.p50 - 1))].sort((a, b) => a - b)[Math.floor(qs.length / 2)]) * 100).toFixed(2) };
+    console.log(`     centred on today's price: 50% band held ${x.centred.band50}%, 80% band ${x.centred.band80}% (with the lean: ${x.centred.leanBand50}%, ${x.centred.leanBand80}%); median lean ${x.centred.medianLeanPct}%`);
+  }
   // Does the per-coin check the coin page shows ("tested accuracy ... on N
   // unseen cases") tell which forecasts will be right?
   const va = r.filter((z) => Number.isFinite(z.valAcc));

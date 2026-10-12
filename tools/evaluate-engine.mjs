@@ -34,7 +34,7 @@ for (const key of keys) {
     const o = start + Math.floor((span * k) / count);
     const f = forecast(c.slice(Math.max(0, o - 1499), o + 1), { horizon: H });
     if (!f.ok) continue;
-    out.push({ key, iv, o, y: c[o + H].c > c[o].c ? 1 : 0, p: f.probUp, conf: f.confidence, valAcc: f.ensemble.accuracy, models: Object.fromEntries(f.models.map((m) => [m.key, m.probUp])), ret: c[o + H].c / c[o].c - 1, inRange50: c[o + H].c >= f.range.p25 && c[o + H].c <= f.range.p75, inRange80: c[o + H].c >= f.range.p10 && c[o + H].c <= f.range.p90, move: moveCall(o, H), valN: f.ensemble.samples });
+    out.push({ key, iv, o, y: c[o + H].c > c[o].c ? 1 : 0, p: f.probUp, conf: f.confidence, valAcc: f.ensemble.accuracy, models: Object.fromEntries(f.models.map((m) => [m.key, m.probUp])), ret: c[o + H].c / c[o].c - 1, inRange50: c[o + H].c >= f.range.p25 && c[o + H].c <= f.range.p75, inRange80: c[o + H].c >= f.range.p10 && c[o + H].c <= f.range.p90, move: moveCall(o, H), valN: f.ensemble.samples, q: Object.fromEntries(['p10', 'p25', 'p50', 'p75', 'p90'].map((k) => [k, f.range[k] / c[o].c])) });
   }
   console.error(key, 'done');
 }
