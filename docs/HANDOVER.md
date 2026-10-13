@@ -123,6 +123,20 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### Outside data and price factors, tested — none adopted (2026-10-13)
+- `tools/fetch-external.mjs` + `tools/evaluate-external.mjs` (Evaluate jobs `external` and
+  `momentum`): Fear & Greed (alternative.me, daily since 2018), perpetual funding (Binance's
+  public data archive, data.binance.vision), taker-buy share of volume (Binance candles), plus
+  3-week momentum and last week's move. 24 coins, 260 weekly dates 2021-10 → 2026-10, one
+  date a week, market-wide readings on the average of all coins, per-coin readings as a
+  top-third − bottom-third spread on the same date. Bar in the script: same sign in both
+  halves and |t| ≥ 2 in the newer half.
+- Results: Fear & Greed extreme fear −0.57 / −0.18 pts vs other weeks (t −0.1); extreme greed
+  and market-wide funding extremes too rare (2–12 weeks per half); funding spread +0.25 / −0.31
+  (flips); taker-buy spread +0.22 / +0.54 (t 1.59); momentum +1.07 (t 2.31) / −0.07 (gone in the
+  newer half); last week's move +0.41 / +0.95 (t 1.82). Nothing cleared the bar, so nothing was
+  added to the forecast or the trader. Re-run the jobs before trying any of these again.
+
 ### Live AI-signal record and AI-signal alerts (2026-10-13, server)
 - Table `ai_signal_log` (public read, server write): one row per closed 4h/1d candle of the
   tracked coins — what the AI signal said (`aiSignalRow()` in the shared engine, the same
