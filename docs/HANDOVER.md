@@ -272,10 +272,12 @@ ones; each bar to adopt was written in the script before the run.
   would check them, at the cost of more forecasts per run (CPU limit) — not done without
   the owner's say-so, since it changes their database settings.
 
-### Backend deploy as it stands (2026-10-12)
-The live edge function `cv` (version 13) is a one-line entry that imports
+### Backend deploy as it stands (2026-10-13)
+The live edge function `cv` (version 14) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com
-(53744e7: plan scoring plus the indicator fixes), so what runs is exactly what was committed. To deploy newer server
+(096f103: the live AI-signal record and AI-signal alerts; version 13 was 53744e7), so what
+runs is exactly what was committed. Verified after the deploy: every call 200, the 00:35
+track run wrote both signal_log and ai_signal_log rows. To deploy newer server
 code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
 `/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
 `telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
