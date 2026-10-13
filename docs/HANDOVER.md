@@ -355,6 +355,15 @@ ones; each bar to adopt was written in the script before the run.
   would check them, at the cost of more forecasts per run (CPU limit) — not done without
   the owner's say-so, since it changes their database settings.
 
+### AI-signal alerts reach the open site (2026-10-13)
+- The server records every AI-alert firing on the row (`triggered_at`, `triggered_price`)
+  whether or not Telegram or e-mail is set up. `showTriggeredServerAlerts()` (js/app.js)
+  now reads `ai_alerts` too and shows each new firing once (toast + browser notification if
+  allowed; remembered in `seenAlerts` as `ai:<id>:<time>`), on sign-in and every two minutes
+  while the tab is visible. So AI alerts work for anyone with the site open before the
+  Telegram/Resend keys are added. The row does not store which way it fired; the message
+  says BUY/SELL from the alert's side, or "a BUY or SELL" for "any".
+
 ### Backend deploy as it stands (2026-10-13)
 The live edge function `cv` (version 14) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com

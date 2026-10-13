@@ -163,7 +163,7 @@ export async function render(el, [preset]) {
         <label class="fld">Tell me about<select class="inp" name="side">${AI_SIDES.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></label>
         <button class="btn primary">${icon('alerts', 16)} Create AI signal alert</button>
       </form>
-      <p class="fine mt">The same signal as on each coin page: the chart's tested trading rules, checked when a candle closes. The message says what it did — bought (with the stop) or sold (with the result after fees). In testing, buys like these picked direction no better than chance; the coin page and the Track record show the record. Nothing here places an order.</p>
+      <p class="fine mt">The same signal as on each coin page: the chart's tested trading rules, checked when a candle closes. The message says what it did — bought (with the stop) or sold (with the result after fees) — by Telegram or e-mail if set up, and on this site whenever it is open (with a browser notification if you allow them). In testing, buys like these picked direction no better than chance; the coin page and the Track record show the record. Nothing here places an order.</p>
       ${mine.length ? `<div class="stack mt" style="gap:8px">${mine.map((a) => `
         <div class="row spread" style="padding:10px;border-radius:10px;background:var(--surface-2)">
           <div><b>${esc(a.symbol)}</b> · ${esc(a.interval)} chart · ${esc(AI_SIDES.find(([v]) => v === (a.side || 'any'))?.[1] || 'Buys and sells')}

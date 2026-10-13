@@ -9,7 +9,7 @@ import { generateSignal } from './lib/signals.js';
 import { live } from './api/live.js';
 import { fx, initCurrency, setCurrency } from './api/fx.js';
 import { t, applyDir } from './i18n.js';
-import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, trackPageView, getAppSettings } from './api/backend.js';
+import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData, serverAlerts, serverAiAlerts, trackPageView, getAppSettings } from './api/backend.js';
 import { createSync, SYNCED_KEYS, TRADING_KEYS } from './lib/cloudsync.js';
 import { DEPS } from './deps.js';
 
@@ -304,6 +304,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && Date.now() - lastSyncAt > 20e3) syncNow();
 });
 setInterval(() => { if (!document.hidden && Date.now() - lastSyncAt > 100e3) syncNow(); }, 120e3);
+setInterval(() => { if (!document.hidden) showTriggeredServerAlerts(); }, 120e3);
 
 // ---------------------------------------------------------------- live ticker + alerts
 let tickerCoins = [];
@@ -352,11 +353,14 @@ function checkAlerts(pair, p) {
   if (changed) save('alerts', alerts);
 }
 
-// Alerts the server fired while the site was closed (e-mail / Telegram users).
+// Alerts the server fired while the site was closed (e-mail / Telegram users),
+// and AI-signal alerts: the server records every firing, so they reach someone
+// with the site open (checked every two minutes) even before Telegram or
+// e-mail is set up.
 async function showTriggeredServerAlerts() {
   if (!auth.user) return;
   try {
-    const rows = await serverAlerts();
+    const [rows, ai] = await Promise.all([serverAlerts(), serverAiAlerts().catch(() => [])]);
     const seen = new Set(load('seenAlerts', []));
     // Keyed by firing, not by alert: a repeating signal alert fires many times.
     // Signal alerts used to come out as "BTC went null —".
@@ -367,7 +371,15 @@ async function showTriggeredServerAlerts() {
       else toast(`🔔 ${a.symbol} went ${a.direction} ${money(a.price)} while you were away`, a.direction === 'above' ? 'up' : 'down', 9000);
       seen.add(key(a));
     }
-    if (fresh.length) save('seenAlerts', [...seen].slice(-200));
+    const freshAi = ai.filter((a) => a.triggered_at && !seen.has(`ai:${key(a)}`));
+    for (const a of freshAi.slice(0, 4)) {
+      const what = a.side === 'long' ? 'a BUY' : a.side === 'short' ? 'a SELL' : 'a BUY or SELL';
+      const msg = `AI signal on ${a.symbol} (${a.interval} chart): ${what} at ${money(+a.triggered_price)}, ${new Date(a.triggered_at).toLocaleString()}. Simulated rules, not a forecast.`;
+      toast(`🤖 ${msg}`, 'info', 10000);
+      try { if (Notification.permission === 'granted') new Notification(`${CONFIG.APP_NAME} AI signal`, { body: msg, icon: 'icon.svg' }); } catch { /* ignore */ }
+      seen.add(`ai:${key(a)}`);
+    }
+    if (fresh.length || freshAi.length) save('seenAlerts', [...seen].slice(-200));
   } catch { /* backend optional */ }
 }
 auth.addEventListener('change', showTriggeredServerAlerts);
@@ -465,7 +477,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261013-103038";
+export const BUILD = "20261013-103421";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
