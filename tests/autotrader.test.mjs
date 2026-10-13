@@ -3,7 +3,7 @@
 // together in time.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { replaySymbol, replaySeries, newState, openManual, closeManual, freeCash, DEFAULT_CONFIG } from '../js/lib/autotrader.js';
+import { replaySymbol, replaySeries, newState, openManual, closeManual, freeCash, DEFAULT_CONFIG, dropTracker, stats } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 
 const H = 3600e3;
@@ -308,4 +308,31 @@ test('volatility-scaled size is on only where it cleared its bar, and never on y
     assert.equal(VOL_SCALE.charts.includes(iv), cleared, iv);
   }
   assert.equal(rulesForChart({ ...DEFAULT_CONFIG, strategy: 'custom' }, '4h').volScale, false);
+});
+
+test('the worst drop counts falls inside open trades, not only closed ones', () => {
+  const st = newState({ ...DEFAULT_CONFIG, startingBalance: 1000 });
+  st.open.BTC = { symbol: 'BTC', side: 'long', entry: 100, qty: 5, notional: 500, stop: 50, initialStop: 50, tp: null };
+  const tr = dropTracker(st);
+  tr.onBar({ t: 1, c: 100 }, 'BTC');
+  tr.onBar({ t: 2, c: 80 }, 'BTC'); // 100 down on the trade: the account is worth 900
+  tr.onBar({ t: 3, c: 120 }, 'BTC'); // then it recovers, so no closed trade ever lost
+  assert.equal(+tr.worstDropPct().toFixed(6), 10);
+});
+
+test('the live equity curve values open trades at the latest close', () => {
+  const c = Array.from({ length: 700 }, (_, i) => {
+    const p = 100 * Math.exp(0.002 * i + Math.sin(i / 7) * 0.04);
+    return { t: i * 36e5, o: p, h: p * 1.01, l: p * 0.99, c: p, v: 1000 };
+  });
+  const cfg = { ...DEFAULT_CONFIG, universe: ['AAA'], trendFilter: false, marketFilter: false };
+  const st = newState(cfg);
+  replaySeries(st, cfg, [{ symbol: 'AAA', candles: c, ind: computeAll(c), atr: atr(c, 14) }], { from: 210 });
+  // while a trade is open the cash balance stands still, so a curve of cash
+  // alone would be flat there; valued at each close it moves with the price
+  const t = st.closed.find((x) => st.equityCurve.filter((p) => p.t > x.openedAt && p.t < x.exitAt).length >= 3);
+  assert.ok(t, 'the fixture holds a trade for several candles');
+  const inside = st.equityCurve.filter((p) => p.t > t.openedAt && p.t < t.exitAt).map((p) => p.equity);
+  assert.ok(new Set(inside).size > 1);
+  assert.ok(stats(st, { AAA: c.at(-1).c }).maxDrawdownPct > 0);
 });

@@ -13,7 +13,7 @@
 // on average, with an average worst drop no more than five points deeper.
 // The rules it would then get are picked the same way on the full history.
 import { readFileSync } from 'node:fs';
-import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity } from '../js/lib/autotrader.js';
+import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity, dropTracker } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 
@@ -44,7 +44,11 @@ function account(rules, series, from, extra = {}) {
   const st = newState(cfg);
   const run = series.map((x) => ({ ...x, regime: cfg.marketFilter ? x.regime : null }));
   for (const x of run) st.cursor[x.symbol] = x.candles[from - 1].t;
-  replaySeries(st, cfg, run, { from });
+  // `dd` (worst drop from one closed trade to the next) is what the rules were
+  // picked by; `ddMarked` values open trades at every close too — the fall an
+  // account would actually have shown, and the figure the app publishes.
+  const drop = dropTracker(st);
+  replaySeries(st, cfg, run, { from, onBar: drop.onBar });
   const last = Object.fromEntries(run.map((x) => [x.symbol, x.candles.at(-1).c]));
   const eqEnd = equity(st, last) - Object.values(st.open).reduce((a, p) => a + (last[p.symbol] * p.qty * cfg.feePct) / 100, 0);
   let eq = cfg.startingBalance, peak = eq, dd = 0;
@@ -52,7 +56,23 @@ function account(rules, series, from, extra = {}) {
   dd = Math.max(dd, (peak - eqEnd) / peak);
   const wins = st.closed.filter((t) => t.pnl > 0).length;
   const fees = st.closed.reduce((a, t) => a + (t.feePaid || 0), 0);
-  return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, trades: st.closed.length, win: st.closed.length ? (wins / st.closed.length) * 100 : 0, fees: (fees / cfg.startingBalance) * 100 };
+  return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, ddMarked: drop.worstDropPct(), trades: st.closed.length, win: st.closed.length ? (wins / st.closed.length) * 100 : 0, fees: (fees / cfg.startingBalance) * 100 };
+}
+
+// Holding the same coins instead: equal amounts bought at the block's first
+// candle, valued at every close — its worst fall, measured like `ddMarked`.
+function holdDrop(series, from) {
+  const base = series.map((x) => x.candles[from].c), last = [...base], idx = series.map(() => from + 1);
+  let peak = 1, dd = 0;
+  for (;;) {
+    let t = Infinity;
+    for (let j = 0; j < series.length; j++) if (idx[j] < series[j].candles.length) t = Math.min(t, series[j].candles[idx[j]].t);
+    if (t === Infinity) break;
+    for (let j = 0; j < series.length; j++) while (idx[j] < series[j].candles.length && series[j].candles[idx[j]].t === t) last[j] = series[j].candles[idx[j]++].c;
+    const v = last.reduce((a, p, j) => a + p / base[j], 0) / series.length;
+    if (v > peak) peak = v; else dd = Math.max(dd, (peak - v) / peak);
+  }
+  return dd * 100;
 }
 const objective = (m) => (m.trades < 10 ? -Infinity : m.ret - 0.5 * m.dd);
 
@@ -124,7 +144,7 @@ for (const iv of IVS) {
     const pick = scored.sort((a, b) => objective(b.m) - objective(a.m))[0].g;
     const cur = account({}, test, WARM), mine = account(pick, test, WARM);
     const hold = test.reduce((a, x) => a + (x.candles.at(-1).c / x.candles[WARM].c - 1), 0) / test.length * 100;
-    const pack = (m) => ({ ret: r2(m.ret), dd: r2(m.dd), trades: m.trades, win: r2(m.win), fees: r2(m.fees) });
+    const pack = (m) => ({ ret: r2(m.ret), dd: r2(m.dd), ddMarked: r2(m.ddMarked), trades: m.trades, win: r2(m.win), fees: r2(m.fees) });
     // the same block at other risk levels, for the expected-yield estimate:
     // both the chart's own pick and the standard rules, so whichever ships has one
     const byRisk = {};
@@ -132,25 +152,30 @@ for (const iv of IVS) {
     const sig = { own: signalRecord(pick, test, WARM, HZ[iv]), standard: signalRecord({}, test, WARM, HZ[iv]) };
     // the same block with volatility-scaled risk (DEFAULT_CONFIG.volScale)
     const vol = { own: pack(account(pick, test, WARM, { volScale: true })), standard: pack(account({}, test, WARM, { volScale: true })) };
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), coins: test.length, byRisk, sig, vol });
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), holdDrop: r2(holdDrop(test, WARM)), coins: test.length, byRisk, sig, vol });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
   const better = folds.filter((x) => x.own.ret > x.current.ret).length;
   const adopt = better >= 2 && mean('own', 'ret') - mean('current', 'ret') >= 1 && mean('own', 'dd') <= mean('current', 'dd') + 5;
   console.log(`\n== ${iv}: ${coins.length} coins in one account, ${grid.length} rule sets`);
-  for (const x of folds) console.log(`  test ${x.from} → ${x.to}: current ${String(x.current.ret).padStart(7)}% (dd ${x.current.dd}%, ${x.current.trades} trades)  own ${String(x.own.ret).padStart(7)}% (dd ${x.own.dd}%, ${x.own.trades} trades)  hold ${x.hold}%   picked: ${x.pick}`);
+  for (const x of folds) console.log(`  test ${x.from} → ${x.to}: current ${String(x.current.ret).padStart(7)}% (dd ${x.current.dd}%, marked ${x.current.ddMarked}%, ${x.current.trades} trades)  own ${String(x.own.ret).padStart(7)}% (dd ${x.own.dd}%, marked ${x.own.ddMarked}%, ${x.own.trades} trades)  hold ${x.hold}% (drop ${x.holdDrop}%)   picked: ${x.pick}`);
   console.log(`  own better in ${better} of 3; average current ${mean('current', 'ret')}% (dd ${mean('current', 'dd')}%) vs own ${mean('own', 'ret')}% (dd ${mean('own', 'dd')}%) → ${adopt ? 'ADOPT' : 'KEEP CURRENT'}`);
   const sum = (k, m) => folds.reduce((a, x) => a + x[k][m], 0);
-  const summary = (k) => ({ ret: mean(k, 'ret'), dd: mean(k, 'dd'), trades: sum(k, 'trades'), win: r2(folds.reduce((a, x) => a + x[k].win * x[k].trades, 0) / Math.max(1, sum(k, 'trades'))), fees: mean(k, 'fees') });
-  const entry = { coins: coins.length, from: folds[0].from, to: folds.at(-1).to, folds, better, current: summary('current'), own: summary('own'), hold: r2(folds.reduce((a, x) => a + x.hold, 0) / folds.length), adopt };
-  // average, worst and best block at each risk level, for the rules this chart would trade
+  const summary = (k) => ({ ret: mean(k, 'ret'), dd: mean(k, 'dd'), ddMarked: mean(k, 'ddMarked'), trades: sum(k, 'trades'), win: r2(folds.reduce((a, x) => a + x[k].win * x[k].trades, 0) / Math.max(1, sum(k, 'trades'))), fees: mean(k, 'fees') });
+  const entry = { coins: coins.length, from: folds[0].from, to: folds.at(-1).to, folds, better, current: summary('current'), own: summary('own'), hold: r2(folds.reduce((a, x) => a + x.hold, 0) / folds.length), holdDrop: r2(folds.reduce((a, x) => a + x.holdDrop, 0) / folds.length), adopt };
+  console.log(`  worst drop with open trades valued at every close: current ${entry.current.ddMarked}%, own ${entry.own.ddMarked}%, holding the coins ${entry.holdDrop}% (average of the blocks)`);
+  // average, worst and best block at each risk level — for both rule sets, so
+  // the app has the figures for whichever it ships (15m has flipped between runs)
   const which = adopt ? 'own' : 'standard';
-  entry.byRisk = Object.fromEntries(RISKS.map((risk) => {
-    const rs = folds.map((x) => x.byRisk[risk][which]);
-    return [risk, { ret: r2(rs.reduce((a, m) => a + m.ret, 0) / rs.length), lo: r2(Math.min(...rs.map((m) => m.ret))), hi: r2(Math.max(...rs.map((m) => m.ret))), dd: r2(rs.reduce((a, m) => a + m.dd, 0) / rs.length) }];
+  const riskTable = (k) => Object.fromEntries(RISKS.map((risk) => {
+    const rs = folds.map((x) => x.byRisk[risk][k]);
+    const avg = (f) => r2(rs.reduce((a, m) => a + m[f], 0) / rs.length);
+    return [risk, { ret: avg('ret'), lo: r2(Math.min(...rs.map((m) => m.ret))), hi: r2(Math.max(...rs.map((m) => m.ret))), dd: avg('dd'), ddMarked: avg('ddMarked'), up: rs.filter((m) => m.ret > 0).length, trades: Math.round(rs.reduce((a, m) => a + m.trades, 0) / rs.length) }];
   }));
-  console.log(`  by risk per trade (${which} rules): ${RISKS.map((risk) => `${risk}% → ${entry.byRisk[risk].ret}% (worst block ${entry.byRisk[risk].lo}%, drop ${entry.byRisk[risk].dd}%)`).join(' · ')}`);
+  entry.byRisk = riskTable(which);
+  entry.byRiskBoth = { own: riskTable('own'), standard: riskTable('standard') };
+  console.log(`  by risk per trade (${which} rules): ${RISKS.map((risk) => `${risk}% → ${entry.byRisk[risk].ret}% (worst block ${entry.byRisk[risk].lo}%, drop ${entry.byRisk[risk].dd}%, marked ${entry.byRisk[risk].ddMarked}%)`).join(' · ')}`);
   // both, so the record of whichever rules the app ships exists even when a
   // re-run decides the other way (15m has flipped between runs)
   entry.signals = Object.fromEntries(['own', 'standard'].map((k) => [k, mergeSignals(folds.map((x) => x.sig[k]), HZ[iv])]));
@@ -174,7 +199,8 @@ for (const iv of IVS) {
   const gain = vMean((x) => obj(x.vol[sw]) - obj(baseOf(x)));
   const retDiff = vMean((x) => x.vol[sw].ret - baseOf(x).ret);
   entry.volScale = { rules: sw, better: vb, objGain: gain, retDiff, ddDiff: vMean((x) => x.vol[sw].dd - baseOf(x).dd), adopt: vb >= 2 && gain >= 1 && retDiff >= -1,
-    folds: folds.map((x) => ({ without: { ret: baseOf(x).ret, dd: baseOf(x).dd }, with: { ret: x.vol[sw].ret, dd: x.vol[sw].dd } })) };
+    ddMarkedDiff: vMean((x) => x.vol[sw].ddMarked - baseOf(x).ddMarked),
+    folds: folds.map((x) => ({ without: { ret: baseOf(x).ret, dd: baseOf(x).dd, ddMarked: baseOf(x).ddMarked }, with: { ret: x.vol[sw].ret, dd: x.vol[sw].dd, ddMarked: x.vol[sw].ddMarked } })) };
   console.log(`  volatility-scaled risk (${sw} rules): better in ${vb} of 3; return ${retDiff >= 0 ? '+' : ''}${retDiff} pts, worst drop ${entry.volScale.ddDiff >= 0 ? '+' : ''}${entry.volScale.ddDiff} pts, objective ${gain >= 0 ? '+' : ''}${gain} → ${entry.volScale.adopt ? 'ADOPT' : 'KEEP OFF'}`);
   for (const x of folds) delete x.vol;
   if (adopt) {

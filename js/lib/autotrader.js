@@ -393,7 +393,7 @@ export function replayAll(state, cfg, candlesBySymbol, { regimeCandles = null } 
  * computed ({ symbol, candles, ind, atr, scores?, regime? }). Exported for the
  * evaluation harness, which reuses one computation across many settings.
  */
-export function replaySeries(state, cfg, series, { from = 210, result = {} } = {}) {
+export function replaySeries(state, cfg, series, { from = 210, result = {}, onBar = null } = {}) {
   const pos = series.map(() => from);
   const rules = series.map((s) => rulesFor(cfg, s.symbol));
   for (const s of series) result[s.symbol] ||= { processed: 0, lastScore: null };
@@ -403,6 +403,7 @@ export function replaySeries(state, cfg, series, { from = 210, result = {} } = {
       if (pos[j] < series[j].candles.length && (k < 0 || series[j].candles[pos[j]].t < series[k].candles[pos[k]].t)) k = j;
     }
     if (k < 0) break;
+    if (onBar) onBar(series[k].candles[pos[k]], series[k].symbol);
     advance(state, rules[k], series[k], pos[k]++, result[series[k].symbol]);
   }
   return result;
@@ -594,6 +595,8 @@ function stepBar(state, cfg, s, i, score) {
   const atrArr = s.atr;
   const c = candles[i];
   const pos = state.open[symbol];
+  // the latest close of every coin seen, so the equity curve values open trades
+  (state.px ||= {})[symbol] = c.c;
 
   // ---- manage an open position first, on this bar's high/low
   if (pos) {
@@ -790,11 +793,29 @@ export function closeManual(state, cfg, symbol, price, at = Date.now(), reason =
   return { ok: true, trade: state.closed[state.closed.length - 1] };
 }
 
+// Open trades are valued at the latest close seen (their entry before any):
+// a curve of the cash balance alone hid every fall that a trade recovered
+// from before it closed, so "max drawdown" read shallower than it was.
 function markEquity(state, t) {
   const last = state.equityCurve[state.equityCurve.length - 1];
   if (last && t - last.t < 3600e3) return; // at most one point per hour
-  state.equityCurve.push({ t, equity: round(state.balance, 2) });
+  state.equityCurve.push({ t, equity: round(equity(state, state.px || {}), 2) });
   if (state.equityCurve.length > 2000) state.equityCurve.splice(0, state.equityCurve.length - 2000);
+}
+
+/**
+ * The account's worst fall while a replay runs, open trades valued at every
+ * candle close rather than only when they close. Pass `onBar` to replaySeries,
+ * then read worstDropPct() once at the end.
+ */
+export function dropTracker(state) {
+  const px = {};
+  let t0 = null, peak = equity(state), dd = 0;
+  const mark = () => { const e = equity(state, px); if (e > peak) peak = e; else if (peak > 0) dd = Math.max(dd, (peak - e) / peak); };
+  return {
+    onBar(c, symbol) { if (t0 !== null && c.t > t0) mark(); px[symbol] = c.c; t0 = c.t; },
+    worstDropPct() { if (t0 !== null) mark(); return dd * 100; },
+  };
 }
 
 /** Mark open positions to the latest prices, without closing anything. */
