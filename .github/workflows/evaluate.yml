@@ -11,6 +11,11 @@ on:
         type: choice
         options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, all]
         default: selection
+  # Once a month the main tests re-run on fresh candles, so the figures the app
+  # publishes can be checked against the latest data (each job's summary shows
+  # its result; nothing is changed in the app automatically).
+  schedule:
+    - cron: '17 4 1 * *'
 
 permissions:
   contents: read
@@ -32,6 +37,11 @@ jobs:
 
       - name: Pick the trader's rules on older data, test them on newer data
         run: node tools/evaluate-trader-rules.mjs klines.json | tee trader-rules.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Trader rules'; echo '```'; grep -v '^JSON' trader-rules.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -60,13 +70,18 @@ jobs:
       - name: Choose what to trade on older data, test it on newer data
         run: node tools/evaluate-selection.mjs klines.json | tee selection.txt
 
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Coin selection'; echo '```'; grep -v '^JSON' selection.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: selection
           path: selection.txt
 
   trader-folds:
-    if: inputs.job == 'trader-folds' || inputs.job == 'all'
+    if: github.event_name == 'schedule' || inputs.job == 'trader-folds' || inputs.job == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -85,6 +100,11 @@ jobs:
       - name: Each chart's own rules against the app's, walk-forward
         run: node tools/evaluate-trader-folds.mjs klines.json | tee trader-folds.txt
 
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### AI trader, walk-forward by chart'; echo '```'; grep -v '^JSON' trader-folds.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: trader-folds
@@ -94,7 +114,7 @@ jobs:
   # non-overlapping horizon; a width factor is fitted on the older half of each
   # series and kept only if it helps on the newer half.
   bands:
-    if: inputs.job == 'bands' || inputs.job == 'all'
+    if: github.event_name == 'schedule' || inputs.job == 'bands' || inputs.job == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -112,6 +132,11 @@ jobs:
 
       - name: Range calibration, fitted on older candles and checked on newer ones
         run: node tools/evaluate-bands.mjs klines.json | tee bands.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Price-range calibration'; echo '```'; grep -v '^JSON' bands.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -144,6 +169,11 @@ jobs:
       - name: What outside data says about the next week
         run: node tools/evaluate-external.mjs klines.json external.json | tee external.txt
 
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Outside data'; echo '```'; grep -v '^JSON' external.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: external
@@ -152,7 +182,7 @@ jobs:
   # The same weekly test for the published price factors (momentum, reversal),
   # without the outside downloads.
   momentum:
-    if: inputs.job == 'momentum' || inputs.job == 'all'
+    if: github.event_name == 'schedule' || inputs.job == 'momentum' || inputs.job == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -171,6 +201,11 @@ jobs:
       - name: Momentum and reversal, coin against coin, week by week
         run: node tools/evaluate-external.mjs klines.json none | tee momentum.txt
 
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Momentum and reversal across coins'; echo '```'; grep -v '^JSON' momentum.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: momentum
@@ -179,7 +214,7 @@ jobs:
   # The forecast's release test re-run on fresh candles: 12 coins, six charts,
   # 20 forecasts per coin and chart, split over six runners.
   engine-data:
-    if: inputs.job == 'engine' || inputs.job == 'all'
+    if: github.event_name == 'schedule' || inputs.job == 'engine' || inputs.job == 'all'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -231,6 +266,11 @@ jobs:
           merge-multiple: true
       - name: Hit rate, baseline and direction trust per chart
         run: node tools/report-engine.mjs out-*.json | tee engine.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Forecast re-check on fresh candles'; echo '```'; grep -v '^JSON' engine.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: engine-report

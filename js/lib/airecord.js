@@ -3,6 +3,9 @@
 // Only trades bought after tracking began on a coin and chart are counted,
 // so nothing here was known when the rules were chosen.
 
+/** "3 of 7" while a sample is small, "42.9%" once it is not. */
+export const shareText = (k, n) => (n < 10 ? `${k} of ${n}` : `${((k / n) * 100).toFixed(1)}%`);
+
 /**
  * Per chart: candles graded and how often the price was higher `horizon_bars`
  * later from any of them, the same for the candles where it bought, and the
@@ -24,8 +27,8 @@ export function aiRecordStats(rows) {
     out[iv] = {
       logged: list.length, coins: Object.keys(start).length,
       since: Math.min(...Object.values(start)),
-      graded: graded.length, anyUpPct: pct(graded.filter((r) => r.fwd_up).length, graded.length),
-      buys: buys.length, buyUpPct: pct(buys.filter((r) => r.fwd_up).length, buys.length),
+      graded: graded.length, anyUp: graded.filter((r) => r.fwd_up).length, anyUpPct: pct(graded.filter((r) => r.fwd_up).length, graded.length),
+      buys: buys.length, buyUp: buys.filter((r) => r.fwd_up).length, buyUpPct: pct(buys.filter((r) => r.fwd_up).length, buys.length),
       trades: sells.length, wins: tradePcts.filter((v) => v > 0).length,
       avgTradePct: tradePcts.length ? +(tradePcts.reduce((a, b) => a + b, 0) / tradePcts.length).toFixed(2) : null,
       open: latestOpen(list),

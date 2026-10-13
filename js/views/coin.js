@@ -15,7 +15,8 @@ import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs, modal, to
 import { esc, usd, compact, pct, amount, changeHtml, dateTime, ago, horizonText, INTERVAL_LABEL, money } from '../format.js';
 import { watchlist, settings, load, save } from '../store.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
-import { getNews, backendEnabled } from '../api/backend.js';
+import { getNews, backendEnabled, getAiRecord } from '../api/backend.js';
+import { aiRecordStats, shareText } from '../lib/airecord.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
 import { tradeSummary } from '../lib/summary.js';
 import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE, rulesForChart, rulesFor, rulesInWords, entryBlocker, blockerText, PER_COIN_RULES, aiSignal, CHART_TESTED } from '../lib/autotrader.js';
@@ -561,6 +562,7 @@ export async function render(el, [symParam]) {
       <div class="row spread"><b>AI signal · tested ${esc(st.interval)} rule</b><span class="chip ${tone}" style="font-weight:700">${label}</span></div>
       <p style="margin:6px 0 0">${what}</p>
       <p class="fine" style="margin:6px 0 0">${rec} Simulated, fees included; a record is not a promise.</p>
+      <p class="fine" id="aiLive" style="margin:6px 0 0" hidden></p>
       ${past}</div>`;
   }
 
@@ -601,6 +603,25 @@ export async function render(el, [symParam]) {
       <p class="fine" style="margin:6px 0 0">${esc(status)} ${perCoin?.[sym] ? 'It trades rules chosen on this coin\'s own daily history: ' : customRules ? 'It trades your own rules: ' : `Its rules on ${esc(chart)}: `}${esc(rulesInWords(rules))} Simulated money only.</p></div>`;
     aiNote = { key, html };
     return html;
+  }
+
+  // The server's live record of this signal for this coin and chart, if it is
+  // one of the tracked ones: written at each close, before the outcome.
+  const aiLiveCache = new Map();
+  async function fillAiLive() {
+    if (!backendEnabled() || !st.tested) return;
+    const key = `${coin.symbol}:${st.interval}`;
+    let stats = aiLiveCache.get(key);
+    if (stats === undefined) {
+      const rows = await getAiRecord({ symbol: coin.symbol, interval: st.interval, limit: 2000 }).catch(() => null);
+      stats = rows && rows.length ? aiRecordStats(rows)[st.interval] || null : null;
+      aiLiveCache.set(key, stats);
+    }
+    const node = $('#aiLive', el);
+    if (!node || !stats || `${coin.symbol}:${st.interval}` !== key) return;
+    const day = new Date(stats.since).toISOString().slice(0, 10);
+    node.innerHTML = `<b>Live on the server</b> since ${esc(day)}: ${stats.logged} closed candle${stats.logged === 1 ? '' : 's'} logged; ${stats.buys ? `the price was higher after ${shareText(stats.buyUp, stats.buys)} graded buy${stats.buys === 1 ? '' : 's'}` : 'no buy graded yet'}${stats.trades ? `; ${stats.trades} trade${stats.trades === 1 ? '' : 's'} closed, average ${stats.avgTradePct >= 0 ? '+' : ''}${stats.avgTradePct}% after fees` : ''}. <a href="#/track">Track record →</a>`;
+    node.hidden = false;
   }
 
   function drawSignal(sig, conf) {
@@ -661,6 +682,7 @@ export async function render(el, [symParam]) {
       <details class="mt"><summary class="fine" style="cursor:pointer">Why this signal (${sig.reasons.bullish.length} bullish · ${sig.reasons.bearish.length} bearish)</summary>
         <ul class="reasons mt">${sig.reasons.bullish.map((r) => `<li class="b">${esc(r)}</li>`).join('')}${sig.reasons.bearish.map((r) => `<li class="s">${esc(r)}</li>`).join('')}</ul>
       </details>`;
+    fillAiLive();
   }
 
   // The plain-English version of the numbers below it: what to buy, when to buy,

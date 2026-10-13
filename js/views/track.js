@@ -5,7 +5,7 @@ import { esc, pct, money, dateTime } from '../format.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
 import { liveDirectionCheck, directionTrustFor, LIVE_PROOF_NATS } from '../lib/selfimprove.js';
 import { getTrackRecord, getAiRecord, backendEnabled } from '../api/backend.js';
-import { aiRecordStats } from '../lib/airecord.js';
+import { aiRecordStats, shareText } from '../lib/airecord.js';
 import { CHART_TESTED } from '../lib/autotrader.js';
 import { CONFIG } from '../config.js';
 import { clockOffsetMs } from '../api/clock.js';
@@ -94,7 +94,6 @@ export async function render(el) {
     const st = aiRows ? aiRecordStats(aiRows) : {};
     const ivs = ['15m', '1h', '4h', '1d'].filter((iv) => st[iv]);
     const day = (t) => new Date(t).toISOString().slice(0, 10);
-    const pc = (v) => (v === null ? '—' : `${v}%`);
     return `<div class="card mt">
       <div class="card-h"><h3>AI signal, live</h3><span class="fine">the coin pages' BUY / HOLD / SELL / WAIT, logged by the server at each candle close</span></div>
       ${!ivs.length ? `<p class="fine">${aiRows ? 'Started — the first candles are being logged and nothing has been graded yet.' : 'Not started on this deployment yet.'} Each closed 4h and daily candle of the tracked coins gets a row, written before anyone knows what comes next, and is graded on the price a set number of candles later.</p>` : `
@@ -102,7 +101,7 @@ export async function render(el) {
         ${ivs.map((iv) => {
           const x = st[iv], t = CHART_TESTED[iv]?.signals;
           return `<tr><td class="l">${iv}</td><td>${x.logged.toLocaleString('en-US')} <span class="fine">(${x.coins} coins, since ${day(x.since)})</span></td>
-            <td>${pc(x.buyUpPct)} <span class="fine">(${x.buys} graded)</span></td><td>${pc(x.anyUpPct)} <span class="fine">(${x.graded})</span></td>
+            <td>${x.buys ? shareText(x.buyUp, x.buys) : '—'} <span class="fine">(${x.buys} graded)</span></td><td>${x.graded ? shareText(x.anyUp, x.graded) : '—'} <span class="fine">(${x.graded})</span></td>
             <td class="fine">${t ? `${t.fwdUpPct.toFixed(1)}% vs ${t.baseUpPct.toFixed(1)}%` : '—'}</td>
             <td>${x.trades ? `${x.trades}, ${x.wins} won, avg <b class="${x.avgTradePct >= 0 ? 'up' : 'down'}">${x.avgTradePct >= 0 ? '+' : ''}${x.avgTradePct}%</b>` : '0'}</td><td>${x.open} of ${x.coins}</td></tr>`;
         }).join('')}

@@ -123,6 +123,15 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### Keeping it current (2026-10-13)
+- The Evaluate workflow also runs on the 1st of each month (04:17 UTC): trader-folds, bands,
+  momentum and the forecast re-check, on fresh candles. Each job writes its result to the run's
+  summary page (Actions → Evaluate → the run). Nothing in the app changes by itself: compare
+  the summary with `CHART_TESTED`, `FORECAST_TESTED` and `TESTED_ACCURACY.recheck`, and
+  re-publish only through the same pre-registered rules.
+- The coin page's AI signal box now shows that coin's live server record (ai_signal_log) for
+  tracked coins and charts (4h, 1d), with small samples as "k of n".
+
 ### Outside data and price factors, tested — none adopted (2026-10-13)
 - `tools/fetch-external.mjs` + `tools/evaluate-external.mjs` (Evaluate jobs `external` and
   `momentum`): Fear & Greed (alternative.me, daily since 2018), perpetual funding (Binance's
