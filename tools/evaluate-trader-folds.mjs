@@ -138,7 +138,10 @@ for (const iv of IVS) {
     const sig = { own: signalRecord(pick, test, WARM, HZ[iv]), standard: signalRecord({}, test, WARM, HZ[iv]) };
     // the same block with volatility-scaled risk (DEFAULT_CONFIG.volScale)
     const vol = { own: pack(account(pick, test, WARM, { volScale: true })), standard: pack(account({}, test, WARM, { volScale: true })) };
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), holdDrop: r2(holdDrop(test, WARM)), coins: test.length, byRisk, sig, vol });
+    // The same block with fills 0.05% worse each way (spread and slippage) on
+    // top of the 0.1% fee: the tests otherwise fill at the candle's own price.
+    const slip = { own: pack(account(pick, test, WARM, { feePct: 0.15 })), standard: pack(account({}, test, WARM, { feePct: 0.15 })) };
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), holdDrop: r2(holdDrop(test, WARM)), coins: test.length, byRisk, sig, vol, slip });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
@@ -189,6 +192,11 @@ for (const iv of IVS) {
     folds: folds.map((x) => ({ without: { ret: baseOf(x).ret, dd: baseOf(x).dd, ddMarked: baseOf(x).ddMarked }, with: { ret: x.vol[sw].ret, dd: x.vol[sw].dd, ddMarked: x.vol[sw].ddMarked } })) };
   console.log(`  volatility-scaled risk (${sw} rules): better in ${vb} of 3; return ${retDiff >= 0 ? '+' : ''}${retDiff} pts, worst drop ${entry.volScale.ddDiff >= 0 ? '+' : ''}${entry.volScale.ddDiff} pts, objective ${gain >= 0 ? '+' : ''}${gain} → ${entry.volScale.adopt ? 'ADOPT' : 'KEEP OFF'}`);
   for (const x of folds) delete x.vol;
+  // what the shipped rules made with worse fills (no decision rides on it)
+  const sOf = (x) => (sw === 'own' ? x.slip.own : x.slip.standard);
+  entry.slippage = { rules: sw, extraPct: 0.05, ret: vMean((x) => sOf(x).ret), dd: vMean((x) => sOf(x).ddMarked), retLost: vMean((x) => baseOf(x).ret - sOf(x).ret) };
+  console.log(`  fills 0.05% worse each way (${sw} rules): ${entry.slippage.ret}% a block (${entry.slippage.retLost} points less), worst drop ${entry.slippage.dd}%`);
+  for (const x of folds) delete x.slip;
   if (adopt) {
     // what this chart would get: the same pick on the full history
     const full = withRegime(coins.map((s) => prep(s, all[s])));
