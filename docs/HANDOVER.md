@@ -357,7 +357,10 @@ The live edge function `cv` (version 14) is a one-line entry that imports
 runs is exactly what was committed. Verified after the deploy: every call 200, the 00:35
 track run wrote both signal_log and ai_signal_log rows. To deploy newer server
 code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
-`/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
+`/functions/v1/cv/selftest` returns 200. Since then the repo's engine copy gained the
+open-trade drop tracker and new `CHART_TESTED`/`CHART_RULES` (15m's own rules); the server
+only logs the AI signal on 4h and 1d, whose rules did not change, so version 14 still logs
+the same signals — redeploy with the next server change. Vault holds `cron_secret` and
 `telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
 token, Resend key and Stripe keys are added under Admin → API keys.
 
