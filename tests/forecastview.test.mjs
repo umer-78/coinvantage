@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { forecast } from '../js/lib/predict.js';
-import { withoutLean, forecastForDisplay, moveSizeCall, moveCallUseful, FORECAST_TESTED } from '../js/lib/forecastview.js';
+import { withoutLean, forecastForDisplay, moveSizeCall, moveCallUseful, FORECAST_TESTED, RANGE_WIDEN } from '../js/lib/forecastview.js';
 import { timingOutlook, condenseTiming, summarizeTiming, timingText } from '../js/lib/timing.js';
 import { demoCandles } from '../js/lib/demo.js';
 
@@ -30,6 +30,23 @@ test('without the lean the forecast keeps its spread but is centred on today\'s 
   assert.equal(forecastForDisplay(f, '1h', 0).leanRemoved, true);
   assert.equal(forecastForDisplay(f, '1h', 0.4), f);
   assert.equal(withoutLean({ ok: false, reason: 'x' }).ok, false);
+});
+
+test('the daily range is drawn 5% wider, as tested; the other charts keep their width', () => {
+  const f = forecast(demoCandles('bitcoin', '1d', 900, END), { horizon: 7 });
+  assert.ok(f.ok);
+  const plain = withoutLean(f), wide = forecastForDisplay(f, '1d', 0);
+  assert.equal(wide.rangeWiden, RANGE_WIDEN['1d']);
+  assert.equal(forecastForDisplay(f, '1h', 0).rangeWiden, undefined);
+  assert.ok(Math.abs(wide.range.p50 - f.lastPrice) < 1e-9 * f.lastPrice);
+  for (const key of ['p05', 'p10', 'p25', 'p75', 'p90', 'p95']) {
+    const a = Math.log(plain.range[key] / f.lastPrice), b = Math.log(wide.range[key] / f.lastPrice);
+    assert.ok(Math.abs(b - 1.05 * a) < 1e-9, key);
+  }
+  // the figures shown for 1d are from the half the width was not fitted on
+  const d = FORECAST_TESTED.centred['1d'];
+  assert.equal(d.widen, RANGE_WIDEN['1d']);
+  assert.ok(d.band80 > d.asDrawnBefore.band80 && d.band50 > d.asDrawnBefore.band50);
 });
 
 test('the move-size call follows volatility now against the coin\'s normal, and is offered only where it was measured to help', () => {

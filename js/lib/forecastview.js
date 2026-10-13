@@ -10,15 +10,25 @@
 // forecast still goes to the ledgers that grade the model.
 import { directionReliable, summarizeForecast, TESTED_ACCURACY } from './predict.js';
 
-/** The forecast with its lean taken out: same spread, centred on today's price. */
-export function withoutLean(f) {
+/**
+ * How much wider the centred range is drawn on each chart (log distance from
+ * today's price × the factor). Fitted on the older half of each series and
+ * kept only where it helped the newer half (tools/evaluate-bands.mjs): on 1d
+ * the 80% range held 75.8% of the newer half as drawn and 77.4% 5% wider, the
+ * 50% and 90% ranges moved closer to target too. Every other chart is
+ * unchanged.
+ */
+export const RANGE_WIDEN = { '1d': 1.05 };
+
+/** The forecast with its lean taken out: centred on today's price, same spread (× `widen`). */
+export function withoutLean(f, widen = 1) {
   if (!f?.ok || !Array.isArray(f.path) || !f.path.length || !(f.lastPrice > 0)) return f;
   const price = f.lastPrice;
   const keys = ['p05', 'p10', 'p25', 'p50', 'p75', 'p90', 'p95'];
   const path = f.path.map((p) => {
     const k = p.p50 > 0 ? price / p.p50 : 1;
     const q = { ...p };
-    for (const key of keys) if (Number.isFinite(p[key])) q[key] = p[key] * k;
+    for (const key of keys) if (Number.isFinite(p[key])) q[key] = widen === 1 ? p[key] * k : price * ((p[key] * k) / price) ** widen;
     return q;
   });
   const end = path[path.length - 1];
@@ -27,12 +37,13 @@ export function withoutLean(f) {
     range: Object.fromEntries(keys.filter((key) => Number.isFinite(end[key])).map((key) => [key, end[key]])),
     targetPrice: price, expectedReturnPct: 0,
     leanRemoved: true, rawExpectedReturnPct: f.expectedReturnPct, rawTargetPrice: f.targetPrice,
+    ...(widen !== 1 ? { rangeWiden: widen } : {}),
   };
 }
 
 /** The forecast as it should be shown on this chart, given the trust in its direction. */
 export function forecastForDisplay(f, interval, trust) {
-  return directionReliable(interval, trust) ? f : withoutLean(f);
+  return directionReliable(interval, trust) ? f : withoutLean(f, RANGE_WIDEN[interval] || 1);
 }
 
 /**
@@ -62,17 +73,18 @@ export function forecastForDisplay(f, interval, trust) {
 export const FORECAST_TESTED = {
   measuredOn: '2026-10-12', tests: 1440, coins: 12, perChart: 240,
   // Centred ranges, re-measured 2026-10-13 at scale by tools/evaluate-bands.mjs
-  // (Evaluate job "bands"): 24 coins, every non-overlapping horizon, the
-  // engine's own range functions. A width factor fitted on the older half of
-  // each series did not improve the newer half on any chart, so none is used.
-  // 1m is from the 240-forecast test above (its direction keeps the lean).
+  // (Evaluate job "bands", run 38330515049): 24 coins, every non-overlapping
+  // horizon, the engine's own range functions; 5m and 15m over ~100 days.
+  // 1d is drawn 5% wider (RANGE_WIDEN), so its figures are the newer half
+  // only, the part the factor was not fitted on. 1m is from the 240-forecast
+  // test above (its direction keeps the lean).
   centred: {
     '1m': { band50: 50.8, band80: 78.8, tests: 240, coins: 12 },
-    '5m': { band50: 46.3, band80: 76.5, band90: 87.4, tests: 4992, coins: 24 },
-    '15m': { band50: 49.1, band80: 80.0, band90: 89.7, tests: 7488, coins: 24 },
-    '1h': { band50: 49.8, band80: 79.0, band90: 89.1, tests: 4992, coins: 24 },
+    '5m': { band50: 50.1, band80: 79.8, band90: 89.6, tests: 57000, coins: 24 },
+    '15m': { band50: 50.1, band80: 79.8, band90: 89.7, tests: 31488, coins: 24 },
+    '1h': { band50: 48.9, band80: 78.5, band90: 88.5, tests: 4992, coins: 24 },
     '4h': { band50: 49.5, band80: 78.9, band90: 89.4, tests: 7992, coins: 24 },
-    '1d': { band50: 46.5, band80: 77.2, band90: 88.9, tests: 2391, coins: 24 },
+    '1d': { band50: 49.8, band80: 77.4, band90: 88.5, tests: 1195, coins: 24, widen: 1.05, asDrawnBefore: { band50: 47.9, band80: 75.8, band90: 86.9 } },
   },
   centredMeasuredOn: '2026-10-13',
   move: {

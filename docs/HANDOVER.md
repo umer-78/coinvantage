@@ -170,6 +170,15 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   78.9%, 1d 77.2%. A width factor fitted on each series' older half (pre-registered rule) did
   not improve the newer half anywhere (1h and 4h picked 1.1 and overshot to 82.8–83.1%), so
   the ranges are unchanged. `FORECAST_TESTED.centred` now carries these figures and counts.
+- Same day, re-run: 5m flipped to "use 1.1" an hour later — its verdict rested on ~9 days of
+  5m candles and sat between 1 and 1.1. The job now downloads ~100 days of 5m and 15m and the
+  factors step by 0.05 (rule unchanged). Run 38330515049: 5m 79.8% (57,000 tests) and 15m 79.8%
+  (31,488) — the short charts are calibrated; the old 76.5% was the 9-day sample. 1h 78.5%,
+  4h 78.9%: keep. 1d picked 1.05 and it helped the newer half (80% range 75.8% → 77.4%, 50%
+  47.9% → 49.8%, 90% 86.9% → 88.5%), so 1d's centred range is drawn 5% wider
+  (`RANGE_WIDEN` in js/lib/forecastview.js; display only, the raw forecast is unchanged).
+  It is a small correction on the same daily data, consistent with 1d being narrow in every
+  test so far (72.5% in the engine test); the monthly re-test will show if it holds.
 
 ### Volatility-scaled position size (2026-10-13)
 - `cfg.volScale` (autotrader): the position × max(0.5, 1 / ratio) while a coin's 100-candle
