@@ -175,6 +175,30 @@ export async function createServerAlert(alert) {
   return data?.id ?? null;
 }
 
+// AI signal alerts live in their own table (ai_alerts).
+export async function serverAiAlerts() {
+  const client = await sb();
+  if (!client || !auth.user) return [];
+  const { data, error } = await client.from('ai_alerts').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+
+export async function createAiAlert(alert) {
+  const client = await sb();
+  if (!auth.user) throw new Error('Sign in to save alerts on the server.');
+  if (!client) throw new Error('The alert server is not reachable right now.');
+  const { data, error } = await client.from('ai_alerts').insert({ ...alert, user_id: auth.user.id }).select('id').single();
+  if (error) throw new Error(error.message.includes('Alert limit') ? error.message : 'Could not save the alert.');
+  return data?.id ?? null;
+}
+
+export async function deleteAiAlert(id) {
+  const client = await sb();
+  const { error } = await client.from('ai_alerts').delete().eq('id', id);
+  if (error) throw new Error('Could not delete the alert. Try again.');
+}
+
 export async function deleteServerAlert(id) {
   const client = await sb();
   const { error } = await client.from('alerts').delete().eq('id', id);

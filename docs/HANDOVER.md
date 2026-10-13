@@ -129,9 +129,14 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   `aiSignal()` the coin pages use), graded `horizon_bars` later (`fwd_up`, `fwd_ret_pct`) by the
   `track-signals` cron. Rows are never rewritten. Track page → "AI signal, live" counts only
   trades bought after tracking began on a coin (`js/lib/airecord.js`).
-- Alerts kind `ai` (constraint extended): `alerts-check` sends Telegram/e-mail when the AI
-  signal buys or sells on the candle that just closed (side long = buys, short = sells).
-  Delivery still needs the Telegram/Resend keys under Admin → API keys.
+- AI signal alerts live in their own table `ai_alerts` (owner-only RLS, the same 3/50 limit
+  counted across `alerts` + `ai_alerts`), so the existing alerts table is untouched.
+  `alerts-check` sends Telegram/e-mail when the AI signal buys or sells on the candle that
+  just closed (side long = buys, short = sells). Delivery still needs the Telegram/Resend keys
+  under Admin → API keys.
+- Applied 2026-10-13 with `execute_sql` (the migration tool timed out on every attempt; a
+  statement set containing DROP waits for a confirmation that a remote session cannot give),
+  recorded in `supabase_migrations.schema_migrations` as 20261013010000.
 - `js/lib/autotrader.js` is now mirrored to `supabase/functions/cv/engine/autotrader.js`
   (parity test and `tools/deploy-backend.sh` check it).
 

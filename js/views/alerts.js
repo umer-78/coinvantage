@@ -3,7 +3,7 @@ import { $, $$, icon, toast, coinLogo, skeleton } from '../ui.js';
 import { esc, price, ago, money } from '../format.js';
 import { load, save } from '../store.js';
 import { fx } from '../api/fx.js';
-import { auth, backendEnabled, serverAlerts, createServerAlert, deleteServerAlert } from '../api/backend.js';
+import { auth, backendEnabled, serverAlerts, createServerAlert, deleteServerAlert, serverAiAlerts, createAiAlert, deleteAiAlert } from '../api/backend.js';
 import { openAuth } from './auth.js';
 
 export const title = 'Alerts';
@@ -149,13 +149,13 @@ export async function render(el, [preset]) {
       $('#aiSignIn', box).addEventListener('click', () => openAuth('in'));
       return;
     }
-    const rows = await serverAlerts().catch(() => null);
+    const rows = await serverAiAlerts().catch(() => null);
     if (!rows) {
       box.innerHTML = '<p class="fine">Could not load your AI signal alerts — the server did not answer.</p><button class="btn sm" id="aiRetry">Try again</button>';
       $('#aiRetry', box).addEventListener('click', drawAi);
       return;
     }
-    const mine = rows.filter((r) => r.kind === 'ai');
+    const mine = rows;
     box.innerHTML = `
       <form id="af" class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
         <label class="fld">Coin<select class="inp" name="sym">${coins.slice(0, 60).map((c) => `<option value="${esc(c.symbol)}">${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select></label>
@@ -176,7 +176,7 @@ export async function render(el, [preset]) {
       const btn = f2.querySelector('button');
       btn.disabled = true;
       try {
-        await createServerAlert({ kind: 'ai', symbol: f2.sym.value, interval: f2.iv.value, side: f2.side.value, channels: ['telegram', 'email'], active: true });
+        await createAiAlert({ symbol: f2.sym.value, interval: f2.iv.value, side: f2.side.value, channels: ['telegram', 'email'], active: true });
         toast(`AI signal alert set for ${f2.sym.value} on the ${f2.iv.value} chart.`, 'up');
         drawAi();
       } catch (err) {
@@ -185,7 +185,7 @@ export async function render(el, [preset]) {
       }
     });
     $$('[data-aidel]', box).forEach((b) => b.addEventListener('click', async () => {
-      try { await deleteServerAlert(b.dataset.aidel); } catch (err) { toast(err.message, 'down'); }
+      try { await deleteAiAlert(b.dataset.aidel); } catch (err) { toast(err.message, 'down'); }
       drawAi();
     }));
   }

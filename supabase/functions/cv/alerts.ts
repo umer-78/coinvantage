@@ -11,11 +11,11 @@ export async function alertsCheck(req: Request): Promise<Response> {
     .select('id,user_id,symbol,direction,price,note,channels,kind,interval,min_score,side,repeat,last_fired_at')
     .eq('active', true).limit(5000);
   if (error) throw error;
-  if (!all?.length) return json({ checked: 0, triggered: 0 });
+  if (!all?.length) return json({ checked: 0, triggered: 0, ...(await checkAiAlerts()) });
 
   const alerts = all.filter((a) => (a.kind ?? 'price') === 'price');
   const signalAlerts = all.filter((a) => a.kind === 'signal');
-  const signalResult = { ...(await checkSignalAlerts(signalAlerts)), ...(await checkAiAlerts(all.filter((a) => a.kind === 'ai'))) };
+  const signalResult = { ...(await checkSignalAlerts(signalAlerts)), ...(await checkAiAlerts()) };
   if (!alerts.length) return json({ checked: all.length, triggered: 0, ...signalResult });
 
   const symbols = [...new Set(alerts.map((a) => a.symbol))];
@@ -140,8 +140,11 @@ async function checkSignalAlerts(alerts: Record<string, unknown>[]) {
  * on the candle that just closed. Checked in the minutes after each close,
  * once a candle at most. Nothing here places an order.
  */
-async function checkAiAlerts(alerts: Record<string, unknown>[]) {
-  if (!alerts.length) return { aiChecked: 0, aiFired: 0 };
+async function checkAiAlerts() {
+  // their own table (ai_alerts), so the price/signal alerts table is unchanged
+  const { data: alerts, error } = await admin.from('ai_alerts')
+    .select('id,user_id,symbol,interval,side,channels,repeat,last_fired_at').eq('active', true).limit(5000);
+  if (error || !alerts?.length) return { aiChecked: 0, aiFired: 0 };
   const now = Date.now();
   const due = alerts.filter((a) => {
     const step = INTERVAL_MS[a.interval as string];
@@ -169,7 +172,7 @@ async function checkAiAlerts(alerts: Record<string, unknown>[]) {
     const want = (a.side as string) ?? 'any';
     if ((want === 'long' && sig.action !== 'buy') || (want === 'short' && sig.action !== 'sell')) continue;
 
-    const { data: claimed } = await admin.from('alerts')
+    const { data: claimed } = await admin.from('ai_alerts')
       .update({ last_fired_at: new Date().toISOString(), triggered_at: new Date().toISOString(), triggered_price: sig.price, active: a.repeat === false ? false : true })
       .eq('id', a.id).eq('active', true).select('id');
     if (!claimed?.length) continue;
