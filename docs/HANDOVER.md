@@ -283,6 +283,13 @@ Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measur
   per-coin rules). A chart change on an account with trades offers a fresh account at
   once (default) instead of silently waiting for Reset. Every change is written to the
   activity log ("Settings changed — …").
+- A new starting balance applies at once (`rescaleAccount()`): the balance, every position
+  and trade and the balance curve are scaled by the ratio, so results in % are unchanged;
+  trades are sized as a share of the balance, so these are the trades the AI would have
+  made with that much (tested against a replay started with it). It used to wait for the
+  next Reset, and when it was the only change it was not even saved. The field is in the
+  currency the page shows (it was dollars under a rupee display) and the form no longer
+  blocks amounts that are not a multiple of 100 (`novalidate`; `read()` clamps every value).
 - "What to do" box: best tested setup (`bestTestedChart()`: most test blocks with a gain,
   then most above holding, then smallest drop → 1d), warnings (`settingsWarnings()`), and
   **Expected yield** (`expectedYield()`): average, worst and best block, worst drop, blocks

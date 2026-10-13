@@ -3,7 +3,7 @@
 // together in time.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { replaySymbol, replaySeries, newState, openManual, closeManual, freeCash, DEFAULT_CONFIG, dropTracker, stats } from '../js/lib/autotrader.js';
+import { replaySymbol, replaySeries, newState, rescaleAccount, openManual, closeManual, freeCash, DEFAULT_CONFIG, dropTracker, stats } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 
 const H = 3600e3;
@@ -339,4 +339,30 @@ test('the live equity curve values open trades at the latest close', () => {
   const inside = st.equityCurve.filter((p) => p.t > t.openedAt && p.t < t.exitAt).map((p) => p.equity);
   assert.ok(new Set(inside).size > 1);
   assert.ok(stats(st, { AAA: c.at(-1).c }).maxDrawdownPct > 0);
+});
+
+test('a new starting balance scales the account to what the AI would have done with that much', () => {
+  const run = (startingBalance) => {
+    const cfg = cfgWith({ signalExitBars: 2, maxPositions: 5, riskPct: 2, maxPositionPct: 25, startingBalance });
+    const series = [
+      prepared('A', climb(320), (i) => (i === 250 || i === 280 ? 40 : i === 270 || i === 271 ? -40 : 0)),
+      prepared('B', climb(320).map((c) => ({ ...c, o: c.o * 3, h: c.h * 3, l: c.l * 3, c: c.c * 3 })), (i) => (i === 255 ? 40 : i === 290 || i === 291 ? -40 : 0)),
+    ];
+    const st = newState(cfg);
+    replaySeries(st, cfg, series);
+    return st;
+  };
+  const big = run(10000), small = run(2500);
+  assert.ok(big.closed.length >= 2 && Object.keys(big.open).length >= 1, 'the test needs closed and open trades');
+  const scaled = rescaleAccount(big, 2500);
+  assert.equal(scaled.startingBalance, 2500);
+  assert.ok(Math.abs(scaled.balance - small.balance) < 0.05, `balance ${scaled.balance} vs ${small.balance}`);
+  assert.deepEqual(scaled.closed.map((t) => [t.symbol, t.openedAt, t.exitAt, t.pnlPct]), small.closed.map((t) => [t.symbol, t.openedAt, t.exitAt, t.pnlPct]));
+  scaled.closed.forEach((t, i) => assert.ok(Math.abs(t.pnl - small.closed[i].pnl) < 0.02 && Math.abs(t.notional - small.closed[i].notional) < 0.02));
+  for (const [sym, p] of Object.entries(small.open)) assert.ok(Math.abs(scaled.open[sym].notional - p.notional) < 0.02 && Math.abs(scaled.open[sym].qty / p.qty - 1) < 1e-6);
+  assert.equal(scaled.equityCurve.length, small.equityCurve.length);
+  scaled.equityCurve.forEach((e, i) => assert.ok(Math.abs(e.equity - small.equityCurve[i].equity) < 0.05));
+  assert.equal(stats(scaled).returnPct, stats(big).returnPct, 'the result in % is unchanged');
+  assert.equal(rescaleAccount(big, 10000), big, 'the same balance changes nothing');
+  assert.equal(big.startingBalance, 10000, 'the original is left as it was');
 });

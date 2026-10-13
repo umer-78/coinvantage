@@ -372,6 +372,32 @@ export function newState(cfg = DEFAULT_CONFIG, { liveFrom = null } = {}) {
 const round = (v, dp = 6) => (Number.isFinite(v) ? +v.toFixed(dp) : v);
 
 /**
+ * The same account as if it had started with `startingBalance`: the balance,
+ * every position and trade (size, fees, result) and the balance curve times
+ * the ratio, so every percentage stays as it was. Each trade is sized as a
+ * share of the balance, so these are the trades the AI would have made with
+ * that much, to the cent. Changing the starting balance used to wait for the
+ * next Reset, so the balance on the page did not move.
+ */
+export function rescaleAccount(state, startingBalance) {
+  const k = startingBalance / state.startingBalance;
+  if (!(k > 0) || !Number.isFinite(k) || k === 1) return state;
+  const by = (v, dp) => (Number.isFinite(v) ? round(v * k, dp) : v);
+  const pos = (p) => ({
+    ...p, qty: by(p.qty, 10), notional: by(p.notional, 2), riskCash: by(p.riskCash, 2), feePaid: by(p.feePaid, 4),
+    ...('pnl' in p ? { pnl: by(p.pnl, 2) } : {}),
+  });
+  return {
+    ...state,
+    startingBalance,
+    balance: state.balance * k,
+    open: Object.fromEntries(Object.entries(state.open || {}).map(([sym, p]) => [sym, pos(p)])),
+    closed: (state.closed || []).map(pos),
+    equityCurve: (state.equityCurve || []).map((e) => ({ ...e, equity: by(e.equity, 2) })),
+  };
+}
+
+/**
  * Replay one symbol's candles from where we left off, mutating `state`.
  * `candles` must be closed candles, oldest first.
  */

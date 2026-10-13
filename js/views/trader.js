@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
+import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -997,15 +997,16 @@ export async function render(el) {
         <p class="fine" style="margin:6px 0 0">Best tested setup: the <b>${esc(best.iv)}</b> chart with the tested rules — it made money in ${best.up} of 3 test periods, ${best.ret >= 0 ? '+' : '−'}${Math.abs(best.ret)}% per ${esc(best.block)} on average against ${best.hold >= 0 ? '+' : '−'}${Math.abs(best.hold)}% for holding the same coins. Keep risk at 1–2% a trade, pick at least five coins, and leave the self-review on. None of this is a promise: the tests looked back, the market goes forward.</p>
         <button class="btn sm mt" type="button" id="useBest">Use the best tested setup</button>
         <div id="todoLive"></div></div>
-      <form class="stack mt" style="gap:12px" id="cf">
+      <form class="stack mt" style="gap:12px" id="cf" novalidate>
         <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Account and risk</b></legend>
           <div class="row" style="gap:8px;flex-wrap:wrap">
-            <label class="fld">Starting balance<input class="inp" name="startingBalance" type="number" min="100" step="100" value="${cfg.startingBalance}" style="width:130px"></label>
+            <label class="fld">Starting balance${fx.code === 'USD' ? '' : ` (${esc(fx.code)})`}<input class="inp" name="startingBalance" type="number" min="${Math.ceil(100 * fx.rate)}" step="any" value="${Math.round(cfg.startingBalance * fx.rate)}" style="width:150px"></label>
             <label class="fld">Risk per trade %<input class="inp" name="riskPct" type="number" min="0.1" max="5" step="0.1" value="${cfg.riskPct}" style="width:110px"></label>
             <label class="fld">Max open trades<input class="inp" name="maxPositions" type="number" min="1" max="20" value="${cfg.maxPositions}" style="width:110px"></label>
             <label class="fld">Max in one coin %<input class="inp" name="maxPositionPct" type="number" min="5" max="100" step="5" value="${cfg.maxPositionPct}" style="width:120px"></label>
             <label class="fld">Fee per trade %<input class="inp" name="feePct" type="number" min="0" max="1" step="0.01" value="${cfg.feePct}" style="width:110px"></label>
           </div>
+          ${fx.code === 'USD' ? '' : `<p class="fine" style="margin:0">The starting balance is in ${esc(fx.code)} at today's rate (${money(cfg.startingBalance)} is $${cfg.startingBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })}); the account itself is kept in US dollars, like the prices it trades at.</p>`}
         </fieldset>
         <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Chart</b></legend>
           <select class="inp" name="interval" aria-label="Chart" style="width:100%">${TRADER_CHARTS.map((i) => `<option value="${i}" ${i === cfg.interval ? 'selected' : ''}>${esc(chartLabel(i))}</option>`).join('')}</select>
@@ -1044,7 +1045,9 @@ export async function render(el) {
       const picks = [...f.querySelectorAll('#coinGrid input:checked')].map((x) => x.value);
       const exit = f.exit.value;
       return {
-        startingBalance: Math.max(100, +f.startingBalance.value || cfg.startingBalance),
+        // typed in the currency the page shows; kept in dollars, at least $100
+        startingBalance: f.startingBalance.value === f.startingBalance.defaultValue || !(+f.startingBalance.value > 0)
+          ? cfg.startingBalance : Math.max(100, Math.round((+f.startingBalance.value / fx.rate) * 1e6) / 1e6),
         riskPct: Math.min(5, Math.max(0.1, +f.riskPct.value || DEFAULT_CONFIG.riskPct)),
         maxPositions: Math.min(20, Math.max(1, Math.round(+f.maxPositions.value) || DEFAULT_CONFIG.maxPositions)),
         maxPositionPct: Math.min(100, Math.max(5, +f.maxPositionPct.value || DEFAULT_CONFIG.maxPositionPct)),
@@ -1125,6 +1128,7 @@ export async function render(el) {
       // the record: what changed, in the account's activity log
       const changes = [];
       if (before.interval !== cfg.interval) changes.push(`chart ${before.interval} → ${cfg.interval}`);
+      if (before.startingBalance !== cfg.startingBalance) changes.push(`starting balance ${money(before.startingBalance)} → ${money(cfg.startingBalance)}`);
       if ((before.strategy || 'tested') !== cfg.strategy) changes.push(cfg.strategy === 'custom' ? 'now your own rules' : 'now the tested rules');
       else if (cfg.strategy === 'custom' && JSON.stringify(before.custom) !== JSON.stringify(cfg.custom)) changes.push('own rules changed');
       if (before.riskPct !== cfg.riskPct) changes.push(`risk ${before.riskPct}% → ${cfg.riskPct}% a trade`);
@@ -1149,11 +1153,15 @@ export async function render(el) {
           ? { ...state, balance: cfg.startingBalance, startingBalance: cfg.startingBalance, equityCurve: [] }
           : { ...newState(cfg, { liveFrom: state.liveFrom }), log: state.log || [] };
         msg = `Settings saved. The AI's account now starts at ${money(cfg.startingBalance)} on ${cfg.interval}.`;
-      } else if (state && chartChanged) {
-        msg = `Settings saved. This account keeps trading ${state.interval} until you press Reset; then it starts on ${cfg.interval}.`;
-      } else if (state && state.startingBalance !== cfg.startingBalance) {
-        msg = `Settings saved. A new starting balance applies at the next Reset; this account keeps ${money(state.startingBalance)}.`;
+      } else if (state) {
+        if (state.startingBalance !== cfg.startingBalance) {
+          // its trades were sized as a share of the balance, so scaled they are what it would have done with that much
+          state = rescaleAccount(state, cfg.startingBalance);
+          msg = `Settings saved. The AI's account now counts from ${money(cfg.startingBalance)}: its balance and every trade are scaled to it, so each result in % stays the same.`;
+        }
+        if (chartChanged) msg += ` This account keeps trading ${state.interval} until you press Reset; then it starts on ${cfg.interval}.`;
       }
+      if (cfg.startingBalance === 100 && before.startingBalance !== 100 && +f.startingBalance.value / fx.rate < 100) msg += ` The starting balance cannot be under ${money(100)}.`;
       if (dropped.length) msg += ` Only ${MAX_COINS} coins can be traded, so ${dropped.join(', ')} ${dropped.length === 1 ? 'was' : 'were'} left out.`;
       if (state && changes.length) { logCheck(state, { kind: 'settings', text: changes.join(' · ') }); save(STATE_KEY, state); }
       toast(msg, dropped.length ? 'info' : 'up');
