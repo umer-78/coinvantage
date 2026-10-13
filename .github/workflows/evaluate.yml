@@ -9,7 +9,7 @@ on:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, trader-folds, engine, bands, external, all]
+        options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, all]
         default: selection
 
 permissions:
@@ -148,6 +148,33 @@ jobs:
         with:
           name: external
           path: external.txt
+
+  # The same weekly test for the published price factors (momentum, reversal),
+  # without the outside downloads.
+  momentum:
+    if: inputs.job == 'momentum' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download candles
+        env:
+          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
+          PLAN: '{"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Momentum and reversal, coin against coin, week by week
+        run: node tools/evaluate-external.mjs klines.json none | tee momentum.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: momentum
+          path: momentum.txt
 
   # The forecast's release test re-run on fresh candles: 12 coins, six charts,
   # 20 forecasts per coin and chart, split over six runners.

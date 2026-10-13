@@ -22,7 +22,8 @@
 import { readFileSync } from 'node:fs';
 
 const kl = JSON.parse(readFileSync(process.argv[2] || 'klines.json', 'utf8'));
-const ext = JSON.parse(readFileSync(process.argv[3] || 'external.json', 'utf8'));
+// 'none' runs the price-only tests (momentum, reversal) without outside data
+const ext = process.argv[3] === 'none' ? {} : JSON.parse(readFileSync(process.argv[3] || 'external.json', 'utf8'));
 const DAY = 864e5, H = 7, STEP = 7, YEAR = 365;
 const coins = Object.keys(kl).filter((k) => k.endsWith(':1d')).map((k) => k.split(':')[0]);
 const S = Object.fromEntries(coins.map((c) => [c, kl[`${c}:1d`].map((r) => ({ t: r[0], c: r[4], v: r[5], tb: r[6] }))]));
@@ -74,7 +75,10 @@ for (let i = YEAR + 10; i + H < btc.length; i += STEP) {
   for (const c of coins) {
     const k = at[c].get(t);
     if (k === undefined || k + H >= S[c].length) continue;
-    rows.push({ c, fwd: S[c][k + H].c / S[c][k].c - 1, fund: pctile(fund[c], k), taker: pctile(taker[c], k) });
+    rows.push({ c, fwd: S[c][k + H].c / S[c][k].c - 1, fund: pctile(fund[c], k), taker: pctile(taker[c], k),
+      // the published crypto factors, settings fixed in advance: momentum is the
+      // return over the 3 weeks before the last day, reversal the last week's
+      mom: k >= 22 ? S[c][k - 1].c / S[c][k - 22].c - 1 : null, rev: k >= 7 ? S[c][k].c / S[c][k - 7].c - 1 : null });
   }
   if (rows.length >= Math.min(8, coins.length)) dates.push({ t, fng: fngAt(t), rows, market: rows.reduce((a, r) => a + r.fwd, 0) / rows.length });
 }
@@ -128,4 +132,6 @@ timing('market funding (avg percentile ≤0.1 / ≥0.9)', (d) => { const v = d.r
 timing('market taker-buy share (avg percentile ≤0.1 / ≥0.9)', (d) => { const v = d.rows.map((r) => r.taker).filter((x) => x !== null); return v.length >= Math.min(8, coins.length) ? mean(v) : null; }, 0.1, 0.9);
 spread('funding, coin against coin', 'fund');
 spread('taker-buy share, coin against coin', 'taker');
+spread('momentum (3 weeks), coin against coin', 'mom');
+spread('last week\'s move (reversal), coin against coin', 'rev');
 console.log(`\nJSON ${JSON.stringify(out)}`);
