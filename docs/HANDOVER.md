@@ -186,6 +186,12 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   ≥2% lower with the 80% range no more than a point further from 80%. Run 38331888912: the
   weighted estimate was better on every chart but only by 0.1–1.6% (5m 1.6%, 15m 0.9%,
   4h 0.9%, 1h 0.6%, 1d 0.1%), so the 100-candle volatility stays.
+- Time of day? `tools/evaluate-seasonal.mjs` (third step of `bands`): each move divided by
+  the usual size of moves at that UTC hour (own hour, or averaged with its neighbours), the
+  range scaled back up by the hours the horizon covers. Same bar. Run 38334429875: newer-half
+  score 5m −1.7%, 15m −0.7%, 1h −0.4%, 4h 0% — below 2% everywhere, so not used. The ranges
+  are calibrated and near what simple volatility models give; neither change is worth the
+  extra engine code.
 
 ### Volatility-scaled position size (2026-10-13)
 - `cfg.volScale` (autotrader): the position × max(0.5, 1 / ratio) while a coin's 100-candle
