@@ -19,6 +19,25 @@ jobs:
       - name: Unit tests
         run: node --test tests/*.test.mjs
 
+  # The edge function, booted with Deno and no database: it must start, and its
+  # selftest must answer exactly what the site's engine computes. Nothing else
+  # checks the server code before it is deployed.
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: The server starts and its engine matches the site's
+        run: bash tools/server-smoke.sh
+
   # Every page in a real browser: fails on any page error, failed import or a
   # page that renders nothing. Unit tests cannot see a view that throws while
   # rendering; this would have caught the Trading page breaking for anyone

@@ -373,7 +373,10 @@ The live edge function `cv` (version 15) is a one-line entry that imports
 so what runs is exactly what was committed. Verified after each deploy: every call 200 and
 the next track run writing signal_log and ai_signal_log rows. To deploy newer server
 code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
-`/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
+`/functions/v1/cv/selftest` returns 200. CI's `server` job boots the function with Deno and
+no database (`tools/server-smoke.sh`) and fails if it does not start or its selftest differs
+from the site's engine. (`deno check` is not used: the JavaScript engine's inferred types
+give ~66 errors that are not bugs.) Vault holds `cron_secret` and
 `telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
 token, Resend key and Stripe keys are added under Admin → API keys.
 
