@@ -298,3 +298,14 @@ test('volatility-scaled risk only ever buys less, and only while a coin is unusu
   assert.ok(on.every((t, k) => t.notional <= off[k].notional + 1e-6));
   assert.ok(on.some((t, k) => t.notional < off[k].notional - 1e-6), 'smaller somewhere in the wild stretch');
 });
+
+test('volatility-scaled size is on only where it cleared its bar, and never on your own rules', async () => {
+  const { rulesForChart, VOL_SCALE } = await import('../js/lib/autotrader.js');
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const t = VOL_SCALE.tested[iv];
+    const cleared = t.better >= 2 && t.objective >= 1 && t.ret >= -1;
+    assert.equal(rulesForChart({ ...DEFAULT_CONFIG }, iv).volScale, cleared, iv);
+    assert.equal(VOL_SCALE.charts.includes(iv), cleared, iv);
+  }
+  assert.equal(rulesForChart({ ...DEFAULT_CONFIG, strategy: 'custom' }, '4h').volScale, false);
+});

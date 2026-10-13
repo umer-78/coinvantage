@@ -120,7 +120,7 @@ export function rulesInWords(c) {
   const buy = c.entryMode === 'pullback' ? `When a coin in an uptrend dips until the score falls to −${c.entryScore} or lower, it buys the dip${extra}.`
     : c.entryMode === 'breakout' ? `When a coin closes above its highest price of the previous 20 candles${c.trendFilter ? ' in an uptrend' : ''}, it buys${extra}.`
       : `When the score clears +${c.entryScore}${c.trendFilter ? ' in an uptrend' : ''} it buys${extra}.`;
-  return `${buy} It sells at ${c.trailAtr ? `a stop that trails ${c.trailAtr} ATR under the highest price since it bought` : `the target (${c.rMultiple}R)`}, the stop (${c.atrStop} ATR below entry)${c.signalExitBars ? ` or ${c.entryMode === 'pullback' ? 'once the bounce has come' : `after ${c.signalExitBars} candles of signal reversal`}` : ''}.`;
+  return `${buy} It sells at ${c.trailAtr ? `a stop that trails ${c.trailAtr} ATR under the highest price since it bought` : `the target (${c.rMultiple}R)`}, the stop (${c.atrStop} ATR below entry)${c.signalExitBars ? ` or ${c.entryMode === 'pullback' ? 'once the bounce has come' : `after ${c.signalExitBars} candles of signal reversal`}` : ''}.${c.volScale ? ' It buys less while the coin is more volatile than usual (down to half).' : ''}`;
 }
 
 export function rulesForChart(cfg, interval, lessons = []) {
@@ -128,8 +128,26 @@ export function rulesForChart(cfg, interval, lessons = []) {
   // rules nor the self-review's trend lesson overrides what you chose.
   if (cfg.strategy === 'custom') return { ...cfg, ...pickRules({ ...CUSTOM_DEFAULT, ...(cfg.custom || {}) }), interval };
   const trend = [...(lessons || [])].reverse().find((h) => h.lens === 'trend');
-  return { ...cfg, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), interval };
+  return { ...cfg, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), volScale: VOL_SCALE.charts.includes(interval), interval };
 }
+
+/**
+ * Volatility-scaled position size (DEFAULT_CONFIG.volScale), A/B-tested by
+ * tools/evaluate-trader-folds.mjs on the rules each chart ships, block by
+ * block. The bar, written in the script before the run: better on return −
+ * ½·worst drop in at least 2 of 3 blocks, by at least a point on average, and
+ * an average return no more than a point lower. Only 4h cleared it, so only
+ * 4h uses it. Differences are percentage points per block, with minus without.
+ */
+export const VOL_SCALE = {
+  measuredOn: '2026-10-13', charts: ['4h'],
+  tested: {
+    '15m': { better: 2, ret: -0.29, dd: -1.87, objective: 0.64 },
+    '1h': { better: 1, ret: -0.68, dd: -0.8, objective: -0.28 },
+    '4h': { better: 3, ret: 0.82, dd: -2.46, objective: 2.05 },
+    '1d': { better: 1, ret: 4.17, dd: -1.43, objective: 4.89 },
+  },
+};
 
 /**
  * What the settings can be expected to make, from the walk-forward test of

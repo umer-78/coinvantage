@@ -123,6 +123,16 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### Volatility-scaled position size (2026-10-13)
+- `cfg.volScale` (autotrader): the position × max(0.5, 1 / ratio) while a coin's 100-candle
+  volatility is above its own slow average (`volRatio()`, past candles only), applied after
+  the caps (on short charts the 25%-a-coin cap binds before the risk setting).
+- A/B in `tools/evaluate-trader-folds.mjs` on the rules each chart ships, bar written before
+  the run (better on return − ½·drop in ≥2 of 3 blocks, by ≥1 point, return ≤1 point lower).
+  4h cleared it (3 of 3; +0.82 points a block, worst drop −2.46) and uses it; 15m (gain 0.64),
+  1h (1 of 3) and 1d (1 of 3 — one block +13 points) did not (`VOL_SCALE`). Your own rules
+  never get it. CHART_TESTED for 4h predates it; the expected-yield box says so.
+
 ### AI signal, forecast display and accuracy figures (2026-10-12/13)
 Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measured:
 - **AI signal** (coin page, top of Trade signal): `aiSignal()` replays the chart's published
