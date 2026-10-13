@@ -5,7 +5,7 @@
 // reordered, trading keys merged one by one).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSync, decide, canon, fingerprint, missingTrades, backupFor, restoreBackup, COLUMN_KEYS } from '../js/lib/cloudsync.js';
+import { createSync, decide, isBlank, canon, fingerprint, missingTrades, backupFor, restoreBackup, COLUMN_KEYS } from '../js/lib/cloudsync.js';
 
 // What Postgres jsonb hands back: object keys shortest-first, then bytewise.
 function jsonb(v) {
@@ -108,7 +108,14 @@ test('each key is decided by what changed since the two last agreed', () => {
   assert.equal(decide(null, [], undefined, 'watchlist'), 'keep', 'a blank cloud value never replaces the defaults');
   assert.equal(decide(v2, [], undefined, 'watchlist'), 'local', 'a blank cloud value never replaces data');
   assert.equal(decide([], v2, undefined, 'watchlist'), 'remote');
-  assert.equal(decide(account([['BTC', 1]]), account([]), undefined, 'traderState'), 'local', 'an account with no trades is blank');
+  assert.equal(decide(account([['BTC', 1]]), account([]), undefined, 'myDemoState'), 'local', 'your own account with no trades is blank');
+  assert.equal(decide(null, account([]), undefined, 'myDemoState'), 'keep');
+  assert.equal(decide(null, account([], { startedAt: 5 }), undefined, 'traderState'), 'remote', 'a started AI account comes down before its first trade');
+  assert.equal(decide(account([['BTC', 1]], { startedAt: 9 }), account([], { startedAt: 5 }), undefined, 'traderState'), 'conflict', 'one this device started since never replaces it');
+  assert.equal(decide(account([], { startedAt: 5 }), account([['BTC', 1]], { startedAt: 9 }), undefined, 'traderState'), 'local');
+  assert.equal(decide(account([['BTC', 1]]), account([]), undefined, 'traderState'), 'local', 'two copies of one AI account keep the one further on');
+  assert.equal(decide(account([]), account([['BTC', 1]]), undefined, 'traderState'), 'conflict');
+  assert.equal(isBlank({ closed: [], open: {} }, 'traderState'), true, 'an AI account that never started is blank');
   assert.equal(decide(account([['BTC', 1]], { startedAt: 1 }), account([['ETH', 2]], { startedAt: 2 }), undefined, 'traderState'), 'local', 'the AI account running longest wins its first merge');
   assert.equal(decide(account([['BTC', 1]], { startedAt: 1 }), account([['ETH', 2]], { startedAt: 2 }), undefined, 'myDemoState'), 'conflict', 'your own trades are never decided by age');
 });
@@ -198,6 +205,25 @@ test('two devices that both ran the AI settle on one record instead of trading p
   assert.deepEqual((await b.sync()).uploaded, ['traderState']);
   await a.sync();
   assert.deepEqual(trades(a.store.load('traderState')), trades(b.store.load('traderState')));
+});
+
+test('an AI account with no trades yet still reaches new devices and is never replaced by theirs', async () => {
+  const cloud = makeCloud();
+  const a = makeDevice(cloud), b = makeDevice(cloud), c = makeDevice(cloud);
+  cloud.signUp('u1');
+  a.session.id = b.session.id = c.session.id = 'u1';
+  // Started on one device, chart changed, no trade yet.
+  a.store.save('traderState', account([], { startedAt: 100, interval: '15m', log: [{ t: 150, kind: 'settings', text: 'chart 1h → 15m' }] }));
+  await a.sync();
+  // A device with nothing of its own takes it.
+  await b.sync();
+  assert.equal(b.store.load('traderState')?.interval, '15m', 'a new device gets the account');
+  // A device whose AI started by itself before signing in, and already traded, keeps the account instead.
+  c.store.save('traderState', account([['ETH', 9]], { startedAt: 500 }));
+  const r = await c.sync();
+  assert.deepEqual(r.uploaded, [], 'its own account does not go up');
+  assert.equal(c.store.load('traderState')?.interval, '15m');
+  assert.equal(cloud.rows.get('u1').trading.traderState.log[0].text, 'chart 1h → 15m', 'the settings change is still on the account');
 });
 
 test('two devices saving different accounts at the same moment keep both', async () => {

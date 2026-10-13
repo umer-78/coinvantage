@@ -87,7 +87,10 @@ Umer picked these four, plus the Binance import which is DONE and live.
   and the AI's rules sync too (they used to stay on one device). Demo or real
   trades that only one device had are set aside (`syncBackup`) and the Trading
   page offers them back; two AI accounts meeting for the first time keep the
-  one that has run longest. A shared browser never uploads one account's data
+  one that has run longest, with trades or not. The AI's account counts from
+  the moment it starts: it used to count as empty until its first trade, so a
+  new device skipped it, started its own and later put that over it (the chart
+  and settings changed on the other device seemed to undo themselves). A shared browser never uploads one account's data
   into another. Saves go through `public.sync_user_data(p_cols, p_trading)`,
   which writes only the keys that changed. `tests/cloudsync.test.mjs` runs it
   against a fake server that reorders keys the way jsonb does.

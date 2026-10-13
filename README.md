@@ -152,7 +152,8 @@ The site degrades gracefully without it — every backend call fails soft.
   device changed something since the two last agreed wins. When two devices changed the
   same thing, the saved copy is kept, and demo or real trades only the other device had
   are set aside for the Trading page to offer back; two AI accounts meeting for the first
-  time keep the one that has run longest. Saves go through `public.sync_user_data()`,
+  time keep the one that has run longest, with trades or not (an AI account counts as
+  soon as it starts, so a new device takes it before its first trade). Saves go through `public.sync_user_data()`,
   which only writes the keys that changed.
 
 ### First-run checklist (Admin panel)

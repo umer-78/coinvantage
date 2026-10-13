@@ -80,9 +80,16 @@ export function missingTrades(mine, theirs) {
   return [...tradeIds(mine)].filter((id) => !have.has(id));
 }
 
-/** Nothing worth keeping: no value, an empty list or object, or an account with no trades. */
+/**
+ * Nothing worth keeping: no value, an empty list or object, or one of your own
+ * accounts with no trades. The AI's account counts from the moment it starts:
+ * before its first trade it already holds its chart and the settings you changed
+ * (treating it as empty kept it off new devices, which then started their own
+ * and later put that over it).
+ */
 export function isBlank(v, key) {
   if (v === null || v === undefined) return true;
+  if (key === 'traderState') return tradeIds(v).size === 0 && !Number.isFinite(v?.startedAt);
   if (ACCOUNT_KEYS.includes(key)) return tradeIds(v).size === 0;
   if (Array.isArray(v)) return v.length === 0;
   if (isObj(v)) return Object.keys(v).length === 0;
@@ -109,8 +116,13 @@ export function decide(local, remote, base, key) {
   // The two never agreed on this key: this device's first sync with the account.
   if (isBlank(r, key)) return isBlank(l, key) ? 'keep' : 'local';
   if (isBlank(l, key)) return 'remote';
-  // Two AI accounts that never met: keep the one that has been running longest.
-  if (key === 'traderState' && Number.isFinite(l.startedAt) && Number.isFinite(r.startedAt) && l.startedAt < r.startedAt) return 'local';
+  // Two AI accounts that never met: keep the one that has been running longest,
+  // with trades or not, so one a device started while the cloud's was on its way
+  // never replaces it. Two copies of the same account keep the one further on.
+  if (key === 'traderState') {
+    if (Number.isFinite(l.startedAt) && Number.isFinite(r.startedAt) && l.startedAt !== r.startedAt) return l.startedAt < r.startedAt ? 'local' : 'conflict';
+    if (tradeIds(l).size > tradeIds(r).size) return 'local';
+  }
   return 'conflict';
 }
 
