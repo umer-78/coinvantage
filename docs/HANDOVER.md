@@ -361,8 +361,9 @@ ones; each bar to adopt was written in the script before the run.
   now reads `ai_alerts` too and shows each new firing once (toast + browser notification if
   allowed; remembered in `seenAlerts` as `ai:<id>:<time>`), on sign-in and every two minutes
   while the tab is visible. So AI alerts work for anyone with the site open before the
-  Telegram/Resend keys are added. The row does not store which way it fired; the message
-  says BUY/SELL from the alert's side, or "a BUY or SELL" for "any".
+  Telegram/Resend keys are added. `ai_alerts.triggered_action` (migration
+  20261013120000, nullable) records which way it fired, so "any" alerts say BUY or SELL;
+  rows fired before it fall back to the alert's side.
 
 ### Backend deploy as it stands (2026-10-13)
 The live edge function `cv` (version 14) is a one-line entry that imports

@@ -357,8 +357,10 @@ function checkAlerts(pair, p) {
 // and AI-signal alerts: the server records every firing, so they reach someone
 // with the site open (checked every two minutes) even before Telegram or
 // e-mail is set up.
+let alertsChecking = false; // sign-in and the two-minute check can overlap; one at a time, or both toast
 async function showTriggeredServerAlerts() {
-  if (!auth.user) return;
+  if (!auth.user || alertsChecking) return;
+  alertsChecking = true;
   try {
     const [rows, ai] = await Promise.all([serverAlerts(), serverAiAlerts().catch(() => [])]);
     const seen = new Set(load('seenAlerts', []));
@@ -373,14 +375,15 @@ async function showTriggeredServerAlerts() {
     }
     const freshAi = ai.filter((a) => a.triggered_at && !seen.has(`ai:${key(a)}`));
     for (const a of freshAi.slice(0, 4)) {
-      const what = a.side === 'long' ? 'a BUY' : a.side === 'short' ? 'a SELL' : 'a BUY or SELL';
+      const how = a.triggered_action || (a.side === 'long' ? 'buy' : a.side === 'short' ? 'sell' : null);
+      const what = how === 'buy' ? 'a BUY' : how === 'sell' ? 'a SELL' : 'a BUY or SELL';
       const msg = `AI signal on ${a.symbol} (${a.interval} chart): ${what} at ${money(+a.triggered_price)}, ${new Date(a.triggered_at).toLocaleString()}. Simulated rules, not a forecast.`;
       toast(`🤖 ${msg}`, 'info', 10000);
       try { if (Notification.permission === 'granted') new Notification(`${CONFIG.APP_NAME} AI signal`, { body: msg, icon: 'icon.svg' }); } catch { /* ignore */ }
       seen.add(`ai:${key(a)}`);
     }
     if (fresh.length || freshAi.length) save('seenAlerts', [...seen].slice(-200));
-  } catch { /* backend optional */ }
+  } catch { /* backend optional */ } finally { alertsChecking = false; }
 }
 auth.addEventListener('change', showTriggeredServerAlerts);
 
@@ -477,7 +480,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261013-103421";
+export const BUILD = "20261013-105446";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

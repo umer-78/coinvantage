@@ -173,7 +173,7 @@ async function checkAiAlerts() {
     if ((want === 'long' && sig.action !== 'buy') || (want === 'short' && sig.action !== 'sell')) continue;
 
     const { data: claimed } = await admin.from('ai_alerts')
-      .update({ last_fired_at: new Date().toISOString(), triggered_at: new Date().toISOString(), triggered_price: sig.price, active: a.repeat === false ? false : true })
+      .update({ last_fired_at: new Date().toISOString(), triggered_at: new Date().toISOString(), triggered_price: sig.price, triggered_action: sig.action, active: a.repeat === false ? false : true })
       .eq('id', a.id).eq('active', true).select('id');
     if (!claimed?.length) continue;
 
