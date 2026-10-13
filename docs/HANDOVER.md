@@ -179,6 +179,13 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   (`RANGE_WIDEN` in js/lib/forecastview.js; display only, the raw forecast is unchanged).
   It is a small correction on the same daily data, consistent with 1d being narrow in every
   test so far (72.5% in the engine test); the monthly re-test will show if it holds.
+- Narrower ranges? `tools/evaluate-volatility.mjs` (second step of the `bands` job) builds
+  the same ranges on an exponentially weighted volatility (λ 0.97 and 0.94) instead of the
+  100-candle one and scores them with the interval score (width + 2/α × miss; lower is
+  better). Bar set before the run: pick on the older half, use only if the newer half scores
+  ≥2% lower with the 80% range no more than a point further from 80%. Run 38331888912: the
+  weighted estimate was better on every chart but only by 0.1–1.6% (5m 1.6%, 15m 0.9%,
+  4h 0.9%, 1h 0.6%, 1d 0.1%), so the 100-candle volatility stays.
 
 ### Volatility-scaled position size (2026-10-13)
 - `cfg.volScale` (autotrader): the position × max(0.5, 1 / ratio) while a coin's 100-candle
