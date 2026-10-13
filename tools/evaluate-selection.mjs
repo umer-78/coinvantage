@@ -18,7 +18,8 @@
 // the shared rule set on the newer half on at least two of three timeframes.
 import { readFileSync } from 'node:fs';
 import { alignSeries, rotationReplay, buyAndHold } from '../js/lib/rotation.js';
-import { replaySeries, newState, DEFAULT_CONFIG, CHART_RULES, marketRegime, equity } from '../js/lib/autotrader.js';
+import { replaySeries, newState, DEFAULT_CONFIG, CHART_RULES, marketRegime, equity, dropTracker } from '../js/lib/autotrader.js';
+import { holdDrop } from './hold-drop.mjs';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 
@@ -242,29 +243,33 @@ if (!only || only === 'table') {
     const st = newState(cfg);
     const series = prep.map((p) => ({ ...p[key], regime: cfg.marketFilter ? p[key].regime : null }));
     for (const x of series) st.cursor[x.symbol] = x.candles[from - 1].t;
-    replaySeries(st, cfg, series, { from });
+    // `dd` counts closed trades only (what rules are picked and the bar judged
+    // by); `ddMarked` values open trades at every close, the figure the app shows
+    const drop = dropTracker(st);
+    replaySeries(st, cfg, series, { from, onBar: drop.onBar });
     const last = Object.fromEntries(series.map((x) => [x.symbol, x.candles.at(-1).c]));
     const eqEnd = equity(st, last) - Object.values(st.open).reduce((a, p) => a + (last[p.symbol] * p.qty * cfg.feePct) / 100, 0);
     let eq = cfg.startingBalance, peak = eq, dd = 0;
     for (const t of [...st.closed].sort((a, b) => a.exitAt - b.exitAt)) { eq += t.pnl; peak = Math.max(peak, eq); dd = Math.max(dd, (peak - eq) / peak); }
     dd = Math.max(dd, (peak - eqEnd) / peak);
     const wins = st.closed.filter((t) => t.pnl > 0).length;
-    return { ret: +((eqEnd / cfg.startingBalance - 1) * 100).toFixed(2), dd: +(dd * 100).toFixed(2), trades: st.closed.length, winRate: st.closed.length ? +((wins / st.closed.length) * 100).toFixed(1) : 0 };
+    return { ret: +((eqEnd / cfg.startingBalance - 1) * 100).toFixed(2), dd: +(dd * 100).toFixed(2), ddMarked: +drop.worstDropPct().toFixed(2), trades: st.closed.length, winRate: st.closed.length ? +((wins / st.closed.length) * 100).toFixed(1) : 0 };
   };
   const stdOlder = stdGrid.map((g) => ({ g, m: account('older', g, null) })).sort((a, b) => (b.m.trades < 10 ? -Infinity : b.m.ret - 0.5 * b.m.dd) - (a.m.trades < 10 ? -Infinity : a.m.ret - 0.5 * a.m.dd))[0].g;
   const olderTable = choose('older', stdOlder);
   const without = account('newer', stdOlder, null), withOwn = account('newer', stdOlder, olderTable);
   const hold = +(prep.reduce((a, p) => a + (p.newer.candles.at(-1).c / p.newer.candles[WARM].c - 1), 0) / prep.length * 100).toFixed(2);
+  const holdWorst = +holdDrop(prep.map((p) => p.newer), WARM).toFixed(2);
   const enable = withOwn.ret > without.ret && withOwn.dd <= without.dd + 5;
   const offer = withOwn.ret > without.ret;
   const from = iso(prep[0].newer.candles[WARM].t), to = iso(prep[0].newer.candles.at(-1).t);
   console.log(`\n== ACCOUNT, DAILY CHART: ${coins.length} coins together, newer half ${from} → ${to}`);
   console.log(`  standard picked on the older half: ${JSON.stringify(stdOlder)}`);
-  console.log(`  standard rules alone:     ret ${without.ret}%  dd ${without.dd}%  trades ${without.trades}  won ${without.winRate}%`);
-  console.log(`  + each coin's own rules:  ret ${withOwn.ret}%  dd ${withOwn.dd}%  trades ${withOwn.trades}  won ${withOwn.winRate}%   (${Object.keys(olderTable).length} of ${coins.length} coins had their own)`);
-  console.log(`  holding every coin: ${hold}%   → ${enable ? 'SWITCH ON for daily accounts' : offer ? 'OFFER AS AN OPT-IN' : 'DROP THE OPT-IN'}`);
+  console.log(`  standard rules alone:     ret ${without.ret}%  dd ${without.dd}% (marked ${without.ddMarked}%)  trades ${without.trades}  won ${without.winRate}%`);
+  console.log(`  + each coin's own rules:  ret ${withOwn.ret}%  dd ${withOwn.dd}% (marked ${withOwn.ddMarked}%)  trades ${withOwn.trades}  won ${withOwn.winRate}%   (${Object.keys(olderTable).length} of ${coins.length} coins had their own)`);
+  console.log(`  holding every coin: ${hold}% (worst drop ${holdWorst}%)   → ${enable ? 'SWITCH ON for daily accounts' : offer ? 'OFFER AS AN OPT-IN' : 'DROP THE OPT-IN'}`);
   const fullTable = choose('full', SHIPPED);
   console.log(`\nTABLE ${JSON.stringify(fullTable)}`);
-  out.account1d = { coins: coins.length, from, to, standardOlder: stdOlder, without, withOwn, hold, enable, offer, own: Object.keys(olderTable).length, table: fullTable };
+  out.account1d = { coins: coins.length, from, to, standardOlder: stdOlder, without, withOwn, hold, holdDrop: holdWorst, enable, offer, own: Object.keys(olderTable).length, table: fullTable };
 }
 console.log(`\nJSON ${JSON.stringify(out)}`);

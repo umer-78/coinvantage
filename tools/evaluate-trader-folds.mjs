@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity, dropTracker } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
+import { holdDrop } from './hold-drop.mjs';
 
 const raw = JSON.parse(readFileSync(process.argv[2] || 'klines.json', 'utf8'));
 const WARM = 260;
@@ -59,21 +60,6 @@ function account(rules, series, from, extra = {}) {
   return { ret: (eqEnd / cfg.startingBalance - 1) * 100, dd: dd * 100, ddMarked: drop.worstDropPct(), trades: st.closed.length, win: st.closed.length ? (wins / st.closed.length) * 100 : 0, fees: (fees / cfg.startingBalance) * 100 };
 }
 
-// Holding the same coins instead: equal amounts bought at the block's first
-// candle, valued at every close — its worst fall, measured like `ddMarked`.
-function holdDrop(series, from) {
-  const base = series.map((x) => x.candles[from].c), last = [...base], idx = series.map(() => from + 1);
-  let peak = 1, dd = 0;
-  for (;;) {
-    let t = Infinity;
-    for (let j = 0; j < series.length; j++) if (idx[j] < series[j].candles.length) t = Math.min(t, series[j].candles[idx[j]].t);
-    if (t === Infinity) break;
-    for (let j = 0; j < series.length; j++) while (idx[j] < series[j].candles.length && series[j].candles[idx[j]].t === t) last[j] = series[j].candles[idx[j]++].c;
-    const v = last.reduce((a, p, j) => a + p / base[j], 0) / series.length;
-    if (v > peak) peak = v; else dd = Math.max(dd, (peak - v) / peak);
-  }
-  return dd * 100;
-}
 const objective = (m) => (m.trades < 10 ? -Infinity : m.ret - 0.5 * m.dd);
 
 // What followed each buy signal on its own: every coin run alone with one
