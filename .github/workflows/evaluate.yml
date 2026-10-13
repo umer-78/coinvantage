@@ -137,11 +137,15 @@ jobs:
       - name: Volatility for the ranges, 100-candle against exponentially weighted
         run: node tools/evaluate-volatility.mjs klines.json | tee volatility.txt
 
+      - name: Time of day for the ranges, plain against hour-of-day adjusted
+        run: node tools/evaluate-seasonal.mjs klines.json | tee seasonal.txt
+
       - name: Summary
         if: always()
         run: |
           { echo '### Price-range calibration'; echo '```'; grep -v '^JSON' bands.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           { echo '### Volatility estimate'; echo '```'; grep -v '^JSON' volatility.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '### Time of day'; echo '```'; grep -v '^JSON' seasonal.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -149,6 +153,7 @@ jobs:
           path: |
             bands.txt
             volatility.txt
+            seasonal.txt
 
   # Outside data — Fear & Greed, futures funding, taker-buy share — tested for
   # what it says about the next week, with the bar written in the script.
