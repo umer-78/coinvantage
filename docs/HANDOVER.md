@@ -355,6 +355,25 @@ ones; each bar to adopt was written in the script before the run.
   would check them, at the cost of more forecasts per run (CPU limit) — not done without
   the owner's say-so, since it changes their database settings.
 
+### Updates that load, settings that stick, coins it cannot trade (2026-10-13)
+- **Updates.** `checkForUpdate()` (js/app.js) used to unregister the service worker and
+  reload; the reload then took modules from the browser's HTTP cache (GitHub Pages sends
+  max-age=600), so a tab could stay on the old build for the whole visit (one try per build).
+  It now fetches every app file again with `cache: 'reload'` (the list comes from
+  `DEPS`), asks the service worker to update, clears Cache Storage and reloads — and
+  retries a build after ten minutes, since Pages' servers can lag a deploy. The footer
+  shows the running build (`#buildTag`).
+- **Settings across tabs.** A second open tab kept its old `cfg`/`state` in memory and
+  saved them back at its next check or Save. The Trading page now listens for `storage`
+  events on `traderCfg`/`traderState` and takes the newer copy (no check is started, so
+  two tabs cannot trigger each other).
+- **Coins it cannot trade.** A coin with no price data from any exchange the app reads
+  (FIGR_HELOC, WBT…) used to raise "No data for … — skipped" on every five-minute check.
+  The toast now shows once per visit; a coin failing two checks in a row while others
+  loaded (`traderNoData` in localStorage — never during an outage, never on demo data) or
+  having only CoinGecko prices gets a notice on the page with "Remove them from the list",
+  and a "no data" tag in Settings.
+
 ### AI-signal alerts reach the open site (2026-10-13)
 - The server records every AI-alert firing on the row (`triggered_at`, `triggered_price`)
   whether or not Telegram or e-mail is set up. `showTriggeredServerAlerts()` (js/app.js)

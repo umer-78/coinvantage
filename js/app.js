@@ -480,13 +480,20 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261013-105446";
+export const BUILD = "20261013-114311";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
 // not a version, and acting on it used to unregister the service worker, delete
 // every cache and reload the page. Offline, that left nothing to reload into.
 const BUILD_STAMP = /^\d{8}-\d{6}$/;
+
+// The build this tab is running, in the footer, so "is this the new version?"
+// has an answer on the page itself.
+{
+  const tag = document.getElementById('buildTag');
+  if (tag) tag.textContent = `Version ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(9, 11)}:${BUILD.slice(11, 13)} UTC`;
+}
 
 async function checkForUpdate() {
   if (navigator.onLine === false) return;
@@ -496,9 +503,22 @@ async function checkForUpdate() {
     const latest = (await res.text()).trim();
     if (!BUILD_STAMP.test(latest)) return;
     if (latest === BUILD) { sessionStorage.removeItem('cv:reloaded'); return; }
-    if (sessionStorage.getItem('cv:reloaded') === latest) return; // already tried
-    sessionStorage.setItem('cv:reloaded', latest);
-    for (const reg of await navigator.serviceWorker?.getRegistrations?.() ?? []) await reg.unregister();
+    // One try per new build every ten minutes, never a loop: right after a
+    // deploy, GitHub Pages' servers can still hand out the previous files for a
+    // few minutes, and a later check then gets the new ones.
+    let tried = null;
+    try { tried = JSON.parse(sessionStorage.getItem('cv:reloaded') || 'null'); } catch { /* an older plain value */ }
+    if (tried?.v === latest && Date.now() - tried.at < 10 * 60e3) return;
+    sessionStorage.setItem('cv:reloaded', JSON.stringify({ v: latest, at: Date.now() }));
+    // Every app file is fetched again past the browser's own cache before the
+    // reload. The old way — drop the service worker, then reload — let the
+    // browser serve the previous files from its HTTP cache (kept up to ten
+    // minutes), and the tab then stayed on the old build for the whole visit.
+    const files = new Set(['./', 'index.html', 'css/app.css', 'js/app.js', 'js/deps.js']);
+    for (const [page, deps] of Object.entries(DEPS)) for (const f of [page, ...deps]) files.add(`js/${f}`);
+    await Promise.all([...files].map((f) => fetch(f, { cache: 'reload' }).catch(() => null)));
+    // a new service worker (sw.js changes with every build) takes over at once
+    await (await navigator.serviceWorker?.getRegistration?.())?.update?.().catch(() => {});
     // keep the downloaded AI model — it is large and unrelated to the app files
     for (const k of await caches.keys()) if (!k.startsWith('webllm')) await caches.delete(k);
     location.reload();

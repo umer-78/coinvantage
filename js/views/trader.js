@@ -36,7 +36,10 @@ const AUTOLEARN_KEY = 'traderAutoLearn';
 export async function render(el) {
   // prices: newest known price per coin. priceFrom says where it came from
   // (a live tick, or the latest candle when no tick has arrived yet).
-  const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false };
+  const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false, noExchange: [] };
+  // Coins that keep coming back with no price data (checks in a row they failed
+  // while others loaded), so the page can say so once and offer to drop them.
+  const NODATA_KEY = 'traderNoData';
   // Formal session machine: idle → running → stopped → running, RESET from any
   // state. autoOn mirrors status === 'running' so the periodic catch-up timer
   // and RUN_KEY keep working exactly as before.
@@ -349,6 +352,16 @@ export async function render(el) {
       } catch { failed.push(sym); }
     }
     if (st.disposed) return;
+    // A coin is flagged only after two checks in a row with no data while other
+    // coins loaded: when the feeds are down every coin fails, and BTC must not be
+    // offered for removal. Demo candles mean the feeds are down, never the coin.
+    const streak = load(NODATA_KEY, {});
+    if (Object.keys(bySymbol).length) {
+      for (const sym of failed) if (fetched.get(sym)?.source !== 'demo') streak[sym] = (streak[sym] || 0) + 1;
+      for (const sym of Object.keys(bySymbol)) delete streak[sym];
+      save(NODATA_KEY, streak);
+    }
+    st.noExchange = noExchange;
     // Every coin advances together, candle by candle, as in the published test.
     const results = replayAll(state, { ...runCfg, excluded: [...(runCfg.excluded || []), ...held] }, bySymbol);
     for (const [sym, res] of Object.entries(results)) {
@@ -374,9 +387,10 @@ export async function render(el) {
     if (st.disposed) return;
     btn.disabled = false;
     btn.innerHTML = old;
-    if (failed.length) toast(`No data for ${failed.join(', ')} — skipped.`, 'info');
+    // once per visit for the same coins: every five-minute check used to repeat it
+    if (failed.length && st.warnedNoData !== failed.join()) { st.warnedNoData = failed.join(); toast(`No price data for ${failed.join(', ')} this time — skipped.`, 'info'); }
     // once per visit: it would otherwise repeat on every five-minute check
-    if (noExchange.length && !st.warnedNoExchange) st.warnedNoExchange = true, toast(`${noExchange.join(', ')} ${noExchange.length > 1 ? 'have' : 'has'} no exchange candles, so the AI does not trade ${noExchange.length > 1 ? 'them' : 'it'}. Take ${noExchange.length > 1 ? 'them' : 'it'} off its list in Settings.`, 'info');
+    if (noExchange.length && !st.warnedNoExchange) st.warnedNoExchange = true, toast(`${noExchange.join(', ')} ${noExchange.length > 1 ? 'have' : 'has'} no exchange candles, so the AI does not trade ${noExchange.length > 1 ? 'them' : 'it'}. The notice on this page can take ${noExchange.length > 1 ? 'them' : 'it'} off its list.`, 'info');
     draw();
     if (processed) toast(`Checked ${processed.toLocaleString('en-US')} new candle${processed === 1 ? '' : 's'}.`, 'up');
     learnFrom(forecastInputs, runCfg.interval);
@@ -809,6 +823,36 @@ export async function render(el) {
     }));
   }
 
+  // Coins on the AI's list it cannot trade: none of the exchanges it reads has
+  // them (two checks in a row), or only CoinGecko's sparse prices do.
+  function untradable() {
+    const streak = load(NODATA_KEY, {});
+    const noData = cfg.universe.filter((s) => (streak[s] || 0) >= 2);
+    const sparse = cfg.universe.filter((s) => st.noExchange.includes(s) && !noData.includes(s));
+    return { noData, sparse, all: [...noData, ...sparse] };
+  }
+  function untradableCard() {
+    const u = untradable();
+    if (!u.all.length) return '';
+    const n = u.all.length;
+    return `<div class="card" style="border-color:var(--warn)" id="untradable">
+      <p style="margin:0"><b>${n} coin${n > 1 ? 's' : ''} on the AI's list can't be traded, so ${n > 1 ? 'they are' : 'it is'} skipped on every check.</b>
+      ${u.noData.length ? `${esc(u.noData.join(', '))}: no price data from any exchange it reads. ` : ''}${u.sparse.length ? `${esc(u.sparse.join(', '))}: only occasional CoinGecko prices, too sparse to trade on. ` : ''}The rest of the list is unaffected.</p>
+      <button class="btn sm mt" type="button" id="dropUntradable">Remove ${n > 1 ? 'them' : 'it'} from the list</button>
+    </div>`;
+  }
+  function wireUntradable() {
+    $('#dropUntradable', el)?.addEventListener('click', () => {
+      const gone = untradable().all;
+      if (!gone.length) return;
+      cfg.universe = cfg.universe.filter((s) => !gone.includes(s));
+      save(CFG_KEY, cfg);
+      if (state) { logCheck(state, { kind: 'settings', text: `removed ${gone.join(', ')} (no price data to trade on)` }); save(STATE_KEY, state); }
+      toast(`Removed ${gone.join(', ')} from the AI's list.`, 'up');
+      draw();
+    });
+  }
+
   function draw() {
     if (!state) { $('#body', el).innerHTML = `${backupCard()}${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${startCard()}`; wireBackup(); wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
     const s = stats(state, marks());
@@ -820,6 +864,7 @@ export async function render(el) {
       ${myDemoCard()}
       ${realCard()}
       <h3 class="mt" style="margin-bottom:8px">The AI's own account</h3>
+      ${untradableCard()}
       ${verdictCard()}
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
@@ -880,6 +925,7 @@ export async function render(el) {
 
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
     wireBackup();
+    wireUntradable();
     wireMyDemo();
     wireReal();
     wireExports();
@@ -934,6 +980,9 @@ export async function render(el) {
   $('#cfgBtn', el).addEventListener('click', () => {
     const coins = all.filter((c) => !isStable(c.symbol)).slice(0, 100);
     const chosen = new Set(cfg.universe);
+    // every coin seen to have no data, on the list or not, so it is not picked again
+    const streakNow = load(NODATA_KEY, {});
+    const noDataNow = [...Object.keys(streakNow).filter((k) => streakNow[k] >= 2), ...st.noExchange];
     const best = bestTestedChart();
     const own = cfg.custom ? { ...CUSTOM_DEFAULT, ...cfg.custom } : { ...CUSTOM_DEFAULT };
     const exitOf = (r) => (r.trailAtr ? `t${r.trailAtr}` : `r${r.rMultiple}`);
@@ -982,7 +1031,7 @@ export async function render(el) {
           <div class="row" style="gap:6px;flex-wrap:wrap"><input class="inp" id="coinFind" placeholder="Find a coin" aria-label="Find a coin" style="flex:1;min-width:140px">
             <button class="btn sm" type="button" data-pick="10">Top 10</button><button class="btn sm" type="button" data-pick="20">Top 20</button><button class="btn sm" type="button" data-pick="own">Coins with own rules</button><button class="btn sm" type="button" data-pick="0">Clear</button></div>
           <div id="coinGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px">
-            ${coins.map((c) => `<label class="fine" style="display:flex;gap:6px;align-items:center" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}${c.binance ? '' : ' <small class="muted" title="not on Binance: candles come from Gate.io, HTX or OKX if any lists it">other exchange</small>'}</label>`).join('')}
+            ${coins.map((c) => `<label class="fine" style="display:flex;gap:6px;align-items:center" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}${noDataNow.includes(c.symbol) ? ' <small class="down" title="no price data the AI can trade on">no data</small>' : c.binance ? '' : ' <small class="muted" title="not on Binance: candles come from Gate.io, HTX or OKX if any lists it">other exchange</small>'}</label>`).join('')}
           </div>
           ${(cfg.excluded || []).length ? `<label class="row fine" style="gap:8px"><input type="checkbox" name="unbench"><span>Trade the coins the self-review benched again (${esc(cfg.excluded.join(', '))})</span></label>` : ''}
           <p class="fine" style="margin:0">Up to ${MAX_COINS} coins. ★ = has its own daily rules. Coins with no exchange candles are skipped at each check and named in the activity log.</p>
@@ -1198,6 +1247,24 @@ export async function render(el) {
     for (const sym of need) { if (st.disposed) return; if ((await fetchPrice(sym)) !== null) got++; }
     if (got && !st.disposed) draw();
   })();
+  // Another tab of this site saved the AI's settings or account. This tab used to
+  // keep its own older copy in memory and save it back at its next check or
+  // Save, so a change made in one tab came undone. It now takes the newer copy
+  // (and starts no check, so two open tabs cannot set each other off).
+  const onStorage = (e) => {
+    if (st.disposed || !e.key) return;
+    if (e.key === `cv:${CFG_KEY}`) {
+      const saved = load(CFG_KEY, {}) || {};
+      Object.assign(cfg, { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(saved).filter(([k]) => USER_KEYS.includes(k) || (saved.v === 2 && LEARNED_KEYS.includes(k)))), v: 2 });
+      cfg.riskPct = Math.min(5, Math.max(0.1, +cfg.riskPct || DEFAULT_CONFIG.riskPct));
+      draw();
+    } else if (e.key === `cv:${STATE_KEY}` && !st.running) {
+      state = load(STATE_KEY, null);
+      draw();
+    }
+  };
+  window.addEventListener('storage', onStorage);
+
   if (state && autoOn) catchUp();
   // First visit: run the play-money account once on its own, so the page opens
   // on a replayed record instead of an empty start card. Only ever automatic
@@ -1213,6 +1280,7 @@ export async function render(el) {
     st.disposed = true;
     clearInterval(timer);
     window.removeEventListener('cv:tickers', onTick);
+    window.removeEventListener('storage', onStorage);
     auth.removeEventListener('change', onAuth);
     st.charts.forEach((c) => c.destroy());
   };
