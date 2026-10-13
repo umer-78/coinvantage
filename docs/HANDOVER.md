@@ -123,6 +123,14 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### Price-range calibration at scale (2026-10-13)
+- `tools/evaluate-bands.mjs` (Evaluate job `bands`): the centred ranges built with the
+  engine's own `rollingSigma` + `empiricalBandQuantiles`, 24 coins, 5m–1d, every
+  non-overlapping horizon (~28,000 tests). 80% range held 5m 76.5%, 15m 80.0%, 1h 79.0%, 4h
+  78.9%, 1d 77.2%. A width factor fitted on each series' older half (pre-registered rule) did
+  not improve the newer half anywhere (1h and 4h picked 1.1 and overshot to 82.8–83.1%), so
+  the ranges are unchanged. `FORECAST_TESTED.centred` now carries these figures and counts.
+
 ### Volatility-scaled position size (2026-10-13)
 - `cfg.volScale` (autotrader): the position × max(0.5, 1 / ratio) while a coin's 100-candle
   volatility is above its own slow average (`volRatio()`, past candles only), applied after

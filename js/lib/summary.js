@@ -28,6 +28,7 @@
 import { conflictCheck } from './analyst.js';
 import { edgeBand, confluence, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
 import { TESTED_ACCURACY } from './predict.js';
+import { FORECAST_TESTED } from './forecastview.js';
 
 // Risking r% with a stop s% away means a position worth r/s of the account. This
 // used to say "1.5/s to 2/s × your per-trade risk budget": the wrong unit, a lower
@@ -348,7 +349,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
 
   if (forecast && !conflict && forecast.directionReliable === false) {
     const why = TESTED_ACCURACY.recheck?.[interval] ? `in a re-run of the release test on fresh candles (${TESTED_ACCURACY.recheck.measuredOn}) its calls were right ${TESTED_ACCURACY.recheck[interval].hit}% of the time against ${TESTED_ACCURACY.recheck[interval].baseline}% for always naming the commoner direction` : interval in TESTED_ACCURACY.directionTrust ? 'in the release test the model\'s leans here carried no information' : 'the model was never tested on this chart';
-    steps.push({ label: 'What the model adds', text: `No reliable direction on the ${interval} chart: ${why}, so its raw ${forecast.rawProbUpPct}% up is not a chance of anything. Its price range is the useful part: ${fmt(forecast.wideRange[0])} – ${fmt(forecast.wideRange[1])} over ${horizonText || 'the forecast horizon'}, a range of the kind that held ${TESTED_ACCURACY.bandsAll.band80}% of outcomes in testing.` });
+    steps.push({ label: 'What the model adds', text: `No reliable direction on the ${interval} chart: ${why}, so its raw ${forecast.rawProbUpPct}% up is not a chance of anything. Its price range is the useful part: ${fmt(forecast.wideRange[0])} – ${fmt(forecast.wideRange[1])} over ${horizonText || 'the forecast horizon'}, a range of the kind that held ${FORECAST_TESTED.centred[interval]?.coins === 24 ? `${FORECAST_TESTED.centred[interval].band80}% of ${FORECAST_TESTED.centred[interval].tests.toLocaleString('en-US')} outcomes on ${interval} in testing` : `${TESTED_ACCURACY.bandsAll.band80}% of outcomes in testing`}.` });
   } else if (forecast && !conflict) {
     const dir = forecast.probUpPct >= 50 ? 'up' : 'down';
     const tfAcc = accuracyOn(interval);

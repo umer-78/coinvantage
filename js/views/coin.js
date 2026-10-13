@@ -765,8 +765,8 @@ export async function render(el, [symParam]) {
   // Measured share of real outcomes that landed inside a forecast range: this
   // chart's own test where it was run, and the whole release test beside it.
   function coverage(band) {
-    const c = (st.fcView || st.forecast)?.leanRemoved && FORECAST_TESTED.centred[st.interval]?.[band];
-    if (typeof c === 'number') return `held ${c}% of the time on ${esc(st.interval)} in the ${FORECAST_TESTED.measuredOn} test of ${FORECAST_TESTED.perChart} forecasts`;
+    const x = (st.fcView || st.forecast)?.leanRemoved && FORECAST_TESTED.centred[st.interval];
+    if (typeof x?.[band] === 'number') return `held ${x[band]}% of the time on ${esc(st.interval)} across ${x.tests.toLocaleString('en-US')} tests on ${x.coins} coins (${x.tests === FORECAST_TESTED.perChart ? FORECAST_TESTED.measuredOn : FORECAST_TESTED.centredMeasuredOn})`;
     const own = TESTED_ACCURACY[band]?.[st.interval];
     const all = `${TESTED_ACCURACY.bandsAll[band]}% across all ${TESTED_ACCURACY.tests.toLocaleString()} tests`;
     return typeof own === 'number' ? `held ${own}% of the time on ${esc(st.interval)} · ${all}` : `held ${all} (${esc(st.interval)} itself was not tested)`;

@@ -61,10 +61,20 @@ export function forecastForDisplay(f, interval, trust) {
  */
 export const FORECAST_TESTED = {
   measuredOn: '2026-10-12', tests: 1440, coins: 12, perChart: 240,
+  // Centred ranges, re-measured 2026-10-13 at scale by tools/evaluate-bands.mjs
+  // (Evaluate job "bands"): 24 coins, every non-overlapping horizon, the
+  // engine's own range functions. A width factor fitted on the older half of
+  // each series did not improve the newer half on any chart, so none is used.
+  // 1m is from the 240-forecast test above (its direction keeps the lean).
   centred: {
-    '1m': { band50: 50.8, band80: 78.8 }, '5m': { band50: 51.7, band80: 83.3 }, '15m': { band50: 54.6, band80: 82.5 },
-    '1h': { band50: 52.9, band80: 81.7 }, '4h': { band50: 61.7, band80: 82.9 }, '1d': { band50: 49.2, band80: 72.5 },
+    '1m': { band50: 50.8, band80: 78.8, tests: 240, coins: 12 },
+    '5m': { band50: 46.3, band80: 76.5, band90: 87.4, tests: 4992, coins: 24 },
+    '15m': { band50: 49.1, band80: 80.0, band90: 89.7, tests: 7488, coins: 24 },
+    '1h': { band50: 49.8, band80: 79.0, band90: 89.1, tests: 4992, coins: 24 },
+    '4h': { band50: 49.5, band80: 78.9, band90: 89.4, tests: 7992, coins: 24 },
+    '1d': { band50: 46.5, band80: 77.2, band90: 88.9, tests: 2391, coins: 24 },
   },
+  centredMeasuredOn: '2026-10-13',
   move: {
     '1m': { hit: 50.8, baseline: 58.3, rho: 0.079, big: 1.83, small: 1.91 },
     '5m': { hit: 59.2, baseline: 55.8, rho: 0.304, big: 1.42, small: 0.99 },

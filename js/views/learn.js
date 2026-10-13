@@ -93,10 +93,13 @@ export async function render(el) {
               const rc = TESTED_ACCURACY.recheck;
               const ivs = rc ? Object.keys(rc).filter((k) => typeof rc[k]?.hit === 'number') : [];
               const avg = (k) => (ivs.length ? +(ivs.reduce((a, iv) => a + rc[iv][k], 0) / ivs.length).toFixed(1) : null);
-              const c80 = Object.values(FORECAST_TESTED.centred).map((x) => x.band80);
+              // the at-scale test only (5m–1d): 1m is not shown centred
+              const big = Object.values(FORECAST_TESTED.centred).filter((x) => x.coins === 24);
+              const c80 = big.map((x) => x.band80);
+              const n80 = big.reduce((a, x) => a + x.tests, 0);
               return `${ivs.length ? `<dt>Direction, latest test</dt><dd>${avg('hit')}% <span class="fine">vs ${avg('baseline')}% baseline · ${rc.tests.toLocaleString()} tests, ${esc(rc.measuredOn)}</span></dd>` : ''}
             <dt>Direction, release test</dt><dd>${TESTED_ACCURACY.all}% <span class="fine">vs ${TESTED_ACCURACY.allBaseline}% baseline · ${TESTED_ACCURACY.tests.toLocaleString()} tests</span></dd>
-            <dt>80% range held</dt><dd>${(c80.reduce((a, b) => a + b, 0) / c80.length).toFixed(1)}% <span class="fine">(target 80%; centred on today's price, ${esc(FORECAST_TESTED.measuredOn)}; ${TESTED_ACCURACY.bandsAll.band80}% in the release test)</span></dd>`;
+            <dt>80% range held</dt><dd>${c80.length ? `${Math.min(...c80)}–${Math.max(...c80)}%` : '—'} <span class="fine">(target 80%; by chart, centred on today's price, ${n80.toLocaleString('en-US')} tests on 24 coins, ${esc(FORECAST_TESTED.centredMeasuredOn)}; ${TESTED_ACCURACY.bandsAll.band80}% in the release test)</span></dd>`;
             })()}
             <dt>90% range held</dt><dd>${TESTED_ACCURACY.bandsAll.band90}% <span class="fine">(target 90%)</span></dd>
             <dt>This device (last 50)</dt><dd>${fl.windows[50].pct === null ? '<span class="muted">not enough yet</span>' : `${fl.windows[50].pct}% <span class="fine">(${fl.windows[50].hits}/${fl.windows[50].total})</span>`}</dd>
