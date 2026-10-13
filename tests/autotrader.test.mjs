@@ -140,7 +140,10 @@ test('a chart trades its own rules only where the published test clears the bar 
   const { CHART_RULES, CHART_TESTED } = await import('../js/lib/autotrader.js');
   for (const iv of ['15m', '1h', '4h', '1d']) {
     const x = CHART_TESTED[iv];
-    const clears = x.better >= 2 && x.own.ret - x.standard.ret >= 1 && x.own.dd <= x.standard.dd + 5;
+    // the bar was set on the closed-trade drop (`ddClosed`); `dd` is the one shown
+    const dd = (r) => r.ddClosed ?? r.dd;
+    const clears = x.better >= 2 && x.own.ret - x.standard.ret >= 1 && dd(x.own) <= dd(x.standard) + 5;
+    assert.ok(x.holdDrop > 0 && x.own.dd > 0 && x.standard.dd > 0, `${iv}: drops measured`);
     assert.equal(x.adopt, clears, `${iv}: adopt must follow the bar`);
     assert.equal(Boolean(CHART_RULES[iv]), x.adopt, `${iv}: rules shipped exactly where adopted`);
   }

@@ -203,6 +203,30 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   1h (1 of 3) and 1d (1 of 3 — one block +13 points) did not (`VOL_SCALE`). Your own rules
   never get it. CHART_TESTED for 4h predates it; the expected-yield box says so.
 
+### Worst drop with open trades counted; trader re-run (2026-10-13)
+- Every "worst drop" used to count only closed trades (the equity curve was the cash
+  balance), which hid every fall a trade recovered from before it closed. Now
+  `replaySeries(..., { onBar })` lets a test watch every candle, `dropTracker(state)` values
+  open trades at each close, and the live account's equity curve does the same
+  (`markEquity` uses the latest close seen, `state.px`), so Max drawdown on the Trading
+  page and "Test these settings" are the real ones. The rules are still picked, and the
+  bars judged, on the closed-trade drop (`ddClosed`), as the bars were written.
+- `tools/evaluate-trader-folds.mjs` records both and holding's worst drop. Run 38380270716
+  (now `CHART_TESTED`, `VOL_SCALE`): worst drop with open trades / closed only / holding —
+  15m 9.26 / 7.09 / 9.86%, 1h 15.29 / 12.97 / 13.79%, 4h 27.05 / 24.59 / 38.39%,
+  1d 19.69 / 14.22 / 63.97% (block averages). The trader's real benefit is on 1d and 4h:
+  it fell far less than holding. Returns: 15m +6.88% vs hold +7.19% a 10-day block, 1h
+  +6.69% vs +15.22%, 4h −1.81% vs −10.59%, 1d +16.26% vs +10.71%.
+- Decisions: 1h and 1d adopt again with the same picks; 4h keeps the standard rules (1 of
+  3); volScale stays on 4h only (3 of 3, +0.15 points, drop −2.29). 15m cleared the bar
+  (2 of 3, +2.67 points) with the same pick as the run before it ("breakout+confirm 3ATR r3
+  SX"), so it now trades that pick — the test pins shipped rules to the published figures.
+- AI-signal records (shipped rules): higher H candles after a buy 15m 45.7% vs 50.4% any
+  candle, 1h 46.3% vs 50.4%, 4h 46.6% vs 47.6%, 1d 48.3% vs 46.9% — still no edge.
+- That run's volScale A/B on 15m used the standard rules (shipped then); `SHIPPED` now says
+  own, so the next run tests 15m's own rules.
+- `PER_COIN_RULES` (tools/evaluate-selection.mjs) still reports closed-trade drops.
+
 ### AI signal, forecast display and accuracy figures (2026-10-12/13)
 Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measured:
 - **AI signal** (coin page, top of Trade signal): `aiSignal()` replays the chart's published

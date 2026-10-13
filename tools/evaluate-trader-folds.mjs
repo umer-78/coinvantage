@@ -190,7 +190,7 @@ for (const iv of IVS) {
   // drop (the objective the rules were picked by) in at least 2 of 3 blocks, by
   // at least 1 point on average, with an average return no more than 1 point
   // below the same rules without it.
-  const SHIPPED = { '15m': 'standard', '1h': 'own', '4h': 'standard', '1d': 'own' };
+  const SHIPPED = { '15m': 'own', '1h': 'own', '4h': 'standard', '1d': 'own' }; // 15m: own since 2026-10-13
   const sw = SHIPPED[iv] || which;
   const baseOf = (x) => (sw === 'own' ? x.own : x.current);
   const obj = (m) => m.ret - 0.5 * m.dd;
