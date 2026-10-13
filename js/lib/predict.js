@@ -924,4 +924,4 @@ export function summarizeForecast(f, interval = null, trust = TESTED_ACCURACY.di
 }
 
 // Exposed for the evaluation harness (tools/evaluate.mjs)
-export const _internals = { buildFeatures, standardizer, trainLogistic, trainMlp, trainGbdt, knnModel, holtSeries, rollingSigma, normCdf, findPatterns, moveStatsModel };
+export const _internals = { buildFeatures, standardizer, trainLogistic, trainMlp, trainGbdt, knnModel, holtSeries, rollingSigma, empiricalBandQuantiles, normCdf, findPatterns, moveStatsModel };

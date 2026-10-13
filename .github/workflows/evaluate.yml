@@ -9,7 +9,7 @@ on:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, trader-folds, engine, all]
+        options: [selection, trader-rules, trader-folds, engine, bands, all]
         default: selection
 
 permissions:
@@ -89,6 +89,34 @@ jobs:
         with:
           name: trader-folds
           path: trader-folds.txt
+
+  # Do the price ranges hold as often as they say? 24 coins, five charts, every
+  # non-overlapping horizon; a width factor is fitted on the older half of each
+  # series and kept only if it helps on the newer half.
+  bands:
+    if: inputs.job == 'bands' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download candles
+        env:
+          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
+          PLAN: '{"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Range calibration, fitted on older candles and checked on newer ones
+        run: node tools/evaluate-bands.mjs klines.json | tee bands.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bands
+          path: bands.txt
 
   # The forecast's release test re-run on fresh candles: 12 coins, six charts,
   # 20 forecasts per coin and chart, split over six runners.
