@@ -541,7 +541,7 @@ export function aiSignal(candles, interval, symbol = 'COIN') {
     return { ...base, action: pos.openedAt === last.t ? 'buy' : 'hold', entry: pos.entry, stop: pos.stop, initialStop: pos.initialStop, target: pos.tp, openedAt: pos.openedAt, barsHeld: k < 0 ? null : i - k, openPct: round((last.c / pos.entry - 1) * 100, 2) };
   }
   const t = state.closed[state.closed.length - 1];
-  if (t && t.exitAt === last.t) return { ...base, action: 'sell', entry: t.entry, exit: t.exit, why: t.reason, openedAt: t.openedAt, pnlPct: t.pnlPct, r: t.riskCash > 0 ? round(t.pnl / t.riskCash, 2) : null };
+  if (t && t.exitAt === last.t) return { ...base, action: 'sell', entry: t.entry, exit: t.exit, why: t.reason, openedAt: t.openedAt, pnlPct: t.pnlPct, netPct: net(t), r: t.riskCash > 0 ? round(t.pnl / t.riskCash, 2) : null };
   const score = out.lastScore ?? scoreAt(candles, s.ind, i).score;
   const code = entryBlocker(cfg, s, i, score);
   return { ...base, action: 'wait', code, why: code ? blockerText(code, cfg, score) : 'the rule found no entry on it', last: t ? { exitAt: t.exitAt, pnlPct: t.pnlPct, why: t.reason } : null };
@@ -566,6 +566,27 @@ export function volRatio(candles) {
     if (i >= 200) out[i] = sd / normal;
   }
   return out;
+}
+
+/**
+ * One row of the live AI-signal record (table ai_signal_log): what the signal
+ * said on the last closed candle, written by the server once per candle and
+ * never changed afterwards, then graded on the price `horizonBars` candles
+ * later. `opened_at` is when the trade it is in (or just closed) was bought,
+ * so the record can count only trades bought after tracking began.
+ */
+export function aiSignalRow(candles, interval, symbol, { horizonBars, intervalMs }) {
+  const a = aiSignal(candles, interval, symbol);
+  if (!a || !(intervalMs > 0) || !(horizonBars > 0)) return null;
+  const last = candles[candles.length - 1];
+  const iso = (t) => new Date(t).toISOString();
+  return {
+    symbol, interval, candle_time: iso(last.t), price: last.c, action: a.action,
+    entry: a.entry ?? null, stop: a.action === 'sell' ? null : a.stop ?? null, target: a.action === 'sell' ? null : a.target ?? null,
+    opened_at: a.openedAt ? iso(a.openedAt) : null,
+    exit_price: a.action === 'sell' ? a.exit : null, trade_pct: a.action === 'sell' ? a.netPct : null,
+    horizon_bars: horizonBars, horizon_at: iso(last.t + intervalMs + horizonBars * intervalMs),
+  };
 }
 
 function stepBar(state, cfg, s, i, score) {

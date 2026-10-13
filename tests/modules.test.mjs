@@ -74,7 +74,7 @@ test('every edge function file parses', async (t) => {
 test('the server engine is a byte-identical copy of the browser engine', () => {
   // /cv/selftest and the server-side alerts depend on it; deploy-backend.sh
   // refuses to deploy a drifted copy, and this catches the drift at commit time.
-  for (const f of ['signals', 'predict', 'indicators', 'barrier', 'pooled', 'planscore']) {
+  for (const f of ['signals', 'predict', 'indicators', 'barrier', 'pooled', 'planscore', 'autotrader']) {
     assert.equal(readFileSync(join(FN, 'engine', `${f}.js`), 'utf8'), readFileSync(join(ROOT, 'js/lib', `${f}.js`), 'utf8'), `${f}.js differs`);
   }
 });

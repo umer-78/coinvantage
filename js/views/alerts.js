@@ -13,11 +13,16 @@ export async function render(el, [preset]) {
   const coins = all.filter((c) => c.binance && !isStable(c.symbol));
   const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
   el.innerHTML = `
-    <div class="page-head"><div><h1>Alerts</h1><p>Two kinds: a <b>price alert</b> that watches a level, and a <b>signal alert</b> that fires the moment the engine's setup triggers on a chart — with the entry, stop and targets in the message.</p></div></div>
+    <div class="page-head"><div><h1>Alerts</h1><p>Three kinds: a <b>price alert</b> that watches a level, a <b>signal alert</b> that fires the moment the engine's setup triggers on a chart — with the entry, stop and targets in the message — and an <b>AI signal alert</b> that tells you when the AI signal buys or sells a coin.</p></div></div>
 
     <div class="card" style="margin-bottom:14px">
       <div class="card-h"><h3>Signal alert</h3><span class="chip warn">Runs on the server</span></div>
       <div id="sigBox">${skeleton(3, 22)}</div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><h3>AI signal alert</h3><span class="chip warn">Runs on the server</span></div>
+      <div id="aiBox">${skeleton(3, 22)}</div>
     </div>
 
     <div class="grid g2">
@@ -131,8 +136,63 @@ export async function render(el, [preset]) {
     }));
   }
 
+  // AI signal alerts: a message when the coin page's AI signal (the chart's
+  // tested trading rules) buys or sells, checked on the server at each close.
+  const AI_SIDES = [['any', 'Buys and sells'], ['long', 'Buys only'], ['short', 'Sells only']];
+  async function drawAi() {
+    const box = $('#aiBox', el);
+    if (!box) return;
+    if (!backendEnabled()) { box.innerHTML = '<p class="fine">AI signal alerts need the backend, which is not connected on this deployment.</p>'; return; }
+    if (!auth.user) {
+      box.innerHTML = `<p class="fine">Sign in to get a message when the AI signal buys or sells a coin — it runs on the server, so it reaches you with the browser closed.</p>
+        <button class="btn primary mt" id="aiSignIn">${icon('bolt', 16)} Sign in</button>`;
+      $('#aiSignIn', box).addEventListener('click', () => openAuth('in'));
+      return;
+    }
+    const rows = await serverAlerts().catch(() => null);
+    if (!rows) {
+      box.innerHTML = '<p class="fine">Could not load your AI signal alerts — the server did not answer.</p><button class="btn sm" id="aiRetry">Try again</button>';
+      $('#aiRetry', box).addEventListener('click', drawAi);
+      return;
+    }
+    const mine = rows.filter((r) => r.kind === 'ai');
+    box.innerHTML = `
+      <form id="af" class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <label class="fld">Coin<select class="inp" name="sym">${coins.slice(0, 60).map((c) => `<option value="${esc(c.symbol)}">${esc(c.symbol)} · ${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="fld">Chart<select class="inp" name="iv">${['15m', '1h', '4h', '1d'].map((i) => `<option ${i === '1d' ? 'selected' : ''}>${i}</option>`).join('')}</select></label>
+        <label class="fld">Tell me about<select class="inp" name="side">${AI_SIDES.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></label>
+        <button class="btn primary">${icon('alerts', 16)} Create AI signal alert</button>
+      </form>
+      <p class="fine mt">The same signal as on each coin page: the chart's tested trading rules, checked when a candle closes. The message says what it did — bought (with the stop) or sold (with the result after fees). In testing, buys like these picked direction no better than chance; the coin page and the Track record show the record. Nothing here places an order.</p>
+      ${mine.length ? `<div class="stack mt" style="gap:8px">${mine.map((a) => `
+        <div class="row spread" style="padding:10px;border-radius:10px;background:var(--surface-2)">
+          <div><b>${esc(a.symbol)}</b> · ${esc(a.interval)} chart · ${esc(AI_SIDES.find(([v]) => v === (a.side || 'any'))?.[1] || 'Buys and sells')}
+            <br><small class="muted">${a.last_fired_at ? `Last fired ${ago(new Date(a.last_fired_at).getTime())}` : 'Waiting for a buy or sell'}</small></div>
+          <button class="icon-btn" style="width:32px;height:32px" data-aidel="${esc(String(a.id))}" aria-label="Delete AI signal alert">${icon('trash', 14)}</button>
+        </div>`).join('')}</div>` : '<p class="fine mt">No AI signal alerts yet.</p>'}`;
+    $('#af', box).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f2 = e.currentTarget;
+      const btn = f2.querySelector('button');
+      btn.disabled = true;
+      try {
+        await createServerAlert({ kind: 'ai', symbol: f2.sym.value, interval: f2.iv.value, side: f2.side.value, channels: ['telegram', 'email'], active: true });
+        toast(`AI signal alert set for ${f2.sym.value} on the ${f2.iv.value} chart.`, 'up');
+        drawAi();
+      } catch (err) {
+        toast(err.message, 'down');
+        btn.disabled = false;
+      }
+    });
+    $$('[data-aidel]', box).forEach((b) => b.addEventListener('click', async () => {
+      try { await deleteServerAlert(b.dataset.aidel); } catch (err) { toast(err.message, 'down'); }
+      drawAi();
+    }));
+  }
+
   drawSignals();
-  const onAuth = () => { drawSignals(); loadElsewhere(); };
+  drawAi();
+  const onAuth = () => { drawSignals(); drawAi(); loadElsewhere(); };
   auth.addEventListener('change', onAuth);
 
   // Price alerts were kept only in this browser, so nothing reached Telegram or

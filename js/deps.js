@@ -331,6 +331,8 @@ export const DEPS = {
     'api/fx.js',
     'config.js',
     'format.js',
+    'lib/airecord.js',
+    'lib/autotrader.js',
     'lib/barrier.js',
     'lib/indicators.js',
     'lib/pooled.js',

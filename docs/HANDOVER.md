@@ -123,6 +123,18 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
 - Market data hosts are blocked in the cloud sandbox; the Evaluate workflow runs
   the test on GitHub's runners. Read its log for the report.
 
+### Live AI-signal record and AI-signal alerts (2026-10-13, server)
+- Table `ai_signal_log` (public read, server write): one row per closed 4h/1d candle of the
+  tracked coins — what the AI signal said (`aiSignalRow()` in the shared engine, the same
+  `aiSignal()` the coin pages use), graded `horizon_bars` later (`fwd_up`, `fwd_ret_pct`) by the
+  `track-signals` cron. Rows are never rewritten. Track page → "AI signal, live" counts only
+  trades bought after tracking began on a coin (`js/lib/airecord.js`).
+- Alerts kind `ai` (constraint extended): `alerts-check` sends Telegram/e-mail when the AI
+  signal buys or sells on the candle that just closed (side long = buys, short = sells).
+  Delivery still needs the Telegram/Resend keys under Admin → API keys.
+- `js/lib/autotrader.js` is now mirrored to `supabase/functions/cv/engine/autotrader.js`
+  (parity test and `tools/deploy-backend.sh` check it).
+
 ### Price-range calibration at scale (2026-10-13)
 - `tools/evaluate-bands.mjs` (Evaluate job `bands`): the centred ranges built with the
   engine's own `rollingSigma` + `empiricalBandQuantiles`, 24 coins, 5m–1d, every

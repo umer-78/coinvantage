@@ -231,6 +231,17 @@ export async function getTrackRecord({ symbol = null, limit = 300 } = {}) {
   return data || [];
 }
 
+/** The AI signal's live record (ai_signal_log), newest first. Null when it cannot be read. */
+export async function getAiRecord({ limit = 5000 } = {}) {
+  const client = await sb();
+  if (!client) return null;
+  const { data, error } = await client.from('ai_signal_log')
+    .select('symbol,interval,candle_time,action,resolved,fwd_up,trade_pct,opened_at')
+    .order('candle_time', { ascending: false }).limit(limit);
+  if (error) return null;
+  return data || [];
+}
+
 export async function getAppSettings() {
   const client = await sb();
   if (!client) return {};

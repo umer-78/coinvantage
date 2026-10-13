@@ -4,7 +4,9 @@ import { $, $$, bindSeg, skeleton, icon } from '../ui.js';
 import { esc, pct, money, dateTime } from '../format.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
 import { liveDirectionCheck, directionTrustFor, LIVE_PROOF_NATS } from '../lib/selfimprove.js';
-import { getTrackRecord, backendEnabled } from '../api/backend.js';
+import { getTrackRecord, getAiRecord, backendEnabled } from '../api/backend.js';
+import { aiRecordStats } from '../lib/airecord.js';
+import { CHART_TESTED } from '../lib/autotrader.js';
 import { CONFIG } from '../config.js';
 import { clockOffsetMs } from '../api/clock.js';
 import { fx } from '../api/fx.js';
@@ -85,6 +87,29 @@ export async function render(el) {
   }
   const rowsCapped = rows.length >= ROW_CAP;
   let interval = 'all';
+  // The AI signal's own live record, written by the server at each close since
+  // it began (2026-10-13): nothing in it was known when its rules were chosen.
+  const aiRows = await getAiRecord().catch(() => null);
+  const aiCard = () => {
+    const st = aiRows ? aiRecordStats(aiRows) : {};
+    const ivs = ['15m', '1h', '4h', '1d'].filter((iv) => st[iv]);
+    const day = (t) => new Date(t).toISOString().slice(0, 10);
+    const pc = (v) => (v === null ? '—' : `${v}%`);
+    return `<div class="card mt">
+      <div class="card-h"><h3>AI signal, live</h3><span class="fine">the coin pages' BUY / HOLD / SELL / WAIT, logged by the server at each candle close</span></div>
+      ${!ivs.length ? `<p class="fine">${aiRows ? 'Started — the first candles are being logged and nothing has been graded yet.' : 'Not started on this deployment yet.'} Each closed 4h and daily candle of the tracked coins gets a row, written before anyone knows what comes next, and is graded on the price a set number of candles later.</p>` : `
+      <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Logged</th><th>Price higher after a BUY</th><th>…after any candle</th><th>Tested (before it went live)</th><th>Closed trades</th><th>In a trade now</th></tr></thead><tbody>
+        ${ivs.map((iv) => {
+          const x = st[iv], t = CHART_TESTED[iv]?.signals;
+          return `<tr><td class="l">${iv}</td><td>${x.logged.toLocaleString('en-US')} <span class="fine">(${x.coins} coins, since ${day(x.since)})</span></td>
+            <td>${pc(x.buyUpPct)} <span class="fine">(${x.buys} graded)</span></td><td>${pc(x.anyUpPct)} <span class="fine">(${x.graded})</span></td>
+            <td class="fine">${t ? `${t.fwdUpPct.toFixed(1)}% vs ${t.baseUpPct.toFixed(1)}%` : '—'}</td>
+            <td>${x.trades ? `${x.trades}, ${x.wins} won, avg <b class="${x.avgTradePct >= 0 ? 'up' : 'down'}">${x.avgTradePct >= 0 ? '+' : ''}${x.avgTradePct}%</b>` : '0'}</td><td>${x.open} of ${x.coins}</td></tr>`;
+        }).join('')}
+      </tbody></table></div>
+      <p class="fine" style="margin:6px 0 0">Graded on the price 6 candles (4h) or 7 days (1d) after each row. Trades count only once bought after tracking began on that coin, after fees. A small sample says little either way; the tested figures are the bar it has to clear, and before it went live the buys did not beat any candle.</p>`}
+    </div>`;
+  };
 
   const draw = () => {
     const all = interval === 'all' ? rows : rows.filter((r) => r.interval === interval);
@@ -151,6 +176,8 @@ export async function render(el) {
         <div class="card"><div class="stat"><span class="k">Trade plans that reached a target</span><span class="v ${plans.length && wins / plans.length >= 0.5 ? 'up' : plans.length ? 'down' : ''}">${plans.length ? `${((wins / plans.length) * 100).toFixed(0)}%` : '—'}</span><span class="s fine">${wins} hit target · ${losses} stopped out · ${expired} expired</span></div></div>
         <div class="card"><div class="stat"><span class="k">Average result per plan</span><span class="v ${expectancy > 0 ? 'up' : expectancy < 0 ? 'down' : ''}">${expectancy === null ? '—' : pct(expectancy)}</span><span class="s fine">${avgWin === null ? '' : `winners ${pct(avgWin)}`}${avgLoss === null ? '' : ` · losers ${pct(avgLoss)}`}</span></div></div>
       </div>
+
+      ${aiCard()}
 
       <div class="card mt" ${acc !== null && !beatsBaseline ? 'style="border-color:var(--warn)"' : ''}>
         <div class="card-h"><h3>How to read this</h3>${acc === null ? '' : `<span class="chip ${beatsBaseline ? 'up' : 'warn'}">${beatsBaseline ? `beating the baseline by ${(acc - baseline).toFixed(1)} points` : `${(baseline - acc).toFixed(1)} points behind the baseline`}</span>`}</div>

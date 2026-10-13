@@ -1,6 +1,7 @@
 // Runs every minute (pg_cron): checks active price alerts and sends Telegram / e-mail messages.
 import { admin, json, requireCron, prices, sendTelegram, sendEmail, setting, escHtml, fmtPrice, klines } from './lib.ts';
 import { generateSignal } from './engine/signals.js';
+import { aiSignal } from './engine/autotrader.js';
 
 const INTERVAL_MS: Record<string, number> = { '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
 
@@ -14,7 +15,7 @@ export async function alertsCheck(req: Request): Promise<Response> {
 
   const alerts = all.filter((a) => (a.kind ?? 'price') === 'price');
   const signalAlerts = all.filter((a) => a.kind === 'signal');
-  const signalResult = await checkSignalAlerts(signalAlerts);
+  const signalResult = { ...(await checkSignalAlerts(signalAlerts)), ...(await checkAiAlerts(all.filter((a) => a.kind === 'ai'))) };
   if (!alerts.length) return json({ checked: all.length, triggered: 0, ...signalResult });
 
   const symbols = [...new Set(alerts.map((a) => a.symbol))];
@@ -24,7 +25,7 @@ export async function alertsCheck(req: Request): Promise<Response> {
     if (!p) return false;
     return a.direction === 'above' ? p >= Number(a.price) : p <= Number(a.price);
   });
-  if (!hits.length) return json({ checked: alerts.length, triggered: 0 });
+  if (!hits.length) return json({ checked: alerts.length, triggered: 0, ...signalResult });
 
   const site = await setting<{ url?: string }>('site');
   const sent: unknown[] = [];
@@ -131,6 +132,69 @@ async function checkSignalAlerts(alerts: Record<string, unknown>[]) {
     fired++;
   }
   return { signalsChecked: alerts.length, signalsFired: fired };
+}
+
+/**
+ * AI signal alerts: a message when the coin page's AI signal — the chart's
+ * tested trading rules, replayed on the coin's closed candles — buys or sells
+ * on the candle that just closed. Checked in the minutes after each close,
+ * once a candle at most. Nothing here places an order.
+ */
+async function checkAiAlerts(alerts: Record<string, unknown>[]) {
+  if (!alerts.length) return { aiChecked: 0, aiFired: 0 };
+  const now = Date.now();
+  const due = alerts.filter((a) => {
+    const step = INTERVAL_MS[a.interval as string];
+    if (!step || now % step > 18e4) return false;
+    const last = a.last_fired_at ? new Date(a.last_fired_at as string).getTime() : 0;
+    return now - last >= step;
+  });
+  if (!due.length) return { aiChecked: alerts.length, aiFired: 0 };
+
+  const site = await setting<{ url?: string }>('site');
+  const cache = new Map<string, ReturnType<typeof aiSignal> | null>();
+  let fired = 0;
+  for (const a of due) {
+    const key = `${a.symbol}:${a.interval}`;
+    if (!cache.has(key)) {
+      try {
+        let candles = await klines(a.symbol as string, a.interval as string, 700);
+        const step = INTERVAL_MS[a.interval as string];
+        if (candles.length && candles[candles.length - 1].t + step > now) candles = candles.slice(0, -1);
+        cache.set(key, aiSignal(candles, a.interval as string, a.symbol as string));
+      } catch { cache.set(key, null); }
+    }
+    const sig = cache.get(key);
+    if (!sig || (sig.action !== 'buy' && sig.action !== 'sell')) continue;
+    const want = (a.side as string) ?? 'any';
+    if ((want === 'long' && sig.action !== 'buy') || (want === 'short' && sig.action !== 'sell')) continue;
+
+    const { data: claimed } = await admin.from('alerts')
+      .update({ last_fired_at: new Date().toISOString(), triggered_at: new Date().toISOString(), triggered_price: sig.price, active: a.repeat === false ? false : true })
+      .eq('id', a.id).eq('active', true).select('id');
+    if (!claimed?.length) continue;
+
+    const { data: p } = await admin.from('profiles').select('telegram_chat_id,email,email_verified,email_alerts').eq('id', a.user_id).single();
+    const iv = escHtml(String(a.interval));
+    const buy = sig.action === 'buy';
+    const x = sig.record;
+    const rec = x ? `In testing, the price was higher ${x.H} candles after buys like this ${x.fwdUpPct.toFixed(1)}% of the time, against ${x.baseUpPct.toFixed(1)}% from any candle — a buy is not a forecast that it will rise.` : 'This rule was never tested on this chart.';
+    const what = buy
+      ? `Bought on the candle that just closed at $${fmtPrice(sig.entry)}. Stop $${fmtPrice(sig.stop)}${sig.target ? `, target $${fmtPrice(sig.target)}` : ', then a trailing stop'}.`
+      : `Its trade closed (${escHtml(String(sig.why))}) at $${fmtPrice(sig.exit)}: ${sig.netPct >= 0 ? '+' : ''}${sig.netPct}% after fees, bought at $${fmtPrice(sig.entry)}.`;
+    const link = site?.url ? `\n<a href="${escHtml(site.url)}#/coin/${a.symbol}">Open the ${a.symbol} chart</a>` : '';
+    const text = `🤖 <b>AI signal: ${buy ? 'BUY' : 'SELL'} ${a.symbol}</b> on the ${iv} chart\n${what}\n${rec}${link}\n\n<i>Simulated rules; this app never trades for you. Not financial advice.</i>`;
+    if (p?.telegram_chat_id && (a.channels as string[]).includes('telegram')) await sendTelegram(p.telegram_chat_id, text);
+    if (p?.email && p.email_verified && p.email_alerts && (a.channels as string[]).includes('email')) {
+      await sendEmail(p.email, `AI signal: ${buy ? 'BUY' : 'SELL'} ${a.symbol} (${a.interval})`,
+        `<div style="font-family:system-ui,sans-serif"><h2>🤖 AI signal: ${buy ? 'BUY' : 'SELL'} ${a.symbol}</h2>
+         <p>On the ${iv} chart. ${what}</p><p>${rec}</p>
+         ${site?.url ? `<p><a href="${escHtml(site.url)}#/coin/${a.symbol}">Open the chart</a></p>` : ''}
+         <p style="color:#888">Simulated rules; this app never trades for you. Not financial advice.</p></div>`);
+    }
+    fired++;
+  }
+  return { aiChecked: alerts.length, aiFired: fired };
 }
 
 /**

@@ -4,6 +4,7 @@ import { admin, json, requireCron, klines, setting } from './lib.ts';
 import { generateSignal } from './engine/signals.js';
 import { forecast } from './engine/predict.js';
 import { scorePlan } from './engine/planscore.js';
+import { aiSignalRow } from './engine/autotrader.js';
 
 // Candle lengths, so the horizon is computed from the interval being logged
 // rather than from a constant. The old code hardcoded four hours: the interval
@@ -47,6 +48,17 @@ export async function trackSignals(req: Request): Promise<Response> {
         if (candles.length && candles[candles.length - 1].t + ms > Date.now()) candles = candles.slice(0, -1);
         const last = candles[candles.length - 1];
         if (!last) continue;
+        // The AI signal's live record: what the chart's tested rules did on this
+        // closed candle, written once and never changed (engine/autotrader.js).
+        try {
+          const ai = aiSignalRow(candles, plan.interval, symbol, { horizonBars: plan.horizon, intervalMs: ms });
+          if (ai) {
+            const { error: aiErr } = await admin.from('ai_signal_log').upsert(ai, { onConflict: 'symbol,interval,candle_time', ignoreDuplicates: true });
+            if (aiErr) throw aiErr;
+          }
+        } catch (e) {
+          console.error('ai log', symbol, plan.interval, e);
+        }
         const sig = generateSignal(candles, { interval: plan.interval });
         if (!sig.ok) continue;
         const fc = forecast(candles, { horizon: plan.horizon, fast: true, intervalMs: ms });
@@ -98,6 +110,28 @@ export async function trackSignals(req: Request): Promise<Response> {
     }
   }
 
+  // Grade the AI signal's rows once their horizon has passed: was the price
+  // higher that many candles later? The same question its published record
+  // answers (CHART_TESTED[chart].signals), asked of candles no test has seen.
+  const { data: aiDue } = await admin.from('ai_signal_log').select('id,symbol,interval,candle_time,horizon_at,price')
+    .eq('resolved', false).lte('horizon_at', new Date().toISOString()).order('horizon_at').limit(12);
+  let aiResolved = 0;
+  for (const r of aiDue || []) {
+    try {
+      const start = new Date(r.candle_time).getTime() + (IV_MS[r.interval] || IV_MS['4h']);
+      const hourly = await klines(r.symbol, '1h', 1000, start, new Date(r.horizon_at).getTime() - 1);
+      if (!hourly.length) continue;
+      const outcome = hourly[hourly.length - 1].c;
+      await admin.from('ai_signal_log').update({
+        resolved: true, resolved_at: new Date().toISOString(), outcome_price: outcome,
+        fwd_up: outcome > Number(r.price), fwd_ret_pct: +((outcome / Number(r.price) - 1) * 100).toFixed(3),
+      }).eq('id', r.id);
+      aiResolved++;
+    } catch (e) {
+      console.error('ai resolve', r.id, e);
+    }
+  }
+
   // Plans resolved before the scoring followed the plan's own management rule
   // (plan_v 1) are re-scored a few per run, newest first, from the same hourly
   // candles, until none are left.
@@ -116,5 +150,5 @@ export async function trackSignals(req: Request): Promise<Response> {
       console.error('rescore', r.id, e);
     }
   }
-  return json({ batch, logged, resolved, rescored });
+  return json({ batch, logged, resolved, rescored, aiResolved });
 }
