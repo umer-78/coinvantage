@@ -40,4 +40,4 @@ node --input-type=module -e '
   const f = forecast(candles, { horizon: 6, fast: true });
   console.log("locally:", JSON.stringify({ score: s.score, action: s.action, probUp: f.ok ? +f.probUp.toFixed(6) : null, acc: f.ok ? f.ensemble.accuracy : null }));
 '
-echo "The two lines above must match. If they do not, the deploy did not take."
+echo "The two lines above must match (probUp and acc may differ in the last digits between JavaScript engines). If score or action differ, the deploy did not take."

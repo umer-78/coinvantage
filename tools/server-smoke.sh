@@ -31,11 +31,20 @@ want=$(node --input-type=module -e '
   const f = forecast(candles, { horizon: 6, fast: true });
   console.log(JSON.stringify({ score: s.score, action: s.action, probUp: f.ok ? +f.probUp.toFixed(6) : null, acc: f.ok ? f.ensemble.accuracy : null }));
 ')
-if [ "$got" != "$want" ]; then
+# Score and action must be identical. The model's probability and accuracy may
+# differ in the last digits between JavaScript engines (Node, the Deno in CI,
+# Supabase's runtime): its training compounds tiny floating-point differences,
+# so those two are compared to within 0.0001. The engine files themselves are
+# pinned byte for byte by tests/modules.test.mjs.
+if ! GOT="$got" WANT="$want" node -e '
+  const g = JSON.parse(process.env.GOT || "null"), w = JSON.parse(process.env.WANT);
+  const close = (a, b) => (a === null && b === null) || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= 1e-4);
+  process.exit(g && g.score === w.score && g.action === w.action && close(g.probUp, w.probUp) && close(g.acc, w.acc) ? 0 : 1);
+' 2>/dev/null; then
   echo "The server's selftest does not match the site's engine."
   echo "  server: $got"
   echo "  site:   $want"
   cat "$LOG"
   exit 1
 fi
-echo "Server starts and its engine matches the site's: $got"
+echo "Server starts and its engine matches the site's: $got (site $want)"
