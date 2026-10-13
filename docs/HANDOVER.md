@@ -225,7 +225,16 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   candle, 1h 46.3% vs 50.4%, 4h 46.6% vs 47.6%, 1d 48.3% vs 46.9% — still no edge.
 - That run's volScale A/B on 15m used the standard rules (shipped then); `SHIPPED` now says
   own, so the next run tests 15m's own rules.
-- `PER_COIN_RULES` (tools/evaluate-selection.mjs) still reports closed-trade drops.
+- `PER_COIN_RULES` re-run the same way (job `selection`, run 38381368027): each coin's own
+  daily rules +89.77% vs +33.31% for the daily rules alone (newer half 2023-10-10 →
+  2026-10-13), worst drop with open trades 40.15% vs 35.6% (closed only 34.69% vs 29.25%),
+  holding +83.6% with a 72.2% drop. The first run a day earlier: +46.04% vs +36.95%. The
+  closed-trade drop is now 5.44 points deeper — just outside the 5-point bar, which makes it
+  "offer as opt-in". **Policy: a published decision changes only when two runs in a row
+  agree** (15m above had two), so the per-coin rules stay on until the next run; if it also
+  says opt-in, default them off (`ownRulesOff` → an opt-in flag). Same for the 4h per-coin
+  walk-forward, which said adopt (2 of 3) for the first time. The Trading page states the
+  first run's figure beside the new one.
 
 ### AI signal, forecast display and accuracy figures (2026-10-12/13)
 Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measured:

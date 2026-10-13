@@ -256,18 +256,25 @@ export function settingsWarnings(cfg) {
  * coin keeps the daily rules unless others did better on it). On for daily
  * accounts unless switched off in Settings. Measured with everything chosen
  * on the older half of the data only (the daily rules too, picked the way the
- * shipped ones were) and run on the newer half, all coins in one account: it
- * made +46.0% against +37.0% for the daily rules alone, with a worst drop of
- * 33.2% against 29.3% — inside the bar set before the test (no more than five
- * points deeper). Holding all 24 coins made +88.7% over the same years. In a
+ * shipped ones were) and run on the newer half, all coins in one account.
+ * First run (2026-10-12): +46.0% against +37.0% for the daily rules alone,
+ * worst drop (closed trades) 33.2% against 29.3% — inside the bar set before
+ * the test (no more than five points deeper), so switched on. Re-run a day
+ * later (`tested`, with drops valued at every close too): +89.8% against
+ * +33.3%, closed-trade drop 34.7% against 29.3% — 5.4 points, just outside
+ * the bar, which would make them an opt-in. A published decision changes only
+ * when two runs in a row agree, so they stay on until the next run; one long
+ * account test swings this much with its start date. Holding all 24 coins
+ * made +83.6% over the same years, with a worst drop of 72.2%. In a
  * walk-forward check over three periods each coin's own rules beat one shared
- * rule set in all three on daily (+2.9% against +1.3% a period); on 1h and 4h
- * they did not, so they are used on the daily chart only. The coins are
- * today's survivors, which flatters every backtest of them.
+ * rule set in all three on daily (+3.2% against +1.1% a period); on 1h they
+ * did not, and 4h, which had not, did in 2 of 3 in the re-run — daily only
+ * until a second run agrees. The coins are today's survivors, which flatters
+ * every backtest of them.
  */
 export const PER_COIN_RULES = {
-  interval: '1d', measuredOn: '2026-10-12', coins: 24,
-  tested: { from: '2023-10-09', to: '2026-10-12', standard: { ret: 36.95, dd: 29.25, trades: 135, winRate: 32.6 }, own: { ret: 46.04, dd: 33.2, trades: 145, winRate: 33.1 }, hold: 88.69, walkForward: { periods: 3, better: 3, own: 2.94, shared: 1.32 } },
+  interval: '1d', measuredOn: '2026-10-13', coins: 24,
+  tested: { from: '2023-10-10', to: '2026-10-13', standard: { ret: 33.31, dd: 35.6, ddClosed: 29.25, trades: 136, winRate: 32.4 }, own: { ret: 89.77, dd: 40.15, ddClosed: 34.69, trades: 151, winRate: 32.5 }, hold: 83.6, holdDrop: 72.2, walkForward: { periods: 3, better: 3, own: 3.16, shared: 1.11 }, firstRun: { own: 46.04, standard: 36.95 } },
   rules: {
     BTC: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
     ETH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
