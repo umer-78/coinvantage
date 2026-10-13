@@ -22,7 +22,9 @@ for (const [iv, total] of Object.entries(plan)) {
       }
       if (!r) break;
       if (!Array.isArray(r) || !r.length) break;
-      rows = r.map((k) => [k[0], +k[1], +k[2], +k[3], +k[4], +k[5]]).concat(rows);
+      // [time, open, high, low, close, volume, taker-buy volume]: the last is the
+      // part of the volume bought by market orders (tools/evaluate-external.mjs)
+      rows = r.map((k) => [k[0], +k[1], +k[2], +k[3], +k[4], +k[5], +k[9]]).concat(rows);
       end = r[0][0] - 1;
       if (r.length < lim) break;
     }
