@@ -127,7 +127,8 @@ jobs:
       - name: Download candles
         env:
           COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
-          PLAN: '{"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+          # 5m and 15m go back ~100 days so their verdict is not decided by one week
+          PLAN: '{"5m":30000,"15m":12000,"1h":4000,"4h":3500,"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
 
       - name: Range calibration, fitted on older candles and checked on newer ones
