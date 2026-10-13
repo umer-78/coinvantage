@@ -82,7 +82,10 @@ export const CHART_RULES = {
  * a gain, for the rules the chart trades. `byRisk` is the same test with every
  * block replayed at six risk levels (same rules, 5 open at most, 25% a coin):
  * average, worst and best block, average worst drop, blocks with a gain,
- * trades a block.
+ * trades a block. `fillCost`: points a block the shipped rules lost with
+ * every fill 0.05% worse each way (spread and slippage, which the test
+ * otherwise leaves out) — from a re-run 30 minutes later that made the same
+ * decisions.
  *
  * `signals`: what followed each buy of those rules on its own (every coin run
  * alone, one trade at a time, blocks the rules were not picked on). R is the
@@ -97,16 +100,16 @@ export const CHART_RULES = {
  */
 export const CHART_TESTED = {
   measuredOn: '2026-10-13', coins: 24, configs: 432, blocks: 3,
-  '15m': { range: [-4.69, 22.01], up: 2, from: '2026-09-12', to: '2026-10-13', block: '10 days', better: 2, adopt: true, hold: 7.19, holdDrop: 9.86, standard: { ret: 4.21, dd: 11.68, ddClosed: 8.49, trades: 279, win: 27.24, fees: 3.71 }, own: { ret: 6.88, dd: 9.26, ddClosed: 7.09, trades: 201, win: 32.84, fees: 2.95 },
+  '15m': { range: [-4.69, 22.01], up: 2, from: '2026-09-12', to: '2026-10-13', block: '10 days', better: 2, adopt: true, hold: 7.19, holdDrop: 9.86, fillCost: 1.55, standard: { ret: 4.21, dd: 11.68, ddClosed: 8.49, trades: 279, win: 27.24, fees: 3.71 }, own: { ret: 6.88, dd: 9.26, ddClosed: 7.09, trades: 201, win: 32.84, fees: 2.95 },
     byRisk: { 0.5: { ret: 5.05, lo: -2.78, hi: 19.37, dd: 6.32, up: 1, trades: 68 }, 1: { ret: 5.89, lo: -4.25, hi: 22.18, dd: 8.79, up: 1, trades: 67 }, 1.5: { ret: 6.88, lo: -4.69, hi: 22.01, dd: 9.26, up: 2, trades: 67 }, 2: { ret: 7.36, lo: -4.74, hi: 22.01, dd: 9.5, up: 2, trades: 66 }, 3: { ret: 7.45, lo: -4.74, hi: 22.01, dd: 9.53, up: 2, trades: 66 }, 5: { ret: 7.45, lo: -4.74, hi: 22.01, dd: 9.53, up: 2, trades: 66 } },
     signals: { n: 583, winPct: 28.82, avgR: -0.09, avgWinR: 2.42, avgLossR: -1.11, holdMedian: 22, avgPct: 0.18, randPct: 0.42, H: 8, fwdN: 582, fwdUpPct: 45.7, fwdLo: 41.7, fwdHi: 49.77, baseUpPct: 50.39 } },
-  '1h': { range: [-12.34, 19.29], up: 2, from: '2026-06-10', to: '2026-10-13', block: '6 weeks', better: 2, adopt: true, hold: 15.22, holdDrop: 13.79, standard: { ret: -1.53, dd: 17.67, ddClosed: 15.56, trades: 261, win: 25.67, fees: 3.59 }, own: { ret: 6.69, dd: 15.29, ddClosed: 12.97, trades: 210, win: 29.52, fees: 2.99 },
+  '1h': { range: [-12.34, 19.29], up: 2, from: '2026-06-10', to: '2026-10-13', block: '6 weeks', better: 2, adopt: true, hold: 15.22, holdDrop: 13.79, fillCost: 1.62, standard: { ret: -1.53, dd: 17.67, ddClosed: 15.56, trades: 261, win: 25.67, fees: 3.59 }, own: { ret: 6.69, dd: 15.29, ddClosed: 12.97, trades: 210, win: 29.52, fees: 2.99 },
     byRisk: { 0.5: { ret: 3.91, lo: -2.95, hi: 10.51, dd: 9.63, up: 2, trades: 70 }, 1: { ret: 4.79, lo: -8.53, hi: 13.93, dd: 14.32, up: 2, trades: 70 }, 1.5: { ret: 6.69, lo: -12.34, hi: 19.29, dd: 15.29, up: 2, trades: 70 }, 2: { ret: 5.63, lo: -11.83, hi: 16.22, dd: 14.8, up: 2, trades: 69 }, 3: { ret: 4.97, lo: -11.85, hi: 15.93, dd: 15.25, up: 2, trades: 69 }, 5: { ret: 4.76, lo: -11.85, hi: 15.3, dd: 15.4, up: 2, trades: 69 } },
     signals: { n: 553, winPct: 27.31, avgR: 0.01, avgWinR: 2.65, avgLossR: -0.98, holdMedian: 27, avgPct: 0.25, randPct: 1.05, H: 12, fwdN: 553, fwdUpPct: 46.29, fwdLo: 42.18, fwdHi: 50.46, baseUpPct: 50.35 } },
-  '4h': { range: [-18.21, 18], up: 1, from: '2025-08-02', to: '2026-10-13', block: '5 months', better: 1, adopt: false, hold: -10.59, holdDrop: 38.39, standard: { ret: -1.81, dd: 27.05, ddClosed: 24.59, trades: 216, win: 24.07, fees: 2.54 }, own: { ret: -3.38, dd: 20.57, ddClosed: 17.35, trades: 173, win: 30.06, fees: 2.56 },
+  '4h': { range: [-18.21, 18], up: 1, from: '2025-08-02', to: '2026-10-13', block: '5 months', better: 1, adopt: false, hold: -10.59, holdDrop: 38.39, fillCost: 1.36, standard: { ret: -1.81, dd: 27.05, ddClosed: 24.59, trades: 216, win: 24.07, fees: 2.54 }, own: { ret: -3.38, dd: 20.57, ddClosed: 17.35, trades: 173, win: 30.06, fees: 2.56 },
     byRisk: { 0.5: { ret: 2, lo: -4.63, hi: 13.71, dd: 11.6, up: 1, trades: 72 }, 1: { ret: -0.09, lo: -13.14, hi: 17.99, dd: 21.33, up: 1, trades: 72 }, 1.5: { ret: -1.81, lo: -18.21, hi: 18, dd: 27.05, up: 1, trades: 72 }, 2: { ret: -5.47, lo: -19.63, hi: 10.45, dd: 30.66, up: 1, trades: 72 }, 3: { ret: -9.65, lo: -19.47, hi: 7.39, dd: 34.36, up: 1, trades: 70 }, 5: { ret: -14.43, lo: -24.85, hi: -0.27, dd: 38.26, up: 0, trades: 67 } },
     signals: { n: 547, winPct: 21.39, avgR: -0.06, avgWinR: 2.49, avgLossR: -0.75, holdMedian: 22, avgPct: -0.41, randPct: 0.22, H: 6, fwdN: 547, fwdUpPct: 46.62, fwdLo: 42.48, fwdHi: 50.81, baseUpPct: 47.61 } },
-  '1d': { range: [3.34, 23.28], up: 3, from: '2022-04-08', to: '2026-10-13', block: '18 months', better: 2, adopt: true, hold: 10.71, holdDrop: 63.97, standard: { ret: 12.66, dd: 19.88, ddClosed: 17, trades: 133, win: 27.82, fees: 0.97 }, own: { ret: 16.26, dd: 19.69, ddClosed: 14.22, trades: 176, win: 34.66, fees: 2.55 },
+  '1d': { range: [3.34, 23.28], up: 3, from: '2022-04-08', to: '2026-10-13', block: '18 months', better: 2, adopt: true, hold: 10.71, holdDrop: 63.97, fillCost: 1.18, standard: { ret: 12.66, dd: 19.88, ddClosed: 17, trades: 133, win: 27.82, fees: 0.97 }, own: { ret: 16.26, dd: 19.69, ddClosed: 14.22, trades: 176, win: 34.66, fees: 2.55 },
     byRisk: { 0.5: { ret: 8.7, lo: 1.02, hi: 13.68, dd: 7.8, up: 3, trades: 59 }, 1: { ret: 15.85, lo: 2.19, hi: 23.65, dd: 14.37, up: 3, trades: 59 }, 1.5: { ret: 16.26, lo: 3.34, hi: 23.28, dd: 19.69, up: 3, trades: 59 }, 2: { ret: 17.13, lo: 4.75, hi: 33.82, dd: 25.03, up: 3, trades: 59 }, 3: { ret: 9.09, lo: 3.3, hi: 19.72, dd: 30.42, up: 3, trades: 59 }, 5: { ret: 9.25, lo: -0.97, hi: 23.59, dd: 31.6, up: 2, trades: 56 } },
     signals: { n: 327, winPct: 31.19, avgR: 0.2, avgWinR: 2.54, avgLossR: -0.86, holdMedian: 8, avgPct: 0.87, randPct: 1.78, H: 7, fwdN: 325, fwdUpPct: 48.31, fwdLo: 42.93, fwdHi: 53.73, baseUpPct: 46.93 } },
 };
@@ -182,7 +185,7 @@ export function expectedYield(cfg) {
     at = { ret: mix('ret'), lo: mix('lo'), hi: mix('hi'), dd: mix('dd'), up: Math.min(a.up, b.up), trades: Math.round(mix('trades')) };
   }
   return {
-    chart: cfg.interval, block: x.block, periods: CHART_TESTED.blocks, hold: x.hold, holdDrop: x.holdDrop ?? null, risk, measured: levels.length > 0,
+    chart: cfg.interval, block: x.block, periods: CHART_TESTED.blocks, hold: x.hold, holdDrop: x.holdDrop ?? null, fillCost: x.fillCost ?? null, risk, measured: levels.length > 0,
     levels: levels.map((l) => ({ risk: l, ...x.byRisk[l] })), coins: CHART_TESTED.coins,
     ...at, capsDiffer: (cfg.maxPositionPct ?? 25) !== 25 || (cfg.maxPositions ?? 5) !== 5,
   };

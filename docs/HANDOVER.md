@@ -223,6 +223,11 @@ Found by reading a live account that lost 20% (63 trades, 3 targets):
   SX"), so it now trades that pick — the test pins shipped rules to the published figures.
 - AI-signal records (shipped rules): higher H candles after a buy 15m 45.7% vs 50.4% any
   candle, 1h 46.3% vs 50.4%, 4h 46.6% vs 47.6%, 1d 48.3% vs 46.9% — still no edge.
+- Fills: the tests fill at the candle's price with the 0.1% fee and nothing for spread or
+  slippage. Re-run 38383284767 (same decisions) also ran the shipped rules with fills 0.05%
+  worse each way: −1.55 points a block on 15m, −1.62 on 1h (a quarter of its +6.5%), −1.36
+  on 4h, −1.18 on 1d (`fillCost`, shown on the Trading page and in the yield box). The test
+  coins are today's survivors, which flatters every result; the page says so too.
 - That run's volScale A/B on 15m used the standard rules (shipped then); `SHIPPED` now says
   own, so the next run tests 15m's own rules.
 - `PER_COIN_RULES` re-run the same way (job `selection`, run 38381368027): each coin's own

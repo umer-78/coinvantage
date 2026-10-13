@@ -144,6 +144,7 @@ test('a chart trades its own rules only where the published test clears the bar 
     const dd = (r) => r.ddClosed ?? r.dd;
     const clears = x.better >= 2 && x.own.ret - x.standard.ret >= 1 && dd(x.own) <= dd(x.standard) + 5;
     assert.ok(x.holdDrop > 0 && x.own.dd > 0 && x.standard.dd > 0, `${iv}: drops measured`);
+    assert.ok(x.fillCost > 0, `${iv}: the cost of worse fills is measured`);
     assert.equal(x.adopt, clears, `${iv}: adopt must follow the bar`);
     assert.equal(Boolean(CHART_RULES[iv]), x.adopt, `${iv}: rules shipped exactly where adopted`);
   }
