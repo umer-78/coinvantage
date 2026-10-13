@@ -366,16 +366,14 @@ ones; each bar to adopt was written in the script before the run.
   rows fired before it fall back to the alert's side.
 
 ### Backend deploy as it stands (2026-10-13)
-The live edge function `cv` (version 14) is a one-line entry that imports
+The live edge function `cv` (version 15) is a one-line entry that imports
 `supabase/functions/cv/index.ts` from a pinned commit on raw.githubusercontent.com
-(096f103: the live AI-signal record and AI-signal alerts; version 13 was 53744e7), so what
-runs is exactly what was committed. Verified after the deploy: every call 200, the 00:35
-track run wrote both signal_log and ai_signal_log rows. To deploy newer server
+(2632934: the open-trade drop tracker, the re-measured tables with 15m's own rules, and
+`ai_alerts.triggered_action`; version 14 was 096f103, the live AI-signal record and alerts),
+so what runs is exactly what was committed. Verified after each deploy: every call 200 and
+the next track run writing signal_log and ai_signal_log rows. To deploy newer server
 code, change the hash in that entry (or run `tools/deploy-backend.sh`), then check
-`/functions/v1/cv/selftest` returns 200. Since then the repo's engine copy gained the
-open-trade drop tracker and new `CHART_TESTED`/`CHART_RULES` (15m's own rules); the server
-only logs the AI signal on 4h and 1d, whose rules did not change, so version 14 still logs
-the same signals — redeploy with the next server change. Vault holds `cron_secret` and
+`/functions/v1/cv/selftest` returns 200. Vault holds `cron_secret` and
 `telegram_webhook_secret` only: alerts cannot be delivered until a Telegram bot
 token, Resend key and Stripe keys are added under Admin → API keys.
 
