@@ -186,7 +186,7 @@ export function expectedYield(cfg) {
   }
   return {
     chart: cfg.interval, block: x.block, periods: CHART_TESTED.blocks, hold: x.hold, holdDrop: x.holdDrop ?? null, fillCost: x.fillCost ?? null, risk, measured: levels.length > 0,
-    levels: levels.map((l) => ({ risk: l, ...x.byRisk[l] })), coins: CHART_TESTED.coins,
+    levels: levels.map((l) => ({ risk: l, ...x.byRisk[l] })), coins: x.coins ?? CHART_TESTED.coins,
     ...at, capsDiffer: (cfg.maxPositionPct ?? 25) !== 25 || (cfg.maxPositions ?? 5) !== 5,
   };
 }

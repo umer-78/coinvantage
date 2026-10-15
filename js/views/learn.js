@@ -94,7 +94,7 @@ export async function render(el) {
               const ivs = rc ? Object.keys(rc).filter((k) => typeof rc[k]?.hit === 'number') : [];
               const avg = (k) => (ivs.length ? +(ivs.reduce((a, iv) => a + rc[iv][k], 0) / ivs.length).toFixed(1) : null);
               // the at-scale test only (5m–1d): 1m is not shown centred
-              const big = Object.values(FORECAST_TESTED.centred).filter((x) => x.coins === 24);
+              const big = Object.values(FORECAST_TESTED.centred).filter((x) => x.coins >= 20);
               const c80 = big.map((x) => x.band80);
               const n80 = big.reduce((a, x) => a + x.tests, 0);
               return `${ivs.length ? `<dt>Direction, latest test</dt><dd>${avg('hit')}% <span class="fine">vs ${avg('baseline')}% baseline · ${rc.tests.toLocaleString()} tests, ${esc(rc.measuredOn)}</span></dd>` : ''}

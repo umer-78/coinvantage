@@ -2,11 +2,14 @@
 //   - the Crypto Fear & Greed Index, daily since 2018 (api.alternative.me)
 //   - perpetual futures funding rates per coin, from Binance's public data
 //     archive (data.binance.vision: monthly files, 8-hourly settlements)
-// usage: COINS=BTC,ETH,... node tools/fetch-external.mjs external.json
+// usage: UNIVERSE=tools/universe.json (or COINS=BTC,ETH,...) node tools/fetch-external.mjs external.json
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
-const coins = (process.env.COINS || 'BTC,ETH').split(',');
+// every coin in UNIVERSE (coins with no Binance perpetual simply have no files)
+const coins = process.env.UNIVERSE
+  ? JSON.parse(fs.readFileSync(process.env.UNIVERSE, 'utf8')).coins.map((c) => c.symbol)
+  : (process.env.COINS || 'BTC,ETH').split(',');
 const out = { fng: [], funding: {} };
 const get = async (url, attempts = 4) => {
   for (let a = 0; a < attempts; a++) {
@@ -33,7 +36,7 @@ const tmp = fs.mkdtempSync('/tmp/funding-');
 for (const c of coins) {
   const rows = [];
   for (const ym of months) {
-    const zip = await get(`https://data.binance.vision/data/futures/um/monthly/fundingRate/${c}USDT/${c}USDT-fundingRate-${ym}.zip`, 2);
+    const zip = await get(`https://data.binance.vision/data/futures/um/monthly/fundingRate/${encodeURIComponent(c)}USDT/${encodeURIComponent(c)}USDT-fundingRate-${ym}.zip`, 2);
     if (!zip) continue;
     const file = `${tmp}/${c}-${ym}.zip`;
     fs.writeFileSync(file, zip);
