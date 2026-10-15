@@ -20,11 +20,19 @@ on:
 permissions:
   contents: read
 
+# Every coin in CoinGecko's top 150 (2026-10-15) with a live Binance USDT pair,
+# leaving out stablecoins, gold tokens and pairs Binance stopped trading (LIT,
+# BTT, XMR); SAND stays from the earlier 24-coin list. Coins listed too recently
+# for a test's window are skipped by that test. js/lib/autotrader.js
+# TESTED_COINS lists the coins the published figures were measured on.
+env:
+  COINS: BTC,ETH,BNB,XRP,SOL,TRX,ZEC,HYPE,DOGE,LINK,ADA,NEAR,XLM,BCH,UNI,LTC,AVAX,SUI,GRAM,HBAR,TAO,QNT,SHIB,ENA,AAVE,ONDO,PUMP,ASTER,DOT,WLD,WLFI,PEPE,ICP,MORPHO,SKY,ETC,ARB,JST,JUP,ALGO,POL,RENDER,ATOM,AERO,FIL,NEXO,ZRO,STX,INJ,APT,CAKE,NIGHT,PYTH,STRK,DASH,ETHFI,VET,TIA,CRV,TRUMP,RAY,PENGU,FET,VIRTUAL,SEI,XPL,FF,PENDLE,XTZ,LDO,SUN,OP,GNO,KITE,CFX,KAIA,SAND
+
 jobs:
   trader-rules:
     if: inputs.job == 'trader-rules' || inputs.job == 'all'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +59,7 @@ jobs:
   selection:
     if: inputs.job == 'selection' || inputs.job == 'all'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +71,6 @@ jobs:
       # are the ones that survived, which flatters any backtest that holds them.
       - name: Download candles
         env:
-          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
           PLAN: '{"1h":4000,"4h":3500,"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
 
@@ -83,7 +90,7 @@ jobs:
   trader-folds:
     if: github.event_name == 'schedule' || inputs.job == 'trader-folds' || inputs.job == 'all'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -93,7 +100,6 @@ jobs:
 
       - name: Download candles
         env:
-          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
           PLAN: '{"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
 
@@ -116,7 +122,7 @@ jobs:
   bands:
     if: github.event_name == 'schedule' || inputs.job == 'bands' || inputs.job == 'all'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
@@ -126,7 +132,6 @@ jobs:
 
       - name: Download candles
         env:
-          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
           # 5m and 15m go back ~100 days so their verdict is not decided by one week
           PLAN: '{"5m":30000,"15m":12000,"1h":4000,"4h":3500,"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
@@ -160,9 +165,7 @@ jobs:
   external:
     if: inputs.job == 'external' || inputs.job == 'all'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -196,7 +199,7 @@ jobs:
   momentum:
     if: github.event_name == 'schedule' || inputs.job == 'momentum' || inputs.job == 'all'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -206,7 +209,6 @@ jobs:
 
       - name: Download candles
         env:
-          COINS: BTC,ETH,BNB,SOL,XRP,DOGE,ADA,AVAX,LINK,LTC,TRX,DOT,BCH,ETC,XLM,ATOM,FIL,UNI,AAVE,NEAR,ALGO,HBAR,INJ,SAND
           PLAN: '{"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
 
@@ -223,8 +225,8 @@ jobs:
           name: momentum
           path: momentum.txt
 
-  # The forecast's release test re-run on fresh candles: 12 coins, six charts,
-  # 20 forecasts per coin and chart, split over six runners.
+  # The forecast's release test re-run on fresh candles: every coin, six charts,
+  # 10 forecasts per coin and chart, split over twenty runners.
   engine-data:
     if: github.event_name == 'schedule' || inputs.job == 'engine' || inputs.job == 'all'
     runs-on: ubuntu-latest
@@ -245,10 +247,10 @@ jobs:
   engine:
     needs: engine-data
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -258,7 +260,7 @@ jobs:
         with:
           name: engine-klines
       - name: Forecasts made walk-forward
-        run: node tools/evaluate-engine.mjs klines.json ${{ matrix.shard }} 6 out-${{ matrix.shard }}.json 20
+        run: node tools/evaluate-engine.mjs klines.json ${{ matrix.shard }} 20 out-${{ matrix.shard }}.json 10
       - uses: actions/upload-artifact@v4
         with:
           name: engine-out-${{ matrix.shard }}

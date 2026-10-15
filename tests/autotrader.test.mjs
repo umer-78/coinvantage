@@ -369,3 +369,12 @@ test('a new starting balance scales the account to what the AI would have done w
   assert.equal(rescaleAccount(big, 10000), big, 'the same balance changes nothing');
   assert.equal(big.startingBalance, 10000, 'the original is left as it was');
 });
+
+test('a trade whose fees are a large share of the distance to its stop can be skipped', () => {
+  const candles = climb(320);
+  const s = prepared('A', candles, (i) => (i === 250 ? 40 : 0));
+  const run = (o) => { const cfg = cfgWith(o); const st = newState(cfg); replaySymbol(st, cfg, 'A', candles, s); return Object.keys(st.open).length + st.closed.length; };
+  assert.equal(run({ atrStop: 1 }), 1, 'without the filter the close stop is traded');
+  assert.equal(run({ atrStop: 1, maxFeeShare: 0.2 }), 0, 'fees over a fifth of a close stop: skipped');
+  assert.equal(run({ atrStop: 30, maxFeeShare: 0.2 }), 1, 'a wide stop is still traded');
+});

@@ -694,6 +694,10 @@ function stepBar(state, cfg, s, i, score) {
   const stop = entry - cfg.atrStop * a;
   const riskPerUnit = entry - stop;
   if (riskPerUnit <= 0) return;
+  // The fees in and out as a share of the distance to the stop. Past about a
+  // fifth they eat what a 3R target makes on a third of trades, so the trade
+  // starts behind (tools/evaluate-trader-folds.mjs, off unless adopted there).
+  if (cfg.maxFeeShare > 0 && (2 * (cfg.feePct ?? 0.1)) / ((riskPerUnit / entry) * 100) > cfg.maxFeeShare) return;
 
   const riskCash = state.balance * (cfg.riskPct / 100);
   let notional = (riskCash / riskPerUnit) * entry;

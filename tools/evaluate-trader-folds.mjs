@@ -141,7 +141,9 @@ for (const iv of IVS) {
     // The same block with fills 0.05% worse each way (spread and slippage) on
     // top of the 0.1% fee: the tests otherwise fill at the candle's own price.
     const slip = { own: pack(account(pick, test, WARM, { feePct: 0.15 })), standard: pack(account({}, test, WARM, { feePct: 0.15 })) };
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), holdDrop: r2(holdDrop(test, WARM)), coins: test.length, byRisk, sig, vol, slip });
+    // the same block skipping entries whose fees are over a fifth of the stop distance
+    const fee = { own: pack(account(pick, test, WARM, { maxFeeShare: 0.2 })), standard: pack(account({}, test, WARM, { maxFeeShare: 0.2 })) };
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), holdDrop: r2(holdDrop(test, WARM)), coins: test.length, byRisk, sig, vol, slip, fee });
     console.error(`${iv} fold ${f} done`);
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
@@ -192,6 +194,20 @@ for (const iv of IVS) {
     folds: folds.map((x) => ({ without: { ret: baseOf(x).ret, dd: baseOf(x).dd, ddMarked: baseOf(x).ddMarked }, with: { ret: x.vol[sw].ret, dd: x.vol[sw].dd, ddMarked: x.vol[sw].ddMarked } })) };
   console.log(`  volatility-scaled risk (${sw} rules): better in ${vb} of 3; return ${retDiff >= 0 ? '+' : ''}${retDiff} pts, worst drop ${entry.volScale.ddDiff >= 0 ? '+' : ''}${entry.volScale.ddDiff} pts, objective ${gain >= 0 ? '+' : ''}${gain} → ${entry.volScale.adopt ? 'ADOPT' : 'KEEP OFF'}`);
   for (const x of folds) delete x.vol;
+  // Skipping entries whose fees in and out are over a fifth of the distance to
+  // the stop, A/B on the shipped rules. Decided before the run, with the same
+  // bar as the volatility-scaled risk: on for a chart only if it improves
+  // return − ½·worst drop in at least 2 of 3 blocks, by at least 1 point on
+  // average, with an average return no more than 1 point below without it.
+  const fb = folds.filter((x) => obj(x.fee[sw]) > obj(baseOf(x))).length;
+  const fGain = vMean((x) => obj(x.fee[sw]) - obj(baseOf(x)));
+  const fRet = vMean((x) => x.fee[sw].ret - baseOf(x).ret);
+  entry.feeFilter = { rules: sw, maxFeeShare: 0.2, better: fb, objGain: fGain, retDiff: fRet, ddDiff: vMean((x) => x.fee[sw].dd - baseOf(x).dd),
+    ddMarkedDiff: vMean((x) => x.fee[sw].ddMarked - baseOf(x).ddMarked), tradesDiff: vMean((x) => x.fee[sw].trades - baseOf(x).trades),
+    adopt: fb >= 2 && fGain >= 1 && fRet >= -1,
+    folds: folds.map((x) => ({ without: { ret: baseOf(x).ret, dd: baseOf(x).dd, trades: baseOf(x).trades }, with: { ret: x.fee[sw].ret, dd: x.fee[sw].dd, trades: x.fee[sw].trades } })) };
+  console.log(`  skip trades whose fees are over a fifth of the stop distance (${sw} rules): better in ${fb} of 3; return ${fRet >= 0 ? '+' : ''}${fRet} pts, worst drop ${entry.feeFilter.ddDiff >= 0 ? '+' : ''}${entry.feeFilter.ddDiff} pts, trades ${entry.feeFilter.tradesDiff >= 0 ? '+' : ''}${entry.feeFilter.tradesDiff} a block, objective ${fGain >= 0 ? '+' : ''}${fGain} → ${entry.feeFilter.adopt ? 'ADOPT' : 'KEEP OFF'}`);
+  for (const x of folds) delete x.fee;
   // what the shipped rules made with worse fills (no decision rides on it)
   const sOf = (x) => (sw === 'own' ? x.slip.own : x.slip.standard);
   entry.slippage = { rules: sw, extraPct: 0.05, ret: vMean((x) => sOf(x).ret), dd: vMean((x) => sOf(x).ddMarked), retLost: vMean((x) => baseOf(x).ret - sOf(x).ret) };

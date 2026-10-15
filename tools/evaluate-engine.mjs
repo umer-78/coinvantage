@@ -30,6 +30,8 @@ for (const key of keys) {
   const start = Math.max(1500, Math.floor(n * 0.6));
   const span = n - H - 1 - start;
   const count = +perSeries;
+  // a coin listed recently has no candles after the 1,500-candle window
+  if (span < count) { console.error(key, `too short (${n} candles)`); continue; }
   for (let k = 0; k < count; k++) {
     const o = start + Math.floor((span * k) / count);
     const f = forecast(c.slice(Math.max(0, o - 1499), o + 1), { horizon: H });
