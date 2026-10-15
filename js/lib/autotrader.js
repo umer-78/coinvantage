@@ -221,7 +221,11 @@ export function backtestSettings(cfg, candlesBySymbol) {
 
 /** Charts the trader can run on; only some were tested (CHART_TESTED). */
 export const TRADER_CHARTS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'];
-export const MAX_COINS = 30;
+// The whole top-100 list the coin picker shows. Every check fetches each coin's
+// candles (four at a time), so a long list only makes a check take longer.
+export const MAX_COINS = 100;
+/** The coins every published test ran on (COINS in .github/workflows/evaluate.yml). */
+export const TESTED_COINS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'LTC', 'TRX', 'DOT', 'BCH', 'ETC', 'XLM', 'ATOM', 'FIL', 'UNI', 'AAVE', 'NEAR', 'ALGO', 'HBAR', 'INJ', 'SAND'];
 
 /**
  * The tested chart that did best, judged in this order: the most test
@@ -247,6 +251,9 @@ export function settingsWarnings(cfg) {
   if (!tested) out.push(`The ${cfg.interval} chart was never tested with these rules, so there is no measured result to expect on it. ${Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard).join(', ')} were.`);
   if (cfg.strategy === 'custom') out.push('Your own rules have no published test. Use "Test these settings" to see how they did on recent candles before you rely on them.');
   if (cfg.riskPct > 2) out.push(`Risking ${cfg.riskPct}% a trade means ten losing trades in a row, which happens, cost about ${Math.round((1 - (1 - cfg.riskPct / 100) ** 10) * 100)}% of the account.`);
+  if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.`);
+  const untested = (cfg.universe || []).filter((sym) => !TESTED_COINS.includes(sym));
+  if (untested.length) out.push(`${untested.length} of your ${(cfg.universe || []).length} coins ${untested.length === 1 ? 'was' : 'were'} not in the tests (${TESTED_COINS.length} large coins), so the measured results say nothing about ${untested.length === 1 ? 'it' : 'them'}${untested.length <= 8 ? `: ${untested.join(', ')}` : ''}.`);
   if (cfg.maxPositions * (cfg.maxPositionPct ?? 25) < 50) out.push(`With at most ${cfg.maxPositions} open and ${cfg.maxPositionPct ?? 25}% in one coin, no more than ${cfg.maxPositions * (cfg.maxPositionPct ?? 25)}% of the account is ever invested.`);
   if ((cfg.universe || []).length < 3) out.push('With fewer than three coins the trader will often have nothing to do.');
   if ((cfg.feePct ?? 0.1) > 0.25) out.push(`A ${cfg.feePct}% fee each way is high: on short charts fees can take most of the gains.`);

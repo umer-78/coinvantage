@@ -283,6 +283,19 @@ Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measur
   per-coin rules). A chart change on an account with trades offers a fresh account at
   once (default) instead of silently waiting for Reset. Every change is written to the
   activity log ("Settings changed — …").
+- Exchange data (`js/api/http.js`, `js/api/market.js`): a host is rested for 15 s only after
+  three network failures in a row (it was one: a single timed-out or refused request made every
+  coin on that exchange fail for 15 s — no chart, no forecast, coins skipped by the AI). A coin is
+  remembered as listed nowhere (6 h) only when the exchanges answered; Gate.io's "no such pair"
+  has no CORS header, so it reads as a failed request and counts as a "no" only next to a real
+  answer from HTX or OKX. `knownVenue()`/`findVenue()` say where a coin's candles come from;
+  symbols no exchange uses (FIGR_HELOC) are listed nowhere. A coin page for such a coin says so.
+- Trader coin picker: coins listed nowhere show "no exchange" and cannot be picked; others not
+  on Binance show the exchange found. Quick picks: Top 10/20 and All (`MAX_COINS` = 100, the
+  whole list) pass over coins with no data; "The 24 tested" picks `TESTED_COINS`. "Use the best
+  tested setup" sets exactly what the published test ran (best chart, tested rules, 1.5% risk,
+  5 open, 25% a coin, the tested coins). `settingsWarnings()` also flags more than 25% in one
+  coin and coins outside the test.
 - A new starting balance applies at once (`rescaleAccount()`): the balance, every position
   and trade and the balance curve are scaled by the ratio, so results in % are unchanged;
   trades are sized as a share of the balance, so these are the trades the AI would have

@@ -314,7 +314,7 @@ const EX_FETCH = { gate: gateCandles, htx: htxCandles, okx: okxCandles };
 // two refused requests (and two console errors) on every visit. A miss on all
 // three is remembered briefly, so a blip does not hide a coin for long.
 const VENUE_KEY = 'exVenue';
-const VENUE_HIT_MS = 7 * 864e5, VENUE_MISS_MS = 3600e3;
+const VENUE_HIT_MS = 7 * 864e5, VENUE_MISS_MS = 6 * 3600e3;
 const venueMemo = () => load(VENUE_KEY, {}) || {};
 function rememberVenue(sym, ex) {
   // a note to save time next visit: failing to write it must never cost the candles
@@ -339,6 +339,28 @@ function rememberVenue(sym, ex) {
  * legitimate move of more than 10% while the socket is down would reject every
  * poll from the known-good exchange and silently freeze the chart.
  */
+/**
+ * Where this app gets a coin's candles: 'binance', 'gate', 'htx', 'okx', null
+ * (none of them lists it) or undefined (not known yet).
+ */
+export function knownVenue(coin) {
+  if (!coin?.symbol) return undefined;
+  if (coin.binance) return 'binance';
+  const sym = String(coin.symbol).toUpperCase();
+  if (!/^[A-Z0-9]{2,12}$/.test(sym)) return null;   // no exchange uses such a ticker (FIGR_HELOC)
+  const m = venueMemo()[sym];
+  if (!m) return undefined;
+  if (m.ex === null) return Date.now() - m.at < VENUE_MISS_MS ? null : undefined;
+  return Date.now() - m.at < VENUE_HIT_MS ? m.ex : undefined;
+}
+/** knownVenue, looking the coin up (a few small requests) if it is not known yet. */
+export async function findVenue(coin) {
+  const v = knownVenue(coin);
+  if (v !== undefined) return v;
+  const r = await exchangeCandles(coin, '1d', 60).catch(() => null);
+  return r ? r.source : knownVenue(coin);
+}
+
 export async function exchangeCandles(coin, interval, total = 500, only = null) {
   const sym = String(coin?.symbol || '').toUpperCase();
   const step = INTERVAL_MS[interval];
@@ -348,10 +370,12 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
   if (known && known.ex === null && Date.now() - known.at < VENUE_MISS_MS) return null;
   const first = known?.ex && Date.now() - known.at < VENUE_HIT_MS ? known.ex : null;
   const order = only ? [only] : [...new Set([first, 'gate', 'htx', 'okx'].filter(Boolean))];
+  const answered = [], silent = [];
   for (const ex of order) {
     try {
       const rows = (await EX_FETCH[ex](sym, EX_BAR[ex][interval], total, ttl, step))
         .filter((c) => [c.o, c.h, c.l, c.c].every((x) => Number.isFinite(x) && x > 0));
+      answered.push(ex);
       if (rows.length < (only ? 1 : 50)) continue;
       const last = rows[rows.length - 1];
       if (now() - last.t > step * 3 + 2 * 864e5) continue;
@@ -359,9 +383,17 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
       markLive();
       if (!only && first !== ex) rememberVenue(sym, ex);
       return { candles: rows.slice(-total), source: ex, venue: `${EX_NAME[ex]} ${sym}/USDT`, pair: null };
-    } catch { /* next exchange */ }
+    } catch (e) {
+      (!(e instanceof HttpError) || e.status === 0 || e.status === 429 || e.status >= 500 ? silent : answered).push(ex);
+    }
   }
-  if (!only) rememberVenue(sym, null);
+  // Remembered as listed nowhere only when the exchanges answered. HTX and OKX
+  // say "no such pair" in a reply the page can read; Gate.io's reply cannot be
+  // read from a web page, so it looks like a dropped connection and counts as
+  // a "no" only when another exchange did answer. A dropped connection used to
+  // be remembered too, hiding the coin's chart for an hour.
+  const unreached = silent.some((ex) => ex !== 'gate') || (silent.length > 0 && !answered.length);
+  if (!only && !unreached) rememberVenue(sym, null);
   return null;
 }
 
@@ -471,6 +503,12 @@ export async function getCandles(coin, interval = '1h', total = 500) {
   if (demoId) {
     markDemo('candles');
     return { candles: demo.demoCandles(demoId, interval, Math.min(total, 1500)), source: 'demo', pair };
+  }
+  if (!pair && typeof coin === 'object' && knownVenue(coin) === null) {
+    const sym = String(coin.symbol).toUpperCase();
+    const err = new HttpError(`${sym} is not traded on Binance, Gate.io, HTX or OKX, the exchanges this app reads, so it has no candles for a chart, indicators, a forecast or the AI.`, 404);
+    err.notListed = true;
+    throw err;
   }
   throw new HttpError('No price history available for this coin', 404);
 }

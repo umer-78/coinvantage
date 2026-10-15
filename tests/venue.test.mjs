@@ -12,12 +12,19 @@ function okxRows(n, price) {
   const end = Math.floor(Date.now() / H) * H;
   return Array.from({ length: n }, (_, k) => { const t = end - k * H; return [String(t), String(price), String(price * 1.01), String(price * 0.99), String(price), '100']; });
 }
-function mockNet(okxHas) {
+const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+// What each exchange says about a pair it does not list, as a web page sees it:
+// HTX and OKX answer in a readable reply; Gate.io's error reply has no CORS
+// header, so the browser reports it as a failed request.
+function mockNet(okxHas, { offline = false } = {}) {
   const calls = [];
   globalThis.fetch = async (url) => {
-    calls.push(String(url));
-    if (okxHas && String(url).includes('okx.com')) return new Response(JSON.stringify({ code: '0', data: okxRows(300, 2) }), { status: 200, headers: { 'content-type': 'application/json' } });
-    throw new TypeError('Failed to fetch'); // what a refused CORS request looks like
+    const u = String(url);
+    calls.push(u);
+    if (offline) throw new TypeError('Failed to fetch');
+    if (u.includes('okx.com')) return json(okxHas ? { code: '0', data: okxRows(300, 2) } : { code: '51001', data: [] });
+    if (u.includes('huobi')) return json({ status: 'error', 'err-msg': 'invalid symbol' });
+    throw new TypeError('Failed to fetch');
   };
   return calls;
 }
@@ -49,11 +56,20 @@ test('a coin no exchange has is not looked for again at once', async () => {
     shift += 20e3;
     calls = mockNet(false);
     assert.equal(await exchangeCandles(coin, '4h', 100), null);
-    assert.equal(calls.length, 0, 'remembered: no exchange is asked again within the hour');
-    shift += 2 * 3600e3;
+    assert.equal(calls.length, 0, 'remembered: no exchange is asked again for hours');
+    shift += 7 * 3600e3;
     calls = mockNet(false);
     await exchangeCandles(coin, '1d', 100);
-    assert.ok(calls.length >= 3, 'after an hour it looks again');
+    assert.ok(calls.length >= 3, 'after six hours it looks again');
+    // with no connection at all nothing is remembered: the next look asks again
+    const gone = { symbol: 'OFFLINE', price: 1 };
+    shift += 7 * 3600e3;
+    calls = mockNet(false, { offline: true });
+    assert.equal(await exchangeCandles(gone, '1h', 100), null);
+    shift += 20e3;
+    calls = mockNet(false);
+    await exchangeCandles(gone, '4h', 100);
+    assert.ok(calls.length >= 3, 'a dropped connection is not "listed nowhere"');
     // a known source asked for by name is always tried
     shift += 20e3;
     calls = mockNet(false);

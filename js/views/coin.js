@@ -457,7 +457,7 @@ export async function render(el, [symParam]) {
       runBt();
     } catch (err) {
       $('#chart', el).innerHTML = errorBox(err.message);
-      $('#signalCard', el).innerHTML = `<h3>Indicator reading unavailable</h3><p class="muted">${esc(err.message || 'The candle source did not return enough data.')}</p><p class="fine">Try another timeframe, or retry when the market source is reachable.</p>`;
+      $('#signalCard', el).innerHTML = `<h3>Indicator reading unavailable</h3><p class="muted">${esc(err.message || 'The candle source did not return enough data.')}</p><p class="fine">${err.notListed ? 'Its price above comes from CoinGecko, which has no candles for it either. The AI trader skips it too.' : 'Try another timeframe, or retry when the market source is reachable.'}</p>`;
       $('#fcCard', el).innerHTML = '<h3>AI forecast unavailable</h3><p class="muted">A forecast needs the same candle history as the chart, so none was generated.</p>';
     }
   }

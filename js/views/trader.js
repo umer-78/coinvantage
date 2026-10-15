@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
-import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS } from '../api/market.js';
-import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
+import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS, knownVenue, findVenue } from '../api/market.js';
+import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
@@ -320,6 +320,8 @@ export async function render(el) {
     await pool(syms, 4, async (sym) => {
       const coin = all.find((c) => c.symbol === sym);
       if (!coin || st.disposed) return;
+      // listed on none of the exchanges it reads: nothing to fetch
+      if (knownVenue(coin) === null && !state.open[sym]) { fetched.set(sym, new Error('not listed')); return; }
       try { fetched.set(sym, await getCandles(coin, runCfg.interval, 500)); } catch (err) { fetched.set(sym, err); }
     });
     for (const sym of syms) {
@@ -825,9 +827,10 @@ export async function render(el) {
 
   // Coins on the AI's list it cannot trade: none of the exchanges it reads has
   // them (two checks in a row), or only CoinGecko's sparse prices do.
+  const unlisted = (sym) => knownVenue(all.find((c) => c.symbol === sym)) === null;
   function untradable() {
     const streak = load(NODATA_KEY, {});
-    const noData = cfg.universe.filter((s) => (streak[s] || 0) >= 2);
+    const noData = cfg.universe.filter((s) => (streak[s] || 0) >= 2 || unlisted(s));
     const sparse = cfg.universe.filter((s) => st.noExchange.includes(s) && !noData.includes(s));
     return { noData, sparse, all: [...noData, ...sparse] };
   }
@@ -837,7 +840,7 @@ export async function render(el) {
     const n = u.all.length;
     return `<div class="card" style="border-color:var(--warn)" id="untradable">
       <p style="margin:0"><b>${n} coin${n > 1 ? 's' : ''} on the AI's list can't be traded, so ${n > 1 ? 'they are' : 'it is'} skipped on every check.</b>
-      ${u.noData.length ? `${esc(u.noData.join(', '))}: no price data from any exchange it reads. ` : ''}${u.sparse.length ? `${esc(u.sparse.join(', '))}: only occasional CoinGecko prices, too sparse to trade on. ` : ''}The rest of the list is unaffected.</p>
+      ${u.noData.length ? `${esc(u.noData.join(', '))}: no price data from the exchanges it reads (Binance, Gate.io, HTX, OKX). ` : ''}${u.sparse.length ? `${esc(u.sparse.join(', '))}: only occasional CoinGecko prices, too sparse to trade on. ` : ''}The rest of the list is unaffected.</p>
       <button class="btn sm mt" type="button" id="dropUntradable">Remove ${n > 1 ? 'them' : 'it'} from the list</button>
     </div>`;
   }
@@ -983,6 +986,17 @@ export async function render(el) {
     // every coin seen to have no data, on the list or not, so it is not picked again
     const streakNow = load(NODATA_KEY, {});
     const noDataNow = [...Object.keys(streakNow).filter((k) => streakNow[k] >= 2), ...st.noExchange];
+    // A coin none of the exchanges lists cannot be picked: CoinGecko's top 100
+    // includes some (FIGR_HELOC, a tokenised home loan), and the quick picks
+    // used to add them.
+    const VENUE = { gate: 'Gate.io', htx: 'HTX', okx: 'OKX' };
+    const venueTag = (c) => {
+      const v = knownVenue(c);
+      if (v === null) return ' <small class="down" title="Not traded on Binance, Gate.io, HTX or OKX, the exchanges this app reads, so there is no price data to trade on">no exchange</small>';
+      if (noDataNow.includes(c.symbol)) return ' <small class="down" title="no price data the AI can trade on">no data</small>';
+      if (v === 'binance') return '';
+      return v ? ` <small class="muted" title="not on Binance: candles come from ${VENUE[v]}">${VENUE[v]}</small>` : ' <small class="muted" title="not on Binance: looking for it on Gate.io, HTX and OKX">checking…</small>';
+    };
     const best = bestTestedChart();
     const own = cfg.custom ? { ...CUSTOM_DEFAULT, ...cfg.custom } : { ...CUSTOM_DEFAULT };
     const exitOf = (r) => (r.trailAtr ? `t${r.trailAtr}` : `r${r.rMultiple}`);
@@ -1030,9 +1044,9 @@ export async function render(el) {
         </fieldset>
         <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Coins</b> <span id="coinCount"></span></legend>
           <div class="row" style="gap:6px;flex-wrap:wrap"><input class="inp" id="coinFind" placeholder="Find a coin" aria-label="Find a coin" style="flex:1;min-width:140px">
-            <button class="btn sm" type="button" data-pick="10">Top 10</button><button class="btn sm" type="button" data-pick="20">Top 20</button><button class="btn sm" type="button" data-pick="own">Coins with own rules</button><button class="btn sm" type="button" data-pick="0">Clear</button></div>
+            <button class="btn sm" type="button" data-pick="10">Top 10</button><button class="btn sm" type="button" data-pick="20">Top 20</button><button class="btn sm" type="button" data-pick="all">All</button><button class="btn sm" type="button" data-pick="tested" title="The ${TESTED_COINS.length} coins the published results were measured on">The ${TESTED_COINS.length} tested</button><button class="btn sm" type="button" data-pick="own">Coins with own rules</button><button class="btn sm" type="button" data-pick="0">Clear</button></div>
           <div id="coinGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px">
-            ${coins.map((c) => `<label class="fine" style="display:flex;gap:6px;align-items:center" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}${noDataNow.includes(c.symbol) ? ' <small class="down" title="no price data the AI can trade on">no data</small>' : c.binance ? '' : ' <small class="muted" title="not on Binance: candles come from Gate.io, HTX or OKX if any lists it">other exchange</small>'}</label>`).join('')}
+            ${coins.map((c) => `<label class="fine" style="display:flex;gap:6px;align-items:center" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : knownVenue(c) === null ? 'disabled' : ''} ${noDataNow.includes(c.symbol) || knownVenue(c) === null ? 'data-nodata="1"' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}<span data-venue>${venueTag(c)}</span></label>`).join('')}
           </div>
           ${(cfg.excluded || []).length ? `<label class="row fine" style="gap:8px"><input type="checkbox" name="unbench"><span>Trade the coins the self-review benched again (${esc(cfg.excluded.join(', '))})</span></label>` : ''}
           <p class="fine" style="margin:0">Up to ${MAX_COINS} coins. ★ = has its own daily rules. Coins with no exchange candles are skipped at each check and named in the activity log.</p>
@@ -1041,6 +1055,16 @@ export async function render(el) {
         <div id="testOut"></div>
       </form>`);
     const f = $('#cf', m.el);
+    // Coins Binance does not list are looked up on Gate.io, HTX and OKX (a few
+    // small requests each, remembered for days); the grid says what was found.
+    pool(coins.filter((c) => knownVenue(c) === undefined), 3, async (c) => {
+      const v = await findVenue(c);
+      const row = f.isConnected && f.querySelector(`#coinGrid [data-coin="${CSS.escape(c.symbol)}"]`);
+      if (!row) return;
+      row.querySelector('[data-venue]').innerHTML = venueTag(c);
+      const box = row.querySelector('input');
+      if (v === null) { box.dataset.nodata = '1'; if (!box.checked) box.disabled = true; }
+    });
     const read = () => {
       const picks = [...f.querySelectorAll('#coinGrid input:checked')].map((x) => x.value);
       const exit = f.exit.value;
@@ -1076,8 +1100,11 @@ export async function render(el) {
       f.interval.value = best.iv;
       f.querySelector('input[name="strategy"][value="tested"]').checked = true;
       f.ownRules.checked = true;
-      f.riskPct.value = Math.min(2, +f.riskPct.value || 1.5);
-      if (read().universe.length < 5) for (const x of [...f.querySelectorAll('#coinGrid input')].slice(0, 10)) x.checked = true;
+      // exactly what the published test ran: its risk, position limits and coins
+      f.riskPct.value = DEFAULT_CONFIG.riskPct;
+      f.maxPositions.value = DEFAULT_CONFIG.maxPositions;
+      f.maxPositionPct.value = DEFAULT_CONFIG.maxPositionPct;
+      for (const x of f.querySelectorAll('#coinGrid input')) x.checked = !x.disabled && TESTED_COINS.includes(x.value);
       refresh();
     });
     f.addEventListener('input', refresh);
@@ -1089,7 +1116,10 @@ export async function render(el) {
     for (const b of f.querySelectorAll('[data-pick]')) b.addEventListener('click', () => {
       const v = b.dataset.pick;
       const boxes = [...f.querySelectorAll('#coinGrid input')];
-      boxes.forEach((x, i) => { x.checked = v === 'own' ? !!PER_COIN_RULES.rules[x.value] : i < +v; });
+      // the top N coins it can trade: ones with no price data are passed over
+      let n = 0;
+      const want = (x) => (v === 'own' ? !!PER_COIN_RULES.rules[x.value] : v === 'tested' ? TESTED_COINS.includes(x.value) : v === 'all' ? n++ < MAX_COINS : n++ < +v);
+      boxes.forEach((x) => { x.checked = !x.disabled && !x.dataset.nodata && want(x); });
       refresh();
     });
     $('#testCfg', m.el).addEventListener('click', async () => {

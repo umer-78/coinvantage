@@ -4,6 +4,7 @@
 const mem = new Map();
 const inflight = new Map();
 const hostDown = new Map();
+const hostFails = new Map();   // host -> network failures in a row
 const lastCall = new Map();
 const SPACING = { 'api.coingecko.com': 1500 };
 
@@ -33,6 +34,7 @@ async function rawFetch(url, { timeout = 10000, method = 'GET', body, headers } 
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetch(url, { method, body, headers, signal: ctrl.signal });
+    hostFails.delete(host);   // it answered, so it is up
     if (res.status === 429) {
       hostDown.set(host, Date.now() + 20000);
       throw new HttpError(`${host} rate limit reached`, 429);
@@ -41,7 +43,11 @@ async function rawFetch(url, { timeout = 10000, method = 'GET', body, headers } 
     return await res.json();
   } catch (err) {
     if (err instanceof HttpError) throw err;
-    hostDown.set(host, Date.now() + 15000);
+    // Three failures in a row take a host out for 15 s. It used to be one: on a
+    // slow connection a single timed-out request made every coin on that
+    // exchange fail for 15 s — no chart, no forecast, coins skipped by the AI.
+    const n = (hostFails.get(host) || 0) + 1;
+    if (n >= 3) { hostDown.set(host, Date.now() + 15000); hostFails.delete(host); } else hostFails.set(host, n);
     throw new HttpError(err.name === 'AbortError' ? `${host} timed out` : `${host} unreachable`, 0);
   } finally {
     clearTimeout(timer);

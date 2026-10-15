@@ -204,6 +204,9 @@ test('your own rules are traded as you set them; the best tested chart and the w
   const w = settingsWarnings({ ...DEFAULT_CONFIG, interval: '30m', strategy: 'custom', riskPct: 3, universe: ['BTC'] });
   assert.ok(w.some((x) => /never tested/.test(x)) && w.some((x) => /no published test/.test(x)) && w.some((x) => /ten losing trades/.test(x)) && w.some((x) => /fewer than three/.test(x)));
   assert.deepEqual(settingsWarnings({ ...DEFAULT_CONFIG, interval: '1d', universe: ['BTC', 'ETH', 'SOL'] }), []);
+  const yours = settingsWarnings({ ...DEFAULT_CONFIG, interval: '15m', riskPct: 5, maxPositionPct: 100, universe: ['BTC', 'LEO', 'XMR'] });
+  assert.ok(yours.some((x) => /Up to 100% in one coin; the tests allowed 25%/.test(x)), 'all-in on one coin is flagged');
+  assert.ok(yours.some((x) => /2 of your 3 coins were not in the tests .*: LEO, XMR\./.test(x)), 'coins outside the test are named');
   // the settings test replays them like the live account
   const by = { A: climb(320), B: climb(320) };
   const bt = backtestSettings({ ...DEFAULT_CONFIG, trendFilter: false, entryScore: -100 }, by);
