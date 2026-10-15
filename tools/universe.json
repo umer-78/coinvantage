@@ -1,0 +1,479 @@
+{
+ "builtOn": "2026-10-15",
+ "source": "CoinGecko's top 150 by market value on 2026-10-15. Each coin's candles come from where the app gets them: Binance if it trades there, else the first of Gate.io, HTX and OKX that lists it at a price within 10% of CoinGecko's. Stablecoins, tokenised funds and gold tokens are left out (the app does not trade them); so are coins none of those exchanges lists, named in noData. SAND stays from the earlier 24-coin list.",
+ "coins": [
+  {
+   "symbol": "BTC",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ETH",
+   "venue": "binance"
+  },
+  {
+   "symbol": "BNB",
+   "venue": "binance"
+  },
+  {
+   "symbol": "XRP",
+   "venue": "binance"
+  },
+  {
+   "symbol": "SOL",
+   "venue": "binance"
+  },
+  {
+   "symbol": "TRX",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ZEC",
+   "venue": "binance"
+  },
+  {
+   "symbol": "HYPE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "DOGE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "XMR",
+   "venue": "htx"
+  },
+  {
+   "symbol": "LINK",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ADA",
+   "venue": "binance"
+  },
+  {
+   "symbol": "LEO",
+   "venue": "gate"
+  },
+  {
+   "symbol": "NEAR",
+   "venue": "binance"
+  },
+  {
+   "symbol": "XLM",
+   "venue": "binance"
+  },
+  {
+   "symbol": "RAIN",
+   "venue": "gate"
+  },
+  {
+   "symbol": "BCH",
+   "venue": "binance"
+  },
+  {
+   "symbol": "UNI",
+   "venue": "binance"
+  },
+  {
+   "symbol": "LTC",
+   "venue": "binance"
+  },
+  {
+   "symbol": "AVAX",
+   "venue": "binance"
+  },
+  {
+   "symbol": "CC",
+   "venue": "gate"
+  },
+  {
+   "symbol": "SUI",
+   "venue": "binance"
+  },
+  {
+   "symbol": "GRAM",
+   "venue": "binance"
+  },
+  {
+   "symbol": "HBAR",
+   "venue": "binance"
+  },
+  {
+   "symbol": "TAO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "QNT",
+   "venue": "binance"
+  },
+  {
+   "symbol": "SHIB",
+   "venue": "binance"
+  },
+  {
+   "symbol": "BTW",
+   "venue": "gate"
+  },
+  {
+   "symbol": "CRO",
+   "venue": "gate"
+  },
+  {
+   "symbol": "ENA",
+   "venue": "binance"
+  },
+  {
+   "symbol": "OKB",
+   "venue": "gate"
+  },
+  {
+   "symbol": "AAVE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ONDO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "PUMP",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ASTER",
+   "venue": "binance"
+  },
+  {
+   "symbol": "M",
+   "venue": "gate"
+  },
+  {
+   "symbol": "DOT",
+   "venue": "binance"
+  },
+  {
+   "symbol": "WLD",
+   "venue": "binance"
+  },
+  {
+   "symbol": "WLFI",
+   "venue": "binance"
+  },
+  {
+   "symbol": "MNT",
+   "venue": "gate"
+  },
+  {
+   "symbol": "PEPE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ICP",
+   "venue": "binance"
+  },
+  {
+   "symbol": "MORPHO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "SKY",
+   "venue": "binance"
+  },
+  {
+   "symbol": "HTX",
+   "venue": "gate"
+  },
+  {
+   "symbol": "ETC",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ARB",
+   "venue": "binance"
+  },
+  {
+   "symbol": "VVV",
+   "venue": "gate"
+  },
+  {
+   "symbol": "JST",
+   "venue": "binance"
+  },
+  {
+   "symbol": "GT",
+   "venue": "gate"
+  },
+  {
+   "symbol": "JUP",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ALGO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "POL",
+   "venue": "binance"
+  },
+  {
+   "symbol": "RENDER",
+   "venue": "binance"
+  },
+  {
+   "symbol": "KAS",
+   "venue": "gate"
+  },
+  {
+   "symbol": "ATOM",
+   "venue": "binance"
+  },
+  {
+   "symbol": "PI",
+   "venue": "gate"
+  },
+  {
+   "symbol": "AERO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "FIL",
+   "venue": "binance"
+  },
+  {
+   "symbol": "NEXO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ZRO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "LIT",
+   "venue": "gate"
+  },
+  {
+   "symbol": "STX",
+   "venue": "binance"
+  },
+  {
+   "symbol": "INJ",
+   "venue": "binance"
+  },
+  {
+   "symbol": "STABLE",
+   "venue": "gate"
+  },
+  {
+   "symbol": "APT",
+   "venue": "binance"
+  },
+  {
+   "symbol": "CAKE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "NIGHT",
+   "venue": "binance"
+  },
+  {
+   "symbol": "PYTH",
+   "venue": "binance"
+  },
+  {
+   "symbol": "XDC",
+   "venue": "gate"
+  },
+  {
+   "symbol": "AKE",
+   "venue": "gate"
+  },
+  {
+   "symbol": "BDX",
+   "venue": "gate"
+  },
+  {
+   "symbol": "STRK",
+   "venue": "binance"
+  },
+  {
+   "symbol": "DASH",
+   "venue": "binance"
+  },
+  {
+   "symbol": "ETHFI",
+   "venue": "binance"
+  },
+  {
+   "symbol": "VET",
+   "venue": "binance"
+  },
+  {
+   "symbol": "FLR",
+   "venue": "gate"
+  },
+  {
+   "symbol": "TIA",
+   "venue": "binance"
+  },
+  {
+   "symbol": "CRV",
+   "venue": "binance"
+  },
+  {
+   "symbol": "TRUMP",
+   "venue": "binance"
+  },
+  {
+   "symbol": "RAY",
+   "venue": "binance"
+  },
+  {
+   "symbol": "币安人生",
+   "venue": "binance"
+  },
+  {
+   "symbol": "PENGU",
+   "venue": "binance"
+  },
+  {
+   "symbol": "FET",
+   "venue": "binance"
+  },
+  {
+   "symbol": "GRASS",
+   "venue": "gate"
+  },
+  {
+   "symbol": "VIRTUAL",
+   "venue": "binance"
+  },
+  {
+   "symbol": "SEI",
+   "venue": "binance"
+  },
+  {
+   "symbol": "DRV",
+   "venue": "gate"
+  },
+  {
+   "symbol": "XPL",
+   "venue": "binance"
+  },
+  {
+   "symbol": "FF",
+   "venue": "binance"
+  },
+  {
+   "symbol": "BSV",
+   "venue": "gate"
+  },
+  {
+   "symbol": "PENDLE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "BTT",
+   "venue": "gate"
+  },
+  {
+   "symbol": "XTZ",
+   "venue": "binance"
+  },
+  {
+   "symbol": "SPX",
+   "venue": "gate"
+  },
+  {
+   "symbol": "LDO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "PIEVERSE",
+   "venue": "gate"
+  },
+  {
+   "symbol": "SUN",
+   "venue": "binance"
+  },
+  {
+   "symbol": "OP",
+   "venue": "binance"
+  },
+  {
+   "symbol": "GNO",
+   "venue": "binance"
+  },
+  {
+   "symbol": "KITE",
+   "venue": "binance"
+  },
+  {
+   "symbol": "CFX",
+   "venue": "binance"
+  },
+  {
+   "symbol": "UB",
+   "venue": "gate"
+  },
+  {
+   "symbol": "KAIA",
+   "venue": "binance"
+  },
+  {
+   "symbol": "CARDS",
+   "venue": "gate"
+  },
+  {
+   "symbol": "SAND",
+   "venue": "binance"
+  }
+ ],
+ "noData": {
+  "FIGR_HELOC": "a symbol no exchange uses; not traded on Binance, Gate.io, HTX or OKX",
+  "WBT": "only on MEXC, whose data a web page cannot read",
+  "BGB": "only on Bitget",
+  "KCS": "only on KuCoin",
+  "BCAP": "not traded on Binance, Gate.io, HTX or OKX",
+  "HASH": "not traded on Binance, Gate.io, HTX or OKX",
+  "OHM": "not traded on Binance, Gate.io, HTX or OKX",
+  "PRL": "Gate.io's PRL is a different token (price 18× off)"
+ },
+ "stable": [
+  "A7A5",
+  "APXUSD",
+  "BFUSD",
+  "BUIDL",
+  "DAI",
+  "EURC",
+  "EURSAFO",
+  "EUTBL",
+  "FDUSD",
+  "GHO",
+  "JAAA",
+  "JTRSY",
+  "KAU",
+  "OUSD",
+  "OUSG",
+  "PAXG",
+  "PYUSD",
+  "REUSD",
+  "RLUSD",
+  "SOFID",
+  "TUSD",
+  "U",
+  "USD0",
+  "USD1",
+  "USDC",
+  "USDD",
+  "USDE",
+  "USDF",
+  "USDG",
+  "USDGO",
+  "USDS",
+  "USDT",
+  "USDY",
+  "USTB",
+  "USYC",
+  "XAUT",
+  "YLDS"
+ ]
+}

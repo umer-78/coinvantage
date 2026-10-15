@@ -1,6 +1,8 @@
 node_modules/
 .DS_Store
 tools/*.json
+# the coins the evaluation runs on (symbols and exchanges, no market data)
+!tools/universe.json
 *.log
 cv-*.tgz
 *.tgz
