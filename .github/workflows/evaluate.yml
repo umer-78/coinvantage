@@ -229,8 +229,9 @@ jobs:
           name: momentum
           path: momentum.txt
 
-  # The trade signal and the trade plan on every coin: does a high score pick
-  # better entries than any candle (signals.js), which stop and target
+  # The trade signal and the trade plan on every coin: what each score reading
+  # was followed by, does a high score pick better entries than any candle
+  # (signals.js), which stop and target
   # distances pay (the plan's levels), and the one score band that once looked
   # tradeable, run as a strategy against random entries.
   signals:
@@ -245,10 +246,15 @@ jobs:
           node-version: "22"
 
       - name: Download candles
+        env:
+          PLAN: '{"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
 
+      - name: What each score reading was followed by
+        run: node tools/evaluate-score-buckets.mjs klines.json | tee signals.txt
+
       - name: Signal score against entering at any candle
-        run: node tools/evaluate-signal-edge.mjs klines.json | tee signals.txt
+        run: node tools/evaluate-signal-edge.mjs klines.json | tee -a signals.txt
 
       - name: Stop and target distances
         run: node tools/evaluate-geometry.mjs klines.json | tee -a signals.txt
