@@ -99,7 +99,7 @@ export async function render(el) {
               const n80 = big.reduce((a, x) => a + x.tests, 0);
               return `${ivs.length ? `<dt>Direction, latest test</dt><dd>${avg('hit')}% <span class="fine">vs ${avg('baseline')}% baseline · ${rc.tests.toLocaleString()} tests, ${esc(rc.measuredOn)}</span></dd>` : ''}
             <dt>Direction, release test</dt><dd>${TESTED_ACCURACY.all}% <span class="fine">vs ${TESTED_ACCURACY.allBaseline}% baseline · ${TESTED_ACCURACY.tests.toLocaleString()} tests</span></dd>
-            <dt>80% range held</dt><dd>${c80.length ? `${Math.min(...c80)}–${Math.max(...c80)}%` : '—'} <span class="fine">(target 80%; by chart, centred on today's price, ${n80.toLocaleString('en-US')} tests on 24 coins, ${esc(FORECAST_TESTED.centredMeasuredOn)}; ${TESTED_ACCURACY.bandsAll.band80}% in the release test)</span></dd>`;
+            <dt>80% range held</dt><dd>${c80.length ? `${Math.min(...c80)}–${Math.max(...c80)}%` : '—'} <span class="fine">(target 80%; by chart, centred on today's price, ${n80.toLocaleString('en-US')} tests on ${(() => { const k = big.map((x) => x.coins); const lo = Math.min(...k), hi = Math.max(...k); return lo === hi ? hi : `${lo}–${hi}`; })()} coins, ${esc(FORECAST_TESTED.centredMeasuredOn)}; ${TESTED_ACCURACY.bandsAll.band80}% in the release test)</span></dd>`;
             })()}
             <dt>90% range held</dt><dd>${TESTED_ACCURACY.bandsAll.band90}% <span class="fine">(target 90%)</span></dd>
             <dt>This device (last 50)</dt><dd>${fl.windows[50].pct === null ? '<span class="muted">not enough yet</span>' : `${fl.windows[50].pct}% <span class="fine">(${fl.windows[50].hits}/${fl.windows[50].total})</span>`}</dd>

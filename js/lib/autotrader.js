@@ -19,9 +19,11 @@ import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
 /**
  * What this ruleset actually did on real candles.
  *
- * Measured 2026-10-12 with tools/evaluate-trader-rules.mjs (the Evaluate
- * workflow): 12 coins, Binance candles (4,000 each on 15m and 1h, 3,500 on 4h,
- * 2,200 on 1d). All coins advance together, candle by candle, through the same
+ * Measured 2026-10-15 with tools/evaluate-trader-rules.mjs (the Evaluate
+ * workflow) on every coin the app trades that has the candles (106 on 15m,
+ * 104 on 1h, 103 on 4h, 83 on 1d), each from the exchange the app reads it on
+ * (Binance, Gate or HTX; 4,000 candles each on 15m and 1h, 3,500 on 4h, 2,200
+ * on 1d). All coins advance together, candle by candle, through the same
  * engine the live account runs, fees included; open positions at the end are
  * valued at the last close. The numbers are the NEWER half of each history,
  * which played no part in choosing anything.
@@ -30,19 +32,22 @@ import { scoreAt, labelFor, THRESHOLDS } from './signals.js';
  * entries, momentum confirmation, a filter that pauses buying while Bitcoin is
  * in a downtrend, stops of 1.5-3 ATR, fixed and trailing exits. The one with the
  * best average rank on the OLDER halves (`alt`) did worse than the current rules
- * on the newer halves on 4h and 1d and about the same on 1h, so the current
- * rules stay. On 15m only 3 of the 432 made money after fees.
+ * on the newer halves on 15m, 1h and 1d and better on 4h, so the current rules
+ * stay; the 12-coin run on 2026-10-12 decided the same. On 15m only 35 of the
+ * 432 made money after fees.
  *
  * The benchmark is equal-weight buy-and-hold of the same coins over the same
- * window: the rules beat it on 4h (a falling market) and not on the other three.
+ * window: the rules beat it on 15m and 1d and not on 1h or 4h, where holding
+ * made +60% and +161%. The coins are today's survivors, which flatters holding
+ * them and every backtest of them.
  */
 export const AUTOTRADER_TESTED = {
-  '15m': { pickedReturn: -6.26, buyHold: 1.81, maxDrawdownPct: 13.89, trades: 152, winRate: 23.0, feeDragPct: 6.7, from: '2026-09-21', to: '2026-10-12', alt: { ret: -4.8, dd: 9.63 }, madeMoney: 3 },
-  '1h': { pickedReturn: 11.86, buyHold: 36.55, maxDrawdownPct: 12.97, trades: 171, winRate: 29.8, feeDragPct: 7.7, from: '2026-07-20', to: '2026-10-12', alt: { ret: 11.34, dd: 9.87 }, madeMoney: 334 },
-  '4h': { pickedReturn: 3.98, buyHold: -12.35, maxDrawdownPct: 22.86, trades: 98, winRate: 25.5, feeDragPct: 3.6, from: '2025-12-24', to: '2026-10-12', alt: { ret: -4.06, dd: 20.22 }, madeMoney: 90 },
-  '1d': { pickedReturn: 110.31, buyHold: 123.26, maxDrawdownPct: 17.81, trades: 100, winRate: 35.0, feeDragPct: 3.8, from: '2023-10-09', to: '2026-10-12', alt: { ret: 70.84, dd: 18.09 }, madeMoney: 384 },
-  coins: 12, configs: 432, measuredOn: '2026-10-12',
-  altRules: 'breakout entry with momentum confirmation and the Bitcoin-trend filter, 3 ATR stop, 2R target',
+  '15m': { pickedReturn: 4.86, buyHold: 1.05, maxDrawdownPct: 17.8, trades: 222, winRate: 22.5, feeDragPct: 8.9, from: '2026-09-24', to: '2026-10-15', alt: { ret: -9.58, dd: 11.39 }, madeMoney: 35, coins: 106 },
+  '1h': { pickedReturn: 26.52, buyHold: 59.55, maxDrawdownPct: 22.02, trades: 209, winRate: 29.7, feeDragPct: 8.9, from: '2026-07-24', to: '2026-10-15', alt: { ret: 4.74, dd: 15.87 }, madeMoney: 172, coins: 104 },
+  '4h': { pickedReturn: 28.14, buyHold: 161.26, maxDrawdownPct: 29.44, trades: 178, winRate: 27.5, feeDragPct: 5.9, from: '2025-12-28', to: '2026-10-15', alt: { ret: 53.07, dd: 14.74 }, madeMoney: 218, coins: 103 },
+  '1d': { pickedReturn: 170.55, buyHold: 123.78, maxDrawdownPct: 21.79, trades: 128, winRate: 37.5, feeDragPct: 4.5, from: '2023-10-12', to: '2026-10-15', alt: { ret: 150.79, dd: 23.19 }, madeMoney: 384, coins: 83 },
+  coins: 106, configs: 432, measuredOn: '2026-10-15',
+  altRules: 'breakout entry with the Bitcoin-trend filter, 3 ATR stop, 2R target, no exit on a signal reversal',
   beatsBuyAndHold: false,
   // The self-review (js/lib/tradelearn.js), measured 2026-09-26 with
   // tools/evaluate-trader-live.mjs: it acted in 1 of 8 held-out runs (4h, older
@@ -224,8 +229,22 @@ export const TRADER_CHARTS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h',
 // The whole top-100 list the coin picker shows. Every check fetches each coin's
 // candles (four at a time), so a long list only makes a check take longer.
 export const MAX_COINS = 100;
-/** The coins every published test ran on (COINS in .github/workflows/evaluate.yml). */
-export const TESTED_COINS = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'LINK', 'LTC', 'TRX', 'DOT', 'BCH', 'ETC', 'XLM', 'ATOM', 'FIL', 'UNI', 'AAVE', 'NEAR', 'ALGO', 'HBAR', 'INJ', 'SAND'];
+/**
+ * The coins the published tests ran on: tools/universe.json, CoinGecko's top
+ * 150 on 2026-10-15 less stablecoins, tokenised funds and coins no exchange the
+ * app reads lists, each with candles from the exchange the app reads it on.
+ */
+export const TESTED_COINS = [
+  'BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'TRX', 'ZEC', 'HYPE', 'DOGE', 'XMR', 'LINK', 'ADA', 'LEO',
+  'NEAR', 'XLM', 'RAIN', 'BCH', 'UNI', 'LTC', 'AVAX', 'CC', 'SUI', 'GRAM', 'HBAR', 'TAO', 'QNT',
+  'SHIB', 'BTW', 'CRO', 'ENA', 'OKB', 'AAVE', 'ONDO', 'PUMP', 'ASTER', 'M', 'DOT', 'WLD', 'WLFI',
+  'MNT', 'PEPE', 'ICP', 'MORPHO', 'SKY', 'HTX', 'ETC', 'ARB', 'VVV', 'JST', 'GT', 'JUP', 'ALGO',
+  'POL', 'RENDER', 'KAS', 'ATOM', 'PI', 'AERO', 'FIL', 'NEXO', 'ZRO', 'LIT', 'STX', 'INJ',
+  'STABLE', 'APT', 'CAKE', 'NIGHT', 'PYTH', 'XDC', 'AKE', 'BDX', 'STRK', 'DASH', 'ETHFI', 'VET',
+  'FLR', 'TIA', 'CRV', 'TRUMP', 'RAY', '币安人生', 'PENGU', 'FET', 'GRASS', 'VIRTUAL', 'SEI', 'DRV',
+  'XPL', 'FF', 'BSV', 'PENDLE', 'BTT', 'XTZ', 'SPX', 'LDO', 'PIEVERSE', 'SUN', 'OP', 'GNO', 'KITE',
+  'CFX', 'UB', 'KAIA', 'CARDS', 'SAND',
+];
 
 /**
  * The tested chart that did best, judged in this order: the most test
@@ -253,7 +272,7 @@ export function settingsWarnings(cfg) {
   if (cfg.riskPct > 2) out.push(`Risking ${cfg.riskPct}% a trade means ten losing trades in a row, which happens, cost about ${Math.round((1 - (1 - cfg.riskPct / 100) ** 10) * 100)}% of the account.`);
   if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.`);
   const untested = (cfg.universe || []).filter((sym) => !TESTED_COINS.includes(sym));
-  if (untested.length) out.push(`${untested.length} of your ${(cfg.universe || []).length} coins ${untested.length === 1 ? 'was' : 'were'} not in the tests (${TESTED_COINS.length} large coins), so the measured results say nothing about ${untested.length === 1 ? 'it' : 'them'}${untested.length <= 8 ? `: ${untested.join(', ')}` : ''}.`);
+  if (untested.length) out.push(`${untested.length} of your ${(cfg.universe || []).length} coins ${untested.length === 1 ? 'was' : 'were'} not in the tests (${TESTED_COINS.length} of the largest coins), so the measured results say nothing about ${untested.length === 1 ? 'it' : 'them'}${untested.length <= 8 ? `: ${untested.join(', ')}` : ''}.`);
   if (cfg.maxPositions * (cfg.maxPositionPct ?? 25) < 50) out.push(`With at most ${cfg.maxPositions} open and ${cfg.maxPositionPct ?? 25}% in one coin, no more than ${cfg.maxPositions * (cfg.maxPositionPct ?? 25)}% of the account is ever invested.`);
   if ((cfg.universe || []).length < 3) out.push('With fewer than three coins the trader will often have nothing to do.');
   if ((cfg.feePct ?? 0.1) > 0.25) out.push(`A ${cfg.feePct}% fee each way is high: on short charts fees can take most of the gains.`);
@@ -262,53 +281,105 @@ export function settingsWarnings(cfg) {
 
 /**
  * Each coin's own rules for the daily chart, chosen on its own full daily
- * history by tools/evaluate-selection.mjs (24 coins, 216 rule sets each; a
- * coin keeps the daily rules unless others did better on it). On for daily
- * accounts unless switched off in Settings. Measured with everything chosen
- * on the older half of the data only (the daily rules too, picked the way the
+ * history by tools/evaluate-selection.mjs (216 rule sets each; a coin keeps
+ * the daily rules unless others did better on it). On for daily accounts
+ * unless switched off in Settings. Measured with everything chosen on the
+ * older half of the data only (the daily rules too, picked the way the
  * shipped ones were) and run on the newer half, all coins in one account.
- * First run (2026-10-12): +46.0% against +37.0% for the daily rules alone,
- * worst drop (closed trades) 33.2% against 29.3% — inside the bar set before
- * the test (no more than five points deeper), so switched on. Re-run a day
- * later (`tested`, with drops valued at every close too): +89.8% against
- * +33.3%, closed-trade drop 34.7% against 29.3% — 5.4 points, just outside
- * the bar, which would make them an opt-in. A published decision changes only
- * when two runs in a row agree, so they stay on until the next run; one long
- * account test swings this much with its start date. Holding all 24 coins
- * made +83.6% over the same years, with a worst drop of 72.2%. In a
- * walk-forward check over three periods each coin's own rules beat one shared
- * rule set in all three on daily (+3.2% against +1.1% a period); on 1h they
- * did not, and 4h, which had not, did in 2 of 3 in the re-run — daily only
- * until a second run agrees. The coins are today's survivors, which flatters
+ * The bar, set before the first test: more than the daily rules alone, with a
+ * worst drop (closed trades) no more than five points deeper.
+ * - 2026-10-12, 24 coins: +46.0% against +37.0%, drop 33.2% against 29.3%;
+ *   inside the bar, so switched on.
+ * - 2026-10-13, 24 coins: +89.8% against +33.3%, drop 34.7% against 29.3%;
+ *   5.4 points, just outside. One run, so the decision stood.
+ * - 2026-10-15, the 73 coins with enough daily history (`tested`): +265.0%
+ *   against +155.4%, drop 34.1% against 32.4%; inside the bar, so they stay on.
+ * Holding the same 73 coins made +97.3% over those years, with a worst drop of
+ * 64.9%. The walk-forward check disagrees: coin by coin over three periods
+ * (the 49 coins with enough history), each coin's own rules beat one shared
+ * rule set in only 1 of 3 on daily (+2.7% against +6.3% a period), where the
+ * 24-coin run had them better in all three. 1h was rejected in both runs; 4h
+ * was better in 2 of 3 periods both times but by 0.3 points a period this
+ * time, under the 1-point bar. So the account gain rests on a few coins, and
+ * the Settings switch says so. The coins are today's survivors, which flatters
  * every backtest of them.
  */
 export const PER_COIN_RULES = {
-  interval: '1d', measuredOn: '2026-10-13', coins: 24,
-  tested: { from: '2023-10-10', to: '2026-10-13', standard: { ret: 33.31, dd: 35.6, ddClosed: 29.25, trades: 136, winRate: 32.4 }, own: { ret: 89.77, dd: 40.15, ddClosed: 34.69, trades: 151, winRate: 32.5 }, hold: 83.6, holdDrop: 72.2, walkForward: { periods: 3, better: 3, own: 3.16, shared: 1.11 }, firstRun: { own: 46.04, standard: 36.95 } },
+  interval: '1d', measuredOn: '2026-10-15', coins: 73,
+  tested: { from: '2023-10-12', to: '2026-10-15', standard: { ret: 155.41, dd: 34.54, ddClosed: 32.44, trades: 266, winRate: 32.7 }, own: { ret: 265.03, dd: 34.13, ddClosed: 34.11, trades: 222, winRate: 32.9 }, hold: 97.31, holdDrop: 64.91, walkForward: { periods: 3, better: 1, own: 2.72, shared: 6.3, coins: 49 }, previousRun: { coins: 24, own: 89.77, standard: 33.31 } },
   rules: {
     BTC: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
-    ETH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    ETH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
     BNB: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
-    SOL: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
     XRP: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-    DOGE: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
-    ADA: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
-    AVAX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-    LINK: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
-    LTC: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    SOL: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
     TRX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
-    DOT: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-    BCH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
-    ETC: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: null },
-    XLM: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-    ATOM: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 2, trailAtr: null, signalExitBars: null },
-    FIL: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 2, trailAtr: null, signalExitBars: 2 },
-    UNI: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-    AAVE: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    ZEC: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    DOGE: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    XMR: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    LINK: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    ADA: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    LEO: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
     NEAR: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-    ALGO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    XLM: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    BCH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    UNI: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    LTC: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    AVAX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    SUI: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
     HBAR: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    TAO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    QNT: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    SHIB: { entryMode: 'breakout', momentumConfirm: false, trendFilter: true, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    CRO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    ENA: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    OKB: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    AAVE: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    DOT: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    WLD: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    MNT: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    PEPE: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    ICP: { entryMode: 'trend', momentumConfirm: false, trendFilter: true, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    HTX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: null },
+    ETC: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: null },
+    ARB: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    JST: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    GT: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    JUP: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    ALGO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    POL: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: 3, signalExitBars: null },
+    RENDER: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    KAS: { entryMode: 'breakout', momentumConfirm: false, trendFilter: true, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    ATOM: { entryMode: 'trend', momentumConfirm: true, trendFilter: true, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    FIL: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 2, trailAtr: null, signalExitBars: 2 },
+    NEXO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    ZRO: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 2, trailAtr: null, signalExitBars: 2 },
+    STX: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
     INJ: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    APT: { entryMode: 'trend', momentumConfirm: true, trendFilter: true, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    CAKE: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 2, trailAtr: null, signalExitBars: null },
+    PYTH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    XDC: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    BDX: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    STRK: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    DASH: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    ETHFI: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    VET: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    FLR: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 2, trailAtr: null, signalExitBars: 2 },
+    TIA: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 2, trailAtr: null, signalExitBars: 2 },
+    CRV: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 3, signalExitBars: null },
+    RAY: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    FET: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    SEI: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    BSV: { entryMode: 'breakout', momentumConfirm: true, trendFilter: true, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    PENDLE: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    BTT: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
+    XTZ: { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: null },
+    LDO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 2, rMultiple: 2, trailAtr: null, signalExitBars: null },
+    SUN: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: null },
+    OP: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
+    GNO: { entryMode: 'breakout', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
+    CFX: { entryMode: 'trend', momentumConfirm: true, trendFilter: false, atrStop: 3, rMultiple: 3, trailAtr: 4, signalExitBars: null },
     SAND: { entryMode: 'trend', momentumConfirm: false, trendFilter: false, atrStop: 1.5, rMultiple: 3, trailAtr: 3, signalExitBars: 2 },
   },
 };

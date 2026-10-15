@@ -1,15 +1,16 @@
 name: Evaluate
 
-# Re-measures the AI trader on fresh Binance candles. Start it from the Actions
-# tab (Run workflow) and pick which evaluation to run. The report is in the job
-# log and in the uploaded artifact; nothing is committed.
+# Re-measures the figures the app publishes (AI trader, forecast, signal, price
+# ranges) on fresh candles. Start it from the Actions tab (Run workflow) and
+# pick which evaluation to run. The report is in the job log and in the
+# uploaded artifact; nothing is committed.
 on:
   workflow_dispatch:
     inputs:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, all]
+        options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, signals, timing, all]
         default: selection
   # Once a month the main tests re-run on fresh candles, so the figures the app
   # publishes can be checked against the latest data (each job's summary shows
@@ -227,6 +228,80 @@ jobs:
           name: momentum
           path: momentum.txt
 
+  # The trade signal and the trade plan on every coin: does a high score pick
+  # better entries than any candle (signals.js), which stop and target
+  # distances pay (the plan's levels), and the one score band that once looked
+  # tradeable, run as a strategy against random entries.
+  signals:
+    if: inputs.job == 'signals' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download candles
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Signal score against entering at any candle
+        run: node tools/evaluate-signal-edge.mjs klines.json | tee signals.txt
+
+      - name: Stop and target distances
+        run: node tools/evaluate-geometry.mjs klines.json | tee -a signals.txt
+
+      - name: The 1h score band 45-59 as a strategy
+        run: node tools/evaluate-band-strategy.mjs klines.json | tee -a signals.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Signal and trade plan'; echo '```'; cat signals.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signals
+          path: signals.txt
+
+  # The forecast's timing claim, the compare-with-its-past matcher and the
+  # cross-coin model, on every coin and all six charts.
+  timing:
+    if: inputs.job == 'timing' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download candles
+        env:
+          PLAN: '{"1m":4000,"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Where the peak landed against where the forecast put it
+        run: node tools/evaluate-timing.mjs klines.json timing.json 12 | tee timing.txt
+
+      - name: The compare-with-its-past matcher against each coin's baseline
+        run: node tools/evaluate-analog.mjs klines.json | tee -a timing.txt
+
+      - name: One model trained across every coin against each coin's own
+        run: node tools/evaluate-pooled.mjs klines.json | tee -a timing.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Timing, history match, cross-coin model'; echo '```'; cat timing.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timing
+          path: timing.txt
+
   # The forecast's release test re-run on fresh candles: every coin, six charts,
   # 10 forecasts per coin and chart, split over twenty runners.
   engine-data:
@@ -283,11 +358,25 @@ jobs:
       - name: Hit rate, baseline and direction trust per chart
         run: node tools/report-engine.mjs out-*.json | tee engine.txt
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-klines
+
+      # The self-improving blend (js/lib/selfimprove.js), scored on the same
+      # forecasts: weights learned only from candles before each one.
+      - name: The learned indicator blend, walk-forward
+        run: |
+          node -e 'const fs = require("fs"); const a = []; for (const f of process.argv.slice(1)) a.push(...JSON.parse(fs.readFileSync(f, "utf8"))); fs.writeFileSync("engine-all.json", JSON.stringify(a));' out-*.json
+          node tools/evaluate-learning.mjs klines.json engine-all.json | tee learning.txt
+
       - name: Summary
         if: always()
         run: |
           { echo '### Forecast re-check on fresh candles'; echo '```'; grep -v '^JSON' engine.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '### Learned blend'; echo '```'; cat learning.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: engine-report
-          path: engine.txt
+          path: |
+            engine.txt
+            learning.txt
