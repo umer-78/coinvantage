@@ -378,3 +378,22 @@ test('a trade whose fees are a large share of the distance to its stop can be sk
   assert.equal(run({ atrStop: 1, maxFeeShare: 0.2 }), 0, 'fees over a fifth of a close stop: skipped');
   assert.equal(run({ atrStop: 30, maxFeeShare: 0.2 }), 1, 'a wide stop is still traded');
 });
+
+test('a coin priced below a millionth keeps its real prices, stops and results', () => {
+  // BTT trades near 0.0000004: six decimals made its entry 0 and every result infinite
+  const scale = 4e-9;
+  const candles = climb(320).map((c) => ({ ...c, o: c.o * scale, h: c.h * scale, l: c.l * scale, c: c.c * scale }));
+  const s = prepared('A', candles, (i) => (i === 250 ? 40 : i === 270 || i === 271 ? -40 : 0));
+  const cfg = cfgWith({ signalExitBars: 2 });
+  const st = newState(cfg);
+  replaySymbol(st, cfg, 'A', candles, s);
+  assert.equal(st.closed.length, 1);
+  const t = st.closed[0];
+  assert.ok(t.entry > 0 && Math.abs(t.entry / candles[250].c - 1) < 1e-9, `entry ${t.entry}`);
+  assert.ok(t.stop > 0 && t.stop < t.entry, `stop ${t.stop}`);
+  assert.ok(Number.isFinite(t.pnlPct) && Math.abs(t.pnlPct) < 20, `pnl ${t.pnlPct}%`);
+  // the same trade on a coin priced a billion times higher, in %
+  const big = newState(cfg);
+  replaySymbol(big, cfg, 'A', climb(320), prepared('A', climb(320), (i) => (i === 250 ? 40 : i === 270 || i === 271 ? -40 : 0)));
+  assert.ok(Math.abs(big.closed[0].pnlPct - t.pnlPct) < 1e-3, `${big.closed[0].pnlPct} vs ${t.pnlPct}`);
+});

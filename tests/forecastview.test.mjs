@@ -50,7 +50,8 @@ test('the daily range is drawn 5% wider, as tested; the other charts keep their 
 });
 
 test('the move-size call follows volatility now against the coin\'s normal, and is offered only where it was measured to help', () => {
-  assert.deepEqual(['1m', '5m', '15m', '1h', '4h', '1d'].filter(moveCallUseful), ['5m', '1h', '4h']);
+  // shown where it told big moves from small in two runs in a row: 4h failed on 106 coins, 15m has passed once
+  assert.deepEqual(['1m', '5m', '15m', '1h', '4h', '1d'].filter(moveCallUseful), ['5m', '1h']);
   // calm history, then a wild stretch at the end
   const mk = (n, wildFrom) => Array.from({ length: n }, (_, i) => ({ c: 100 * Math.exp(Math.sin(i * 1.7) * (i >= wildFrom ? 0.03 : 0.004)) }));
   const wild = moveSizeCall(mk(900, 860), 12, '1h');

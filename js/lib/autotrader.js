@@ -377,6 +377,10 @@ export function newState(cfg = DEFAULT_CONFIG, { liveFrom = null } = {}) {
 }
 
 const round = (v, dp = 6) => (Number.isFinite(v) ? +v.toFixed(dp) : v);
+// Prices keep ten significant digits at any size. Six decimals turned BTT
+// (about 0.0000004) into 0 and left PEPE and SHIB with one digit, so their
+// stops sat up to 20% away from where they were set and every result was off.
+const px = (v) => (Number.isFinite(v) ? +v.toPrecision(10) : v);
 
 /**
  * The same account as if it had started with `startingBalance`: the balance,
@@ -661,7 +665,7 @@ function stepBar(state, cfg, s, i, score) {
       if (cfg.trailAtr && atrArr[i]) {
         pos.high = Math.max(pos.high ?? pos.entry, c.h);
         const trail = pos.high - cfg.trailAtr * atrArr[i];
-        if (trail > pos.stop) pos.stop = round(trail);
+        if (trail > pos.stop) pos.stop = px(trail);
       }
       // break-even stop once the trade is +1R in profit
       const r = pos.entry - pos.initialStop;
@@ -716,8 +720,8 @@ function stepBar(state, cfg, s, i, score) {
   state.balance -= fee;
   state.open[symbol] = {
     symbol, side: 'long',
-    entry: round(entry), initialStop: round(stop), stop: round(stop),
-    tp: cfg.trailAtr ? null : round(entry + cfg.rMultiple * riskPerUnit),
+    entry: px(entry), initialStop: px(stop), stop: px(stop),
+    tp: cfg.trailAtr ? null : px(entry + cfg.rMultiple * riskPerUnit),
     qty: round(qty, 10), notional: round(notional, 2),
     openedAt: c.t, openScore: score, entryBar: cfg.entryMode === 'pullback' ? -cfg.entryScore : cfg.entryMode === 'breakout' ? null : cfg.entryScore, entryMode: cfg.entryMode || 'trend',
     movedToBreakEven: false, feePaid: round(fee, 4),
@@ -750,7 +754,7 @@ function closePosition(state, cfg, symbol, exitPrice, t, reason) {
   const pnl = gross - fee - entryFee;
   state.balance += p.real ? pnl : gross - fee;
   state.closed.push({
-    ...p, exit: round(exitPrice), exitAt: t, reason,
+    ...p, exit: px(exitPrice), exitAt: t, reason,
     pnl: round(pnl, 2), pnlPct: round((((exitPrice / p.entry) - 1) * 100) * dir, 3),
     feePaid: round((p.feePaid || 0) + fee, 4),
   });
@@ -779,7 +783,7 @@ export function openManual(state, cfg, symbol, price, { notional, stopPrice, tar
   state.balance -= fee;
   state.open[symbol] = {
     symbol, side: 'long', manual: true,
-    entry: round(price), initialStop: round(stop), stop: round(stop), tp: round(tp),
+    entry: px(price), initialStop: px(stop), stop: px(stop), tp: px(tp),
     qty: round(qty, 10), notional: round(size, 2),
     openedAt: at, openScore: null, movedToBreakEven: false, feePaid: round(fee, 4),
     // what the chart looked like when you bought, so the AI learning page can grade your buys too
@@ -811,7 +815,7 @@ export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry,
     if (state.open[symbol]) return { ok: false, error: `You already have an open ${symbol} trade recorded. Close it first, or record it as a closed trade.` };
     state.open[symbol] = {
       symbol, side, real: true,
-      entry: round(e), initialStop: null, stop: null, tp: null,
+      entry: px(e), initialStop: null, stop: null, tp: null,
       qty: round(q, 10), notional: round(notional, 2),
       openedAt, openScore: null, movedToBreakEven: false, feePaid: round(feePaid, 4), note,
     };
@@ -826,7 +830,7 @@ export function recordRealTrade(state, cfg, { symbol, side = 'long', qty, entry,
   state.balance += pnl;
   state.closed.push({
     symbol, side, real: true, note,
-    entry: round(e), exit: round(x), qty: round(q, 10), notional: round(notional, 2),
+    entry: px(e), exit: px(x), qty: round(q, 10), notional: round(notional, 2),
     openedAt, exitAt: closedAt || Date.now(), reason: 'recorded by you',
     pnl: round(pnl, 2), pnlPct: round((side === 'long' ? (x / e - 1) : (1 - x / e)) * 100, 3), // same formula as closePosition
     feePaid: round(feePaid, 4),

@@ -61,13 +61,13 @@ export function forecastForDisplay(f, interval, trust) {
  * the coin's usual move. `big`/`small` are the average size of the move that
  * followed each call, in units of the usual move; `rho` the rank correlation.
  * The call is shown only where it separated the two clearly (sizes at least
- * 1.3× apart and rho ≥ 0.15): 5m, 1h and 4h. Hit rates sit near the hindsight
+ * 1.3× apart and rho ≥ 0.15) in two runs in a row: 5m and 1h. Hit rates sit near the hindsight
  * baseline (always naming whichever outcome was commoner in the window), so
  * the size of the move, not the hit rate, is what it tells.
  *
  * `perCoinCheck`: the coin page used to show each forecast's own recent check
  * as "tested accuracy". When that read 60% or more the forecast was right
- * 49.5% of the time (196 cases); otherwise 49.7% (1,244). It says nothing, so
+ * 51.3% of the time (892 cases, 2026-10-15); otherwise 49.3% (4,818). It says nothing, so
  * it is no longer shown as accuracy.
  */
 export const FORECAST_TESTED = {
@@ -87,21 +87,31 @@ export const FORECAST_TESTED = {
     '1d': { band50: 49.8, band80: 77.4, band90: 88.5, tests: 1195, coins: 24, widen: 1.05, asDrawnBefore: { band50: 47.9, band80: 75.8, band90: 86.9 } },
   },
   centredMeasuredOn: '2026-10-13',
+  // Re-measured 2026-10-15 on every coin the app can trade (106; 5,710
+  // forecasts, ten per coin and chart). The call is shown only on charts where
+  // it separated big moves from small ones in this run and in the one before
+  // (2026-10-12, 12 coins: 5m, 1h, 4h): 4h failed this time (1.22×, rho 0.05)
+  // and 15m passed for the first time (1.49×, rho 0.21), so 4h is dropped now
+  // and 15m waits for a second run to agree. 1m: too few calls of each kind to
+  // size the moves.
   move: {
-    '1m': { hit: 50.8, baseline: 58.3, rho: 0.079, big: 1.83, small: 1.91 },
-    '5m': { hit: 59.2, baseline: 55.8, rho: 0.304, big: 1.42, small: 0.99 },
-    '15m': { hit: 58.3, baseline: 60.0, rho: 0.146, big: 1.22, small: 1.06 },
-    '1h': { hit: 57.9, baseline: 51.7, rho: 0.197, big: 1.64, small: 0.94 },
-    '4h': { hit: 62.1, baseline: 64.6, rho: 0.292, big: 1.39, small: 0.84 },
-    '1d': { hit: 49.2, baseline: 52.9, rho: 0.134, big: 1.32, small: 1.21 },
+    '1m': { hit: 63.7, baseline: 68.2, rho: 0.216, big: null, small: null },
+    '5m': { hit: 69.5, baseline: 59.7, rho: 0.487, big: 2.59, small: 1.31 },
+    '15m': { hit: 58.1, baseline: 57.8, rho: 0.211, big: 1.49, small: 1.0 },
+    '1h': { hit: 59.1, baseline: 54.0, rho: 0.3, big: 2.04, small: 1.07 },
+    '4h': { hit: 49.7, baseline: 51.3, rho: 0.054, big: 1.61, small: 1.32 },
+    '1d': { hit: 50.0, baseline: 54.5, rho: 0.098, big: 1.39, small: 1.34 },
   },
-  perCoinCheck: { highN: 196, highHit: 49.5, lowN: 1244, lowHit: 49.7 },
+  movePassedBefore: ['5m', '1h', '4h'],
+  moveMeasuredOn: '2026-10-15',
+  // all six charts together, 2026-10-15
+  perCoinCheck: { highN: 892, highHit: 51.3, lowN: 4818, lowHit: 49.3 },
 };
 
 /** Whether the move-size call separated big moves from small ones on this chart. */
 export const moveCallUseful = (interval) => {
   const m = FORECAST_TESTED.move[interval];
-  return !!m && m.big / m.small >= 1.3 && m.rho >= 0.15;
+  return !!m && m.big > 0 && m.small > 0 && m.big / m.small >= 1.3 && m.rho >= 0.15 && FORECAST_TESTED.movePassedBefore.includes(interval);
 };
 
 /**

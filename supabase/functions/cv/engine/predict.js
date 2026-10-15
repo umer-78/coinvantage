@@ -845,26 +845,29 @@ export const TESTED_ACCURACY = {
   // calibrated probUp on these same 1,440 tests (shown = sigmoid(s·logit p)).
   // 0 means the lean carried no information on that chart. Charts that were
   // never tested (1s, 5s, 10s, 1w) are absent, and absent counts as 0.
-  // The release test gave 1m 0.90, 5m 0.41, 15m 0.38. A re-run on fresh
+  // The release test gave 1m 0.90, 5m 0.41, 15m 0.38. Re-runs on fresh
   // candles (recheck, below) found almost nothing on those three, and each
-  // chart keeps the smaller of the two, as set before the re-run.
-  directionTrust: { '1m': 0.05, '5m': 0, '15m': 0, '1h': 0, '4h': 0, '1d': 0 },
+  // chart keeps the smallest so far, as set before the re-runs.
+  directionTrust: { '1m': 0, '5m': 0, '15m': 0, '1h': 0, '4h': 0, '1d': 0 },
   // The same test re-run on fresh candles (tools/evaluate-engine.mjs and
-  // tools/report-engine.mjs, Evaluate workflow job "engine"): 1,440 forecasts,
-  // 12 coins, 240 per chart. hit/baseline in %, trust as above.
+  // tools/report-engine.mjs, Evaluate workflow job "engine") on every coin the
+  // app can trade (tools/universe.json): 5,710 forecasts, ten per coin and
+  // chart, 106 coins (fewer on 1h, 4h and 1d, where recent listings have too
+  // little history). hit/baseline in %, trust as above. The 2026-10-12 run (12
+  // coins, 240 per chart) had found no edge either.
   recheck: {
-    measuredOn: '2026-10-12', tests: 1440,
-    '1m': { hit: 54.2, baseline: 66.3, trust: 0.05, band50: 50.0, band80: 73.8 },
-    '5m': { hit: 52.1, baseline: 65.0, trust: 0, band50: 45.0, band80: 78.8 },
-    '15m': { hit: 47.1, baseline: 57.9, trust: 0, band50: 42.9, band80: 77.9 },
-    '1h': { hit: 50.8, baseline: 59.6, trust: 0.2, band50: 51.2, band80: 82.9 },
-    '4h': { hit: 51.2, baseline: 52.5, trust: 0, band50: 61.7, band80: 84.2 },
-    '1d': { hit: 43.3, baseline: 52.1, trust: 0, band50: 48.8, band80: 72.1 },
+    measuredOn: '2026-10-15', tests: 5710, coins: 106,
+    '1m': { hit: 47.5, baseline: 52.1, trust: 0, band50: 33.8, band80: 68.5, n: 1060, coins: 106 },
+    '5m': { hit: 52.4, baseline: 52.5, trust: 0, band50: 38.1, band80: 71.3, n: 1060, coins: 106 },
+    '15m': { hit: 47.5, baseline: 58.4, trust: 0, band50: 52.7, band80: 83.9, n: 1060, coins: 106 },
+    '1h': { hit: 47.8, baseline: 69.9, trust: 0, band50: 50.1, band80: 82.4, n: 1030, coins: 103 },
+    '4h': { hit: 48.5, baseline: 59.2, trust: 0, band50: 46.8, band80: 73.3, n: 990, coins: 99 },
+    '1d': { hit: 59.0, baseline: 63.3, trust: 0, band50: 52.0, band80: 77.1, n: 510, coins: 51 },
   },
   // Timeframes where the model scored at or below the do-nothing baseline.
   noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
   beatsBaselineOverall: false,
-  caveat: 'Twelve coins over one market window: crypto moves together, so 240 forecasts on a timeframe are nowhere near 240 independent tests.',
+  caveat: 'Crypto moves together, so even ten forecasts on each of 106 coins in one market window are far fewer independent tests than they look.',
 };
 
 /** 95% Wilson interval for a hit rate, as fractions. */

@@ -7,19 +7,29 @@ import { generateSignal } from '../js/lib/signals.js';
 import { exchangeCandles, isTestedSource } from '../js/api/market.js';
 import { demoCandles } from '../js/lib/demo.js';
 
+// A published trust for one chart, for the length of a test: since the
+// 106-coin re-run (2026-10-15) no chart keeps any, but the mechanism must work
+// the day one does.
+function withTrust(iv, s, fn) {
+  const before = TESTED_ACCURACY.directionTrust[iv];
+  TESTED_ACCURACY.directionTrust[iv] = s;
+  try { return fn(); } finally { TESTED_ACCURACY.directionTrust[iv] = before; }
+}
+
 test('the shown chance of a rise is the raw one shrunk by its measured trust', () => {
+  // nothing about direction is shown on any chart now
+  for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d', '1s', '10s', '1w', null]) assert.equal(shownProbUp(0.83, iv), 0.5, `${iv}`);
   const logit = (p) => Math.log(p / (1 - p));
-  const s = TESTED_ACCURACY.directionTrust['1m'];
-  assert.ok(s > 0, 'the one chart that keeps some trust');
-  const expected = 1 / (1 + Math.exp(-s * logit(0.7)));
-  assert.ok(Math.abs(shownProbUp(0.7, '1m') - expected) < 1e-12);
-  // shrunk toward 50%, never past the raw value or across 50%
-  assert.ok(0.5 < shownProbUp(0.7, '1m') && shownProbUp(0.7, '1m') < 0.7);
-  // a trust given as an argument (what the device learned) is used instead
-  assert.ok(shownProbUp(0.7, '1m', 0.5) > shownProbUp(0.7, '1m', 0.1));
-  assert.ok(Math.abs(shownProbUp(0.3, '1m') + shownProbUp(0.7, '1m') - 1) < 1e-12, 'up and down are treated alike');
-  // no trust (the fresh re-run found none on 5m and 15m), or never tested: nothing about direction
-  for (const iv of ['5m', '15m', '1h', '4h', '1d', '1s', '10s', '1w', null]) assert.equal(shownProbUp(0.83, iv), 0.5, `${iv}`);
+  withTrust('1m', 0.3, () => {
+    const s = TESTED_ACCURACY.directionTrust['1m'];
+    const expected = 1 / (1 + Math.exp(-s * logit(0.7)));
+    assert.ok(Math.abs(shownProbUp(0.7, '1m') - expected) < 1e-12);
+    // shrunk toward 50%, never past the raw value or across 50%
+    assert.ok(0.5 < shownProbUp(0.7, '1m') && shownProbUp(0.7, '1m') < 0.7);
+    // a trust given as an argument (what the device learned) is used instead
+    assert.ok(shownProbUp(0.7, '1m', 0.5) > shownProbUp(0.7, '1m', 0.1));
+    assert.ok(Math.abs(shownProbUp(0.3, '1m') + shownProbUp(0.7, '1m') - 1) < 1e-12, 'up and down are treated alike');
+  });
 });
 
 test('every tested timeframe has a trust between 0 and 1', () => {
@@ -28,9 +38,8 @@ test('every tested timeframe has a trust between 0 and 1', () => {
     assert.equal(typeof s, 'number', `${iv} has no trust value`);
     assert.ok(s >= 0 && s <= 1, `${iv}: ${s}`);
   }
-  assert.equal(directionReliable('1m'), true);
-  assert.equal(directionReliable('4h'), false);
-  assert.equal(directionReliable('1w'), false);
+  for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d', '1w']) assert.equal(directionReliable(iv), false, `${iv}: no chart keeps any trust`);
+  withTrust('1m', 0.05, () => assert.equal(directionReliable('1m'), true));
 });
 
 test('the assistant gets the shown probability, with the raw one beside it', () => {
@@ -42,8 +51,8 @@ test('the assistant gets the shown probability, with the raw one beside it', () 
   assert.equal(untrusted.direction, 'SIDEWAYS');
   assert.equal(untrusted.confidence, 'Low');
   assert.equal(untrusted.rawProbUpPct, +(fc.probUp * 100).toFixed(1));
-  const trusted = summarizeForecast(fc, '1m');
-  assert.equal(trusted.probUpPct, +(shownProbUp(fc.probUp, '1m') * 100).toFixed(1));
+  const trusted = summarizeForecast(fc, '1m', 0.3);
+  assert.equal(trusted.probUpPct, +(shownProbUp(fc.probUp, '1m', 0.3) * 100).toFixed(1));
   assert.equal(trusted.directionReliable, true);
 });
 
@@ -56,8 +65,10 @@ test('a forecast with no trusted direction does not vote in a recommendation', (
   assert.equal(withIt.verdict, without.verdict);
   assert.match(withIt.reasons.find((r) => /AI forecast/.test(r.text)).text, /no reliable direction on 4h/);
   // where it is trusted it speaks with the shown number, not the raw one
-  const minute = adviseCoin({ signal, forecast: fc, interval: '1m' });
-  assert.match(minute.reasons.find((r) => /AI forecast/.test(r.text)).text, new RegExp(`${Math.round(shownProbUp(0.9, '1m') * 100)}% chance of rising`));
+  withTrust('1m', 0.05, () => {
+    const minute = adviseCoin({ signal, forecast: fc, interval: '1m' });
+    assert.match(minute.reasons.find((r) => /AI forecast/.test(r.text)).text, new RegExp(`${Math.round(shownProbUp(0.9, '1m') * 100)}% chance of rising`));
+  });
 });
 
 test('scans only use candles the forecast was tested on', () => {
@@ -128,7 +139,7 @@ test('a device with too few graded forecasts uses the release test as it is', ()
   assert.deepEqual(t, { trust: TESTED_ACCURACY.directionTrust['15m'], prior: TESTED_ACCURACY.directionTrust['15m'], local: null, graded: MIN_GRADED_FOR_TRUST - 1 });
 });
 
-test('leans that keep coming true raise the trust, leans that do not lower it, both only partly', () => {
+test('leans that keep coming true raise the trust, leans that do not lower it, both only partly', () => withTrust('1m', 0.05, () => {
   const prior = TESTED_ACCURACY.directionTrust['1m'];
   assert.ok(prior > 0);
   // the price rose exactly when the model leaned up
@@ -141,7 +152,7 @@ test('leans that keep coming true raise the trust, leans that do not lower it, b
   assert.ok(noise.trust < prior && noise.trust > 0, `${noise.trust}`);
   // 240 release-test forecasts against 120 of this device's: the blend sits a third of the way
   assert.ok(Math.abs(right.trust - (prior * 240 + 1 * 120) / 360) < 1e-12);
-});
+}));
 
 test('a timeframe the release test found no direction on stays at zero, whatever the device saw', () => {
   const t = learnedTrust(graded('4h', 500, 0.8, (i) => i % 2 === 1), '4h');
