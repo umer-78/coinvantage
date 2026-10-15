@@ -23,7 +23,16 @@ function markLive() {
 }
 const stale = async (p) => { try { return await p; } catch (e) { if (e.staleValue !== undefined) return e.staleValue; throw e; } };
 const STABLE = new Set(CONFIG.STABLECOINS);
-export const isStable = (sym) => STABLE.has(String(sym).toLowerCase());
+// Coins whose price held still all week: stablecoins and tokenised funds the
+// list above does not know yet. Filled as the market list loads.
+const PEGGED = new Set();
+export const isStable = (sym) => STABLE.has(String(sym).toLowerCase()) || PEGGED.has(String(sym).toLowerCase());
+/** A week of prices that never moved more than 0.6% top to bottom: no crypto coin does that. */
+export function looksPegged(prices) {
+  const p = (prices || []).filter((x) => Number.isFinite(x) && x > 0);
+  if (p.length < 24) return false;
+  return Math.max(...p) / Math.min(...p) - 1 < 0.006;
+}
 
 // ------------------------------------------------------------ Binance symbols
 let symbolSetPromise = null;
@@ -96,6 +105,7 @@ export async function getMarkets() {
     if (noMovement && noVolume) return false;
     return true;
   };
+  for (const r of rows) if (looksPegged(r.sparkline)) PEGGED.add(String(r.symbol).toLowerCase());
   return rows.filter(looksReal).map((r) => {
     const pair = `${r.symbol}USDT`;
     const binance = !isStable(r.symbol) && set.has(pair) && !seen.has(pair) ? pair : null;

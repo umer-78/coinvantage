@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 globalThis.window ??= new EventTarget(); // the store announces its writes
-const { exchangeCandles } = await import('../js/api/market.js');
+const { exchangeCandles, looksPegged, isStable } = await import('../js/api/market.js');
 
 const H = 3600e3;
 function okxRows(n, price) {
@@ -83,4 +83,13 @@ test('a coin no exchange has is not looked for again at once', async () => {
   } finally {
     Date.now = realNow;
   }
+});
+
+test('a coin whose price held still all week is taken for a stablecoin', () => {
+  const week = (f) => Array.from({ length: 168 }, (_, i) => f(i));
+  assert.equal(looksPegged(week((i) => 1 + 0.001 * Math.sin(i))), true, 'a dollar coin');
+  assert.equal(looksPegged(week((i) => 1.14 * (1 + (0.05 / 8760) * i))), true, 'a treasury fund earning 5% a year');
+  assert.equal(looksPegged(week((i) => 60000 * (1 + 0.02 * Math.sin(i / 9)))), false, 'bitcoin moves');
+  assert.equal(looksPegged([1, 1, 1]), false, 'too few prices to tell');
+  assert.ok(isStable('USDY') && isStable('bfusd') && !isStable('BTC'));
 });

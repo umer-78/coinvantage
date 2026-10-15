@@ -20,13 +20,15 @@ on:
 permissions:
   contents: read
 
-# Every coin in CoinGecko's top 150 (2026-10-15) with a live Binance USDT pair,
-# leaving out stablecoins, gold tokens and pairs Binance stopped trading (LIT,
-# BTT, XMR); SAND stays from the earlier 24-coin list. Coins listed too recently
-# for a test's window are skipped by that test. js/lib/autotrader.js
-# TESTED_COINS lists the coins the published figures were measured on.
+# Every coin the app can trade among CoinGecko's top 150 (tools/universe.json,
+# pinned 2026-10-15): 106 coins, each downloaded from the exchange the app reads
+# it from (Binance, else Gate.io or HTX). Stablecoins, tokenised funds, gold
+# tokens and coins no readable exchange lists are left out; the file names
+# them. Coins listed too recently for a test's window are skipped by that test.
+# js/lib/autotrader.js TESTED_COINS lists the coins the published figures were
+# measured on.
 env:
-  COINS: BTC,ETH,BNB,XRP,SOL,TRX,ZEC,HYPE,DOGE,LINK,ADA,NEAR,XLM,BCH,UNI,LTC,AVAX,SUI,GRAM,HBAR,TAO,QNT,SHIB,ENA,AAVE,ONDO,PUMP,ASTER,DOT,WLD,WLFI,PEPE,ICP,MORPHO,SKY,ETC,ARB,JST,JUP,ALGO,POL,RENDER,ATOM,AERO,FIL,NEXO,ZRO,STX,INJ,APT,CAKE,NIGHT,PYTH,STRK,DASH,ETHFI,VET,TIA,CRV,TRUMP,RAY,PENGU,FET,VIRTUAL,SEI,XPL,FF,PENDLE,XTZ,LDO,SUN,OP,GNO,KITE,CFX,KAIA,SAND
+  UNIVERSE: tools/universe.json
 
 jobs:
   trader-rules:

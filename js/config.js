@@ -49,5 +49,7 @@ export const CONFIG = {
 
   ANALYTICS: true,
 
-  STABLECOINS: ['usdt', 'usdc', 'dai', 'fdusd', 'tusd', 'usde', 'usds', 'pyusd', 'usdd', 'busd', 'usd1', 'rlusd', 'usdp', 'gusd', 'frax', 'lusd', 'eurc', 'usdt0', 'susds', 'susde', 'bsc-usd', 'usdtb', 'usdf', 'usdg', 'buidl', 'xaut', 'paxg'],
+  STABLECOINS: ['usdt', 'usdc', 'dai', 'fdusd', 'tusd', 'usde', 'usds', 'pyusd', 'usdd', 'busd', 'usd1', 'rlusd', 'usdp', 'gusd', 'frax', 'lusd', 'eurc', 'usdt0', 'susds', 'susde', 'bsc-usd', 'usdtb', 'usdf', 'usdg', 'buidl', 'xaut', 'paxg',
+    // stablecoins, tokenised funds and gold that joined the top 150 later
+    'usyc', 'usdy', 'eursafo', 'bfusd', 'usdgo', 'ousd', 'ustb', 'gho', 'eutbl', 'jaaa', 'usd0', 'kau', 'ylds', 'a7a5', 'sofid', 'reusd', 'jtrsy', 'ousg', 'apxusd'],
 };
