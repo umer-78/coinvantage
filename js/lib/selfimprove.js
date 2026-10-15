@@ -197,6 +197,9 @@ export function accuracySparkline(ledger, window = 20) {
   return pts;
 }
 
+/** learningStatus().trend in plain words: the last 20 against the last 50, which chance alone moves. */
+export const TREND_WORDS = { improving: 'last 20 better', stable: 'steady', declining: 'last 20 worse', 'warming-up': 'warming up', unknown: 'too few yet' };
+
 /** Rolling 20/50/100 windows + trend, totals and model version. */
 export function learningStatus(ledger) {
   const entries = ledger?.entries ?? [];

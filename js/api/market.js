@@ -376,7 +376,10 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
       const rows = (await EX_FETCH[ex](sym, EX_BAR[ex][interval], total, ttl, step))
         .filter((c) => [c.o, c.h, c.l, c.c].every((x) => Number.isFinite(x) && x > 0));
       answered.push(ex);
-      if (rows.length < (only ? 1 : 50)) continue;
+      // A listing with little history is not trusted when a coin is first looked
+      // for; the exchange already found for it only has to send what was asked
+      // (a check asks for the last few candles).
+      if (rows.length < (only ? 1 : ex === first ? Math.min(50, total) : 50)) continue;
       const last = rows[rows.length - 1];
       if (now() - last.t > step * 3 + 2 * 864e5) continue;
       if (!only && Number.isFinite(coin.price) && coin.price > 0 && Math.abs(last.c / coin.price - 1) > 0.1) continue;

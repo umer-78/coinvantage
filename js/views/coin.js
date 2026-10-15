@@ -26,7 +26,7 @@ import {
   loadLedger, saveLedger, newLedger, recordForecast, resolveDueLedger, directionTrustFor, MIN_GRADED_FOR_TRUST,
   rollingAccuracy, learningStatus, accuracySparkline, adaptiveWeights, MIN_FAMILY_CALLS,
   dampenConfidence, threeModelEnsemble, signalMeter, riskWarnings, anomalyFlags,
-  sparklineSvg,
+  sparklineSvg, TREND_WORDS,
 } from '../lib/selfimprove.js';
 
 export const title = (p) => (p[0] || 'Coin').toUpperCase();
@@ -883,7 +883,7 @@ export async function render(el, [symParam]) {
         </div>
       </div>
       <div class="learning-box mt">
-        <div class="row spread"><b>Self-improving model</b><span class="chip ${trendCls}">${esc(ls.trend.replace('-', ' '))}</span></div>
+        <div class="row spread"><b>This device's forecast record</b><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
         <div class="grid g2" style="margin-top:8px">
           <div class="stat"><span class="k">Last 20</span><span class="v" style="font-size:16px">${winHtml(20)}</span></div>
           <div class="stat"><span class="k">Last 50</span><span class="v" style="font-size:16px">${winHtml(50)}</span></div>
@@ -891,7 +891,7 @@ export async function render(el, [symParam]) {
           <div class="stat"><span class="k">Recorded</span><span class="v" style="font-size:16px">${ls.resolved}<span class="fine"> resolved</span></span><span class="s fine">${ls.pending} waiting</span></div>
         </div>
         ${spark.length > 1 ? `<div style="margin-top:8px">${sparklineSvg(spark, { width: 220, height: 32, color: 'var(--accent)' })}</div>` : ''}
-        <p class="fine" style="margin:6px 0 0">Hit rate over this device's own resolved forecasts (rolling windows). Small samples are labelled as one; nothing here is fabricated. Model v${ls.modelVersion}.</p>
+        <p class="fine" style="margin:6px 0 0">Hit rate over this device's own resolved forecasts (rolling windows). Keeping score does not make the forecast better: when the hit rate is under 55%, the confidence shown is pulled toward 50/50. Model v${ls.modelVersion}.</p>
       </div>
       ${ens3?.ok ? `
       <div class="ensemble3 mt">

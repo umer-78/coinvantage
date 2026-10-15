@@ -290,6 +290,14 @@ Measured first (Evaluate jobs `trader-folds` and `engine`), then shown as measur
   has no CORS header, so it reads as a failed request and counts as a "no" only next to a real
   answer from HTX or OKX. `knownVenue()`/`findVenue()` say where a coin's candles come from;
   symbols no exchange uses (FIGR_HELOC) are listed nowhere. A coin page for such a coin says so.
+- AI checks after the first ask only for new candles (`js/lib/candlecache.js`): a handful per
+  coin instead of 500, merged into the window a full fetch would return (tested); a hole, a
+  change of exchange or a pause of six hours fetches the whole window again. The exchange
+  already found for a coin only has to send what was asked (discovery still wants 50 candles).
+- The forecast-record cards were titled "Self-improving model" with an "improving" chip. Keeping
+  score does not make the forecast better, so they are now "This device's forecast record", the
+  chip says "last 20 better/worse" (`TREND_WORDS`), and the Learn page says none of the learning
+  has beaten chance in testing.
 - Trader coin picker: coins listed nowhere show "no exchange" and cannot be picked; others not
   on Binance show the exchange found. Quick picks: Top 10/20 and All (`MAX_COINS` = 100, the
   whole list) pass over coins with no data; "The 24 tested" picks `TESTED_COINS`. "Use the best

@@ -9,7 +9,7 @@ import { DEFAULT_HORIZON } from '../ai/context.js';
 import { activeLessons, reviewTrades } from '../lib/tradelearn.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
 import { FORECAST_TESTED } from '../lib/forecastview.js';
-import { learningStatus, loadLedger, learnedTrust, MIN_GRADED_FOR_TRUST } from '../lib/selfimprove.js';
+import { learningStatus, loadLedger, learnedTrust, MIN_GRADED_FOR_TRUST, TREND_WORDS } from '../lib/selfimprove.js';
 
 export const title = 'AI learning';
 
@@ -18,7 +18,7 @@ export async function render(el) {
   el.innerHTML = `
     <div class="page-head">
       <div><h1>AI learning</h1>
-        <p>How the AI grades its own calls and changes its own decisions. Every indicator, the forecast and the trader are scored against what the market actually did. A method only gains influence when its record earns it, and only keeps it while it stays ahead. Every number here was measured, and each one shows how many calls it rests on.</p></div>
+        <p>How the AI grades its own calls and changes its own decisions. Every indicator, the forecast and the trader are scored against what the market actually did. A method only gains influence when its record earns it, and only keeps it while it stays ahead. Every number here was measured, and each one shows how many calls it rests on. None of this has yet made calls on price direction better than chance in testing: the learned blend tied the forecast in the release test, and the trader's self-review changed a rule once in eight test runs.</p></div>
       <div class="row">
         <div class="seg" id="iv">${['15m', '1h', '4h', '1d'].map((i) => `<button data-v="${i}" class="${i === st.interval ? 'on' : ''}">${i}</button>`).join('')}</div>
         <button class="btn primary" id="pass">${icon('refresh', 16)} Run a learning pass now</button>
@@ -86,7 +86,7 @@ export async function render(el) {
           <p class="fine mt">In the release test the blend <b>tied</b> the forecast overall. It did better on 1h, 4h and 1d and worse on 1m, 5m and 15m. A tie is not a reason to switch, so it starts as the challenger and has to prove itself on this device first.</p>
         </div>
         <div class="card">
-          <div class="card-h"><h3>${icon('forecast', 16)} Forecast record</h3><span class="chip">${esc(fl.trend.replace('-', ' '))}</span></div>
+          <div class="card-h"><h3>${icon('forecast', 16)} Forecast record</h3><span class="chip">${esc(TREND_WORDS[fl.trend] || fl.trend)}</span></div>
           <dl class="kv">
             ${(() => {
               // the latest test first, and the older release test beside it, each dated

@@ -3,6 +3,7 @@ import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS, k
 import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
+import { candleCache } from '../lib/candlecache.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
 import { LineChart } from '../charts/line.js';
@@ -13,7 +14,7 @@ import { load, save, remove } from '../store.js';
 import { auth, backendEnabled } from '../api/backend.js';
 import { backupFor, restoreBackup, missingTrades } from '../lib/cloudsync.js';
 import { openAuth } from './auth.js';
-import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger, recordForecast, resolveDueLedger } from '../lib/selfimprove.js';
+import { initialSession, sessionReducer, sessionLabel, newLedger, learningStatus, accuracySparkline, sparklineSvg, LEARN_KEY, loadLedger, saveLedger, recordForecast, resolveDueLedger, TREND_WORDS } from '../lib/selfimprove.js';
 import { runForecast } from '../lib/compute.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 
@@ -37,6 +38,8 @@ export async function render(el) {
   // prices: newest known price per coin. priceFrom says where it came from
   // (a live tick, or the latest candle when no tick has arrived yet).
   const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false, noExchange: [] };
+  // each check after the first asks only for the candles that are new
+  const candlesFor = candleCache(getCandles, { window: 500, stepOf: (iv) => INTERVAL_MS[iv] });
   // Coins that keep coming back with no price data (checks in a row they failed
   // while others loaded), so the page can say so once and offer to drop them.
   const NODATA_KEY = 'traderNoData';
@@ -211,13 +214,13 @@ export async function render(el) {
       return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
     };
     return `<div class="card mt" id="learnCard">
-      <div class="card-h"><h3>${icon('ai', 16)} Self-improving model</h3><span class="chip ${trendCls}">${esc(ls.trend.replace('-', ' '))}</span></div>
-      <p class="fine">Every forecast this device shows is logged before the outcome is known, then scored when its horizon passes. Rolling windows below are hit rates over the last N resolved forecasts on <b>this device only</b> — not a claim about future performance.</p>
+      <div class="card-h"><h3>${icon('ai', 16)} This device's forecast record</h3><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
+      <p class="fine">Every forecast this device shows is logged before the outcome is known, then scored when its horizon passes. Rolling windows below are hit rates over the last N resolved forecasts on <b>this device only</b> — not a claim about future performance. Keeping score does not make the forecasts better; a hit rate near 50% is a coin toss.</p>
       <div class="grid g4 mt">
         <div class="stat"><span class="k">Last 20</span><span class="v">${win(20)}</span></div>
         <div class="stat"><span class="k">Last 50</span><span class="v">${win(50)}</span></div>
         <div class="stat"><span class="k">Last 100</span><span class="v">${win(100)}</span></div>
-        <div class="stat"><span class="k">Trend</span><span class="v ${trendCls}" style="font-size:16px">${esc(ls.trend.replace('-', ' '))}</span><span class="s fine">${esc(trendText)}</span></div>
+        <div class="stat"><span class="k">Last 20 against last 50</span><span class="v ${trendCls}" style="font-size:16px">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span><span class="s fine">${esc(trendText)}</span></div>
       </div>
       ${spark.length > 1 ? `<div class="mt"><div class="fine" style="margin-bottom:4px">Hit rate over the last ${spark.length} resolved forecasts (rolling 20)</div>${sparklineSvg(spark, { width: 240, height: 36, color: 'var(--accent)' })}</div>` : ''}
       <p class="fine mt">Model v${ls.modelVersion} · ${ls.total} forecast${ls.total === 1 ? '' : 's'} recorded · ${ls.resolved} resolved · ${ls.pending} still waiting for their horizon.</p>
@@ -322,7 +325,7 @@ export async function render(el) {
       if (!coin || st.disposed) return;
       // listed on none of the exchanges it reads: nothing to fetch
       if (knownVenue(coin) === null && !state.open[sym]) { fetched.set(sym, new Error('not listed')); return; }
-      try { fetched.set(sym, await getCandles(coin, runCfg.interval, 500)); } catch (err) { fetched.set(sym, err); }
+      try { fetched.set(sym, await candlesFor(coin, runCfg.interval)); } catch (err) { fetched.set(sym, err); }
     });
     for (const sym of syms) {
       if (st.disposed) return;

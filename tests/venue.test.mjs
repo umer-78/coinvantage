@@ -39,6 +39,11 @@ test('the exchange that had a coin is asked first next time', async () => {
   const again = await exchangeCandles(coin, '15m', 100); // a different chart, so nothing is cached
   assert.equal(again.source, 'okx');
   assert.ok(!calls.some((u) => u.includes('gateio') || u.includes('huobi')), `went straight to OKX: ${calls.join(' ')}`);
+  // once found, a check that asks for the last few candles gets them
+  calls = mockNet(true);
+  const few = await exchangeCandles(coin, '4h', 5);
+  assert.equal(few?.source, 'okx');
+  assert.equal(few.candles.length, 5);
 });
 
 test('a coin no exchange has is not looked for again at once', async () => {

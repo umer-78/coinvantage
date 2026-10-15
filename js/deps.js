@@ -357,6 +357,7 @@ export const DEPS = {
     'lib/advice.js',
     'lib/autotrader.js',
     'lib/barrier.js',
+    'lib/candlecache.js',
     'lib/cloudsync.js',
     'lib/compute.js',
     'lib/demo.js',
