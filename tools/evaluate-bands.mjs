@@ -18,13 +18,17 @@
 // because 5m had ~9 days of outcomes and the pick sat between 1 and 1.1. Since
 // then the job downloads ~100 days of 5m and 15m and the factors step by 0.05;
 // the rule itself is unchanged.
+//
+// 2026-10-15: on 106 coins the forecast re-check found the 1m 80% range
+// holding 69.9% (1,060 forecasts), so 1m is in the test too (~21 days of
+// candles) and the factors go up to 2; the rule is unchanged.
 import { readFileSync } from 'node:fs';
 import { _internals } from '../js/lib/predict.js';
 
 const { rollingSigma, empiricalBandQuantiles } = _internals;
 const raw = JSON.parse(readFileSync(process.argv[2] || 'klines.json', 'utf8'));
-const H = { '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 }; // DEFAULT_HORIZON in js/ai/context.js
-const FACTORS = [0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.3, 1.4];
+const H = { '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 }; // DEFAULT_HORIZON in js/ai/context.js
+const FACTORS = [0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2];
 const WINDOW = 1500;
 const NORMAL = { q05: -1.6449, q10: -1.2816, q25: -0.6745, q75: 0.6745, q90: 1.2816, q95: 1.6449 };
 const r1 = (v) => +v.toFixed(1);
