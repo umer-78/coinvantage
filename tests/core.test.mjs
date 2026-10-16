@@ -1030,8 +1030,8 @@ test('matching a coin against its own history never looks into the future', asyn
 test('the shape matcher is published as a picture, not as an edge it failed to earn', async () => {
   const { ANALOG_TESTED, analogVerdict, historyMatch } = await import('../js/lib/analog.js');
 
-  // Measured across 12 coins on real candles, shape matching lost to the
-  // majority-class baseline on every timeframe. This guard exists so the result
+  // Measured across 12 coins and then 106 on real candles, shape matching lost
+  // to the majority-class baseline on every timeframe. This guard exists so the result
   // cannot be quietly flipped back to a claim without re-measuring.
   assert.equal(ANALOG_TESTED.beatsBaselineOverall, false);
   for (const iv of ['1h', '4h', '1d']) {
@@ -1047,7 +1047,7 @@ test('the shape matcher is published as a picture, not as an edge it failed to e
   const lost = analogVerdict(m, { ok: true, beatsBaseline: false, accuracyPct: 44, baselinePct: 53, tests: 60, confidentAccuracyPct: null }, { symbol: 'ETH', interval: '1d' });
   assert.match(lost.headline, /history rather than as a lean|not taking a side/i);
   assert.equal(lost.tone, 'warn');
-  assert.ok(lost.lines.some((l) => /12 coins/.test(l)), 'the cross-coin result travels with every reading');
+  assert.ok(lost.lines.some((l) => l.includes(`${ANALOG_TESTED['1d'].coins} coins`)), 'the cross-coin result travels with every reading');
 });
 
 test('the track record reads the outcome words the scorer actually writes', async () => {

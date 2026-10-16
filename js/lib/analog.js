@@ -20,23 +20,25 @@
 import { findPatterns } from './predict.js';
 
 /**
- * What the method scored when it was run across 12 coins on real Binance
- * candles (4,000 per pair), each coin judged against its own majority-class
- * baseline. Measured with tools/evaluate-analog.mjs.
+ * What the method scored on real candles, each coin judged against its own
+ * majority-class baseline, measured with tools/evaluate-analog.mjs (Evaluate
+ * job "timing"). First on 12 Binance coins; on 2026-10-15 on every coin the app
+ * can trade (106, from the exchange it reads each on; fewer on 4h and 1d where
+ * history is short).
  *
  * The result is negative and it is published here rather than buried: shape
  * matching draws a genuinely useful picture of what followed similar stretches,
  * but as a direction call it did not beat simply always naming the more common
- * outcome. Six of thirty-six coin/timeframe pairs beat their baseline, which is
- * about what chance would give. The page still runs the test live per coin, so
- * a coin that does beat its own baseline is reported as beating it — but the
- * default framing is description, not prediction.
+ * outcome. On 106 coins 43 of 287 coin/chart pairs beat their baseline (15%),
+ * and on every chart the average fell short of it. The page still runs the
+ * test live per coin, so a coin that does beat its own baseline is reported as
+ * beating it — but the default framing is description, not prediction.
  */
 export const ANALOG_TESTED = {
-  '1h': { meanAccuracy: 49.2, meanBaseline: 53.2, coinsBeatingBaseline: 2, coins: 12, tests: 1651 },
-  '4h': { meanAccuracy: 46.8, meanBaseline: 54.0, coinsBeatingBaseline: 1, coins: 12, tests: 1666 },
-  '1d': { meanAccuracy: 50.7, meanBaseline: 54.4, coinsBeatingBaseline: 3, coins: 12, tests: 1564 },
-  beatsBaselineOverall: false,
+  '1h': { meanAccuracy: 50.4, meanBaseline: 53.5, coinsBeatingBaseline: 25, coins: 104, tests: 13478 },
+  '4h': { meanAccuracy: 50.6, meanBaseline: 56.6, coinsBeatingBaseline: 8, coins: 100, tests: 13004 },
+  '1d': { meanAccuracy: 51.4, meanBaseline: 55.9, coinsBeatingBaseline: 10, coins: 83, tests: 8019 },
+  beatsBaselineOverall: false, measuredOn: '2026-10-15',
 };
 
 /** Window / horizon defaults per timeframe, in candles. */
