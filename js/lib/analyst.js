@@ -2,7 +2,7 @@
 // is sent to the language model, so the assistant works even without an API key.
 
 import { fmtNum as fmtUsd, upRateFor, SCORE_BUCKETS_TESTED, THRESHOLDS } from './signals.js';
-import { accuracyFor, TESTED_ACCURACY } from './predict.js';
+import { accuracyFor, TESTED_ACCURACY, recheckOverall } from './predict.js';
 import { fx } from '../api/fx.js';
 import { isTickerMention } from './tickers.js';
 import { conversationalAnswer, termsIn } from './glossary.js';
@@ -559,10 +559,15 @@ export function ruleBasedAnswer(question, ctx = {}) {
       // measurement and the baseline it has to beat, not this one chart's
       // backtest. Lead with it, and say plainly when there is no edge.
       const a = ctx.interval ? accuracyFor(ctx.interval) : null;
-      if (a) {
+      const r = ctx.interval ? TESTED_ACCURACY.recheck?.[ctx.interval] : null;
+      if (r) {
+        const edge = +(r.hit - r.baseline).toFixed(1);
+        out.push(`**Measured forecast accuracy on ${ctx.interval} charts: ${r.hit}%** in the latest test (${r.n.toLocaleString('en-US')} forecasts on ${r.coins} coins, ${TESTED_ACCURACY.recheck.measuredOn}), ${r.hit < 52 ? 'no better than a coin flip' : 'above a coin flip'}. The baseline it has to clear, always naming the direction that turned out commoner for each coin over those forecasts, scored ${r.baseline}% (with ten forecasts a coin that baseline sits above 50% even by chance)${edge > 0 ? `, so it has an edge of ${edge} points` : ', so it has **no measured edge** here'}.${a ? ` The earlier release test (${TESTED_ACCURACY.coins} coins, ${TESTED_ACCURACY.measuredOn}) had ${a.accuracyPct}% against ${a.baselinePct}%.` : ''}`);
+      } else if (a) {
         out.push(`**Measured forecast accuracy on ${ctx.interval} charts: ${a.accuracyPct}%**, against ${a.baselinePct}% for always calling the more common direction over the same tests — ${a.beatsBaseline ? `an edge of ${a.edgePts} points` : `${Math.abs(a.edgePts)} points **worse** than that baseline, so it has no measured edge here`}.`);
       }
-      out.push(`Across every timeframe tested the engine scored ${TESTED_ACCURACY.all}% against a ${TESTED_ACCURACY.allBaseline}% baseline, so overall it does **not** beat simply calling the more common direction. It is listed as having no edge on ${(TESTED_ACCURACY.noEdge || []).join(', ')}. ${TESTED_ACCURACY.caveat}`);
+      const ro = recheckOverall();
+      out.push(`Across every timeframe ${ro ? `the latest test scored ${ro.hit}% against ${ro.baseline}% and ` : ''}the release test ${TESTED_ACCURACY.all}% against ${TESTED_ACCURACY.allBaseline}%, so overall it does **not** beat simply calling the more common direction. It is listed as having no edge on ${(TESTED_ACCURACY.noEdge || []).join(', ')}. ${TESTED_ACCURACY.caveat}`);
       if (!b?.ok) { out.push('\nNo backtest of the chart rules is available for this chart yet.'); break; }
       out.push(`**Backtest of these signal rules on this chart** (long-only, 0.1% fees)\n- Trades: ${b.tradeCount}\n- Win rate: ${b.winRate ?? '—'}%\n- Strategy return: ${pct(b.totalReturnPct)} vs buy & hold ${pct(b.buyHoldPct)}\n- Max drawdown: ${b.maxDrawdownPct}%\n- Profit factor: ${b.profitFactor ?? '—'}`);
       out.push(`\n${b.totalReturnPct > b.buyHoldPct ? 'The rules beat buy & hold on this sample.' : 'Buy & hold did better on this sample — treat signals as timing help, not a guarantee.'} Past results on one coin and timeframe don't predict future performance; test several before trusting them.`);

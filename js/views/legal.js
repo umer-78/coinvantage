@@ -2,7 +2,7 @@
 import { CONFIG } from '../config.js';
 import { getAppSettings } from '../api/backend.js';
 import { esc } from '../format.js';
-import { TESTED_ACCURACY } from '../lib/predict.js';
+import { TESTED_ACCURACY, recheckOverall } from '../lib/predict.js';
 import { TESTED_TIMING, timingSwing } from '../lib/timing.js';
 import { SCORE_BUCKETS_TESTED } from '../lib/signals.js';
 
@@ -14,6 +14,10 @@ const IVS = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const accuracyLine = () => IVS
   .filter((iv) => typeof TESTED_ACCURACY[iv] === 'number')
   .map((iv) => `${iv} ${TESTED_ACCURACY[iv]}% against a ${TESTED_ACCURACY.baseline[iv]}% baseline`)
+  .join(', ');
+const recheckLine = () => IVS
+  .filter((iv) => TESTED_ACCURACY.recheck?.[iv])
+  .map((iv) => `${iv} ${TESTED_ACCURACY.recheck[iv].hit.toFixed(1)}% against ${TESTED_ACCURACY.recheck[iv].baseline.toFixed(1)}%`)
   .join(', ');
 const timingLine = () => Object.entries(TESTED_TIMING.byInterval)
   .map(([iv, t]) => `${iv} ${t.hitPct.toFixed(1)}% against ${t.baselinePct.toFixed(1)}%`)
@@ -80,7 +84,7 @@ const PAGES = (contact) => ({
       <h2>Read this before you trade anything</h2>
       <p>Crypto assets are volatile, largely unregulated, and can lose most or all of their value quickly. Nothing on ${N} changes that.</p>
       <h2>The forecasts have no measured edge on direction</h2>
-      <p>The engine is validated by walk-forward testing: every forecast is made using only the data that existed at that moment. Across ${TESTED_ACCURACY.tests.toLocaleString('en-US')} forecasts on ${TESTED_ACCURACY.coins} coins it called direction right <b>${TESTED_ACCURACY.all}%</b> of the time — against <b>${TESTED_ACCURACY.allBaseline}%</b> for ignoring the engine entirely and always naming whichever direction was more common in that window. It did not beat that baseline. By timeframe: ${accuracyLine()}. It is below its baseline on ${TESTED_ACCURACY.noEdge.join(', ')}.</p>
+      <p>The engine is validated by walk-forward testing: every forecast is made using only the data that existed at that moment.${recheckOverall() ? ` In the latest test, ${recheckOverall().tests.toLocaleString('en-US')} forecasts on ${recheckOverall().coins} coins (${recheckOverall().measuredOn}), it called direction right <b>${recheckOverall().hit}%</b> of the time, against <b>${recheckOverall().baseline}%</b> for ignoring the engine entirely and always naming whichever direction turned out commoner for each coin over its forecasts (with ten forecasts a coin, that bar sits above 50% even by chance). By timeframe: ${recheckLine()}.` : ''} The release test before it, ${TESTED_ACCURACY.tests.toLocaleString('en-US')} forecasts on ${TESTED_ACCURACY.coins} coins, had ${TESTED_ACCURACY.all}% against ${TESTED_ACCURACY.allBaseline}%: ${accuracyLine()}. It did not beat its baseline in either test, and it is below it on ${TESTED_ACCURACY.noEdge.join(', ')}.</p>
       <p>${esc(TESTED_ACCURACY.caveat)}</p>
       <h2>The chart score does not mean what its name suggested</h2>
       <p>Sorting ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins by the score this engine assigns them shows the share that rose mostly <b>falls</b> as the score rises — on every chart tested, the highest-scoring bars were the ones least likely to go up. Trading the reverse does not work either; both directions were tested over held-out data with fees and neither produced a positive expectancy. The score is therefore labelled as a description of how extended a trend is, not as a recommendation to buy or sell.</p>

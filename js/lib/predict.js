@@ -881,6 +881,22 @@ export const TESTED_ACCURACY = {
   caveat: 'Crypto moves together, so even ten forecasts on each of 106 coins in one market window are far fewer independent tests than they look.',
 };
 
+/**
+ * The latest re-test over every chart: hit rate and baseline weighted by each
+ * chart's number of forecasts, so the figure is the share of all of them that
+ * were right (the same 49.6% the learning check reports), not an average of
+ * chart averages. Null before any re-test.
+ */
+export function recheckOverall(r = TESTED_ACCURACY.recheck) {
+  let n = 0, hit = 0, base = 0;
+  for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
+    const x = r?.[iv];
+    if (!(x?.n > 0)) continue;
+    n += x.n; hit += x.hit * x.n; base += x.baseline * x.n;
+  }
+  return n ? { hit: +(hit / n).toFixed(1), baseline: +(base / n).toFixed(1), tests: n, coins: r.coins, measuredOn: r.measuredOn } : null;
+}
+
 /** 95% Wilson interval for a hit rate, as fractions. */
 function wilsonRange(hits, n) {
   const z = 1.96, p = hits / n, d = 1 + (z * z) / n;

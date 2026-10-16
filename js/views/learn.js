@@ -7,7 +7,7 @@ import { learningPass, loadLearn } from '../lib/learnpass.js';
 import { DEFAULT_CONFIG, CHART_TESTED, rulesForChart } from '../lib/autotrader.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 import { activeLessons, reviewTrades } from '../lib/tradelearn.js';
-import { TESTED_ACCURACY } from '../lib/predict.js';
+import { TESTED_ACCURACY, recheckOverall } from '../lib/predict.js';
 import { FORECAST_TESTED } from '../lib/forecastview.js';
 import { learningStatus, loadLedger, learnedTrust, MIN_GRADED_FOR_TRUST, TREND_WORDS } from '../lib/selfimprove.js';
 
@@ -90,14 +90,12 @@ export async function render(el) {
           <dl class="kv">
             ${(() => {
               // the latest test first, and the older release test beside it, each dated
-              const rc = TESTED_ACCURACY.recheck;
-              const ivs = rc ? Object.keys(rc).filter((k) => typeof rc[k]?.hit === 'number') : [];
-              const avg = (k) => (ivs.length ? +(ivs.reduce((a, iv) => a + rc[iv][k], 0) / ivs.length).toFixed(1) : null);
               // the at-scale test only (5m–1d): 1m is not shown centred
               const big = Object.values(FORECAST_TESTED.centred).filter((x) => x.coins >= 20);
               const c80 = big.map((x) => x.band80);
               const n80 = big.reduce((a, x) => a + x.tests, 0);
-              return `${ivs.length ? `<dt>Direction, latest test</dt><dd>${avg('hit')}% <span class="fine">vs ${avg('baseline')}% baseline · ${rc.tests.toLocaleString()} tests, ${esc(rc.measuredOn)}</span></dd>` : ''}
+              const ro = recheckOverall();
+              return `${ro ? `<dt>Direction, latest test</dt><dd>${ro.hit}% <span class="fine">vs ${ro.baseline}% baseline · ${ro.tests.toLocaleString('en-US')} tests on ${ro.coins} coins, ${esc(ro.measuredOn)}</span></dd>` : ''}
             <dt>Direction, release test</dt><dd>${TESTED_ACCURACY.all}% <span class="fine">vs ${TESTED_ACCURACY.allBaseline}% baseline · ${TESTED_ACCURACY.tests.toLocaleString()} tests</span></dd>
             <dt>80% range held</dt><dd>${c80.length ? `${Math.min(...c80)}–${Math.max(...c80)}%` : '—'} <span class="fine">(target 80%; by chart, centred on today's price, ${n80.toLocaleString('en-US')} tests on ${(() => { const k = big.map((x) => x.coins); const lo = Math.min(...k), hi = Math.max(...k); return lo === hi ? hi : `${lo}–${hi}`; })()} coins, ${esc(FORECAST_TESTED.centredMeasuredOn)}; ${TESTED_ACCURACY.bandsAll.band80}% in the release test)</span></dd>`;
             })()}
