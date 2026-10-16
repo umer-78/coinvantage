@@ -259,8 +259,11 @@ jobs:
       - name: Stop and target distances
         run: node tools/evaluate-geometry.mjs klines.json | tee -a signals.txt
 
-      - name: The 1h score band 45-59 as a strategy
-        run: node tools/evaluate-band-strategy.mjs klines.json | tee -a signals.txt
+      - name: Score bands as strategies against random entries (the two once thought best, and the 106-coin run's best)
+        run: |
+          node tools/evaluate-band-strategy.mjs klines.json 1h 45 59 | tee -a signals.txt
+          node tools/evaluate-band-strategy.mjs klines.json 4h 18 29 | tee -a signals.txt
+          node tools/evaluate-band-strategy.mjs klines.json 1d 60 100 | tee -a signals.txt
 
       - name: Summary
         if: always()

@@ -70,12 +70,13 @@ for (const key of Object.keys(data).sort()) {
 }
 
 // A uniform random guess over bars 1..H, scored with the same tolerance.
-const baseline = rows.length
-  ? rows.reduce((s, r) => {
+const randomHit = (rs) => (rs.length
+  ? rs.reduce((s, r) => {
       const lo = Math.max(1, r.actualBar - r.tol), hi = Math.min(r.H, r.actualBar + r.tol);
       return s + (hi - lo + 1) / r.H; // P(random bar lands in the window)
-    }, 0) / rows.length
-  : null;
+    }, 0) / rs.length
+  : null);
+const baseline = randomHit(rows);
 
 const hits = rows.filter((r) => r.hit).length;
 const offs = rows.map((r) => r.off).sort((a, b) => a - b);
@@ -95,6 +96,7 @@ for (const iv of [...new Set(rows.map((r) => r.iv))]) {
   summary.byInterval[iv] = {
     tests: sub.length,
     hitPct: +((sub.filter((r) => r.hit).length / sub.length) * 100).toFixed(1),
+    baselinePct: +(randomHit(sub) * 100).toFixed(1),
     medianOff: sub.map((r) => r.off).sort((a, b) => a - b)[Math.floor(sub.length / 2)],
   };
 }

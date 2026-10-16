@@ -40,12 +40,19 @@ for (const iv of Object.keys(HMAP)) {
   console.error(iv, 'train n', X.length, (Date.now() - t0) / 1000 + 's');
   const acc = {}; const hit = (k, p, y) => { const a = (acc[k] ||= [0, 0]); a[0] += (p >= 0.5 ? 1 : 0) === y ? 1 : 0; a[1]++; };
   const conf = {}; const hitC = (k, p, y, thr) => { if (Math.abs(p - 0.5) < thr) return; const a = (conf[k] ||= [0, 0]); a[0] += (p >= 0.5 ? 1 : 0) === y ? 1 : 0; a[1]++; };
+  // Baselines, so the hit rates mean something: always "up", the commoner
+  // direction of the training part (knowable in advance), and the commoner
+  // direction of the test part itself (hindsight, the bar the forecast's own
+  // test uses).
+  const base = { trainUp: 0, trainN: 0, testUp: 0, testN: 0 };
   for (const s of series) {
     const own = []; for (let i = 100; i <= s.split - H - 1; i++) if (s.feats[i]) own.push({ z: s.zAt(i), rsi: s.ind.rsi[i], up: s.cl[i + H] > s.cl[i] ? 1 : 0 });
+    for (const r of own) { base.trainUp += r.up; base.trainN++; }
     const msOwn = moveStatsTrain(own);
     for (let o = s.split; o < s.n - H; o += H) {
       if (!s.feats[o]) continue;
       const y = s.cl[o + H] > s.cl[o] ? 1 : 0; const x = scale(s.feats[o]);
+      base.testUp += y; base.testN++;
       const p = { pLR: lr.predict(x), pGB: gb.predict(x), pMLP: mlp.reduce((a, m) => a + m.predict(x), 0) / 3, msPooled: msPooled(s.zAt(o), s.ind.rsi[o]), msOwn: msOwn(s.zAt(o), s.ind.rsi[o]) };
       p.ensPooled = (p.pLR + p.pGB + p.pMLP) / 3;
       p.ensPooledMs = (p.pGB + p.pMLP + p.msPooled) / 3;
@@ -53,7 +60,10 @@ for (const iv of Object.keys(HMAP)) {
       for (const [k, v] of Object.entries(p)) { hit(k, v, y); hitC(k, v, y, 0.03); }
     }
   }
-  out[iv] = { acc, conf };
+  const upPct = (100 * base.testUp) / base.testN;
+  const trainSaysUp = base.trainUp * 2 >= base.trainN;
+  out[iv] = { acc, conf, base: { n: base.testN, alwaysUp: +upPct.toFixed(1), trainMajority: +(trainSaysUp ? upPct : 100 - upPct).toFixed(1), hindsight: +Math.max(upPct, 100 - upPct).toFixed(1) } };
   console.log(iv, Object.entries(acc).map(([k, [h, n]]) => `${k} ${(100 * h / n).toFixed(1)}`).join(' | '));
+  console.log(`   baselines over ${base.testN} test points: always up ${out[iv].base.alwaysUp} | the training part's commoner way ${out[iv].base.trainMajority} | the test part's commoner way (hindsight) ${out[iv].base.hindsight}`);
   console.log('   conf≥.03', Object.entries(conf).map(([k, [h, n]]) => `${k} ${(100 * h / n).toFixed(1)}(${n})`).join(' | '));
 }
