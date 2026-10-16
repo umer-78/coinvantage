@@ -17,7 +17,8 @@ test('before it has started, it says so and how to start it', () => {
   const a = traderAnswer('How is my AI trader doing?', { saved: { interval: '1h' } });
   assert.match(a.text, /has not started yet/);
   assert.match(a.text, /\[Trading\]\(#\/trader\)/);
-  assert.match(a.text, new RegExp(`\\+${CHART_TESTED['1h'].own.ret}% per ${CHART_TESTED['1h'].block}`), 'the chart\'s tested result');
+  const t = CHART_TESTED['1h'].adopt ? CHART_TESTED['1h'].own : CHART_TESTED['1h'].standard; // the rules the chart trades
+  assert.match(a.text, new RegExp(`\\+${t.ret}% per ${CHART_TESTED['1h'].block}`), 'the chart\'s tested result');
   assert.match(a.text, /Not financial advice/);
 });
 

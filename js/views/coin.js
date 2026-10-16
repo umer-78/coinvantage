@@ -788,7 +788,7 @@ export async function render(el, [symParam]) {
   // chart's own test where it was run, and the whole release test beside it.
   function coverage(band) {
     const x = (st.fcView || st.forecast)?.leanRemoved && FORECAST_TESTED.centred[st.interval];
-    if (typeof x?.[band] === 'number') return `held ${x[band]}% of the time on ${esc(st.interval)} across ${x.tests.toLocaleString('en-US')} tests on ${x.coins} coins (${x.tests === FORECAST_TESTED.perChart ? FORECAST_TESTED.measuredOn : FORECAST_TESTED.centredMeasuredOn})${x.widen && x.asDrawnBefore?.[band] != null ? `; drawn ${Math.round((x.widen - 1) * 100)}% wider here, which lifted it from ${x.asDrawnBefore[band]}% on candles the width was not fitted on` : ''}`;
+    if (typeof x?.[band] === 'number') return `held ${x[band]}% of the time on ${esc(st.interval)} across ${x.tests.toLocaleString('en-US')} tests on ${x.coins} coins (${x.tests === FORECAST_TESTED.perChart ? FORECAST_TESTED.measuredOn : FORECAST_TESTED.centredMeasuredOn})${x.widen && x.asDrawnBefore?.[band] != null ? `; drawn ${Math.round((x.widen - 1) * 100)}% wider here, ${x.asDrawnBefore[band]}% without the widening on the same candles, which the width was not fitted on` : ''}`;
     const own = TESTED_ACCURACY[band]?.[st.interval];
     const all = `${TESTED_ACCURACY.bandsAll[band]}% across all ${TESTED_ACCURACY.tests.toLocaleString()} tests`;
     return typeof own === 'number' ? `held ${own}% of the time on ${esc(st.interval)} · ${all}` : `held ${all} (${esc(st.interval)} itself was not tested)`;

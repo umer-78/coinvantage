@@ -144,23 +144,29 @@ test('a chart trades its own rules only where the published test clears the bar 
     const dd = (r) => r.ddClosed ?? r.dd;
     const clears = x.better >= 2 && x.own.ret - x.standard.ret >= 1 && dd(x.own) <= dd(x.standard) + 5;
     assert.ok(x.holdDrop > 0 && x.own.dd > 0 && x.standard.dd > 0, `${iv}: drops measured`);
-    assert.ok(x.fillCost > 0, `${iv}: the cost of worse fills is measured`);
+    assert.ok(x.fillCost == null || x.fillCost > 0, `${iv}: the cost of worse fills, where measured on the rules it trades`);
     assert.equal(x.adopt, clears, `${iv}: adopt must follow the bar`);
     assert.equal(Boolean(CHART_RULES[iv]), x.adopt, `${iv}: rules shipped exactly where adopted`);
   }
 });
 
 test('the rules an account trades: its chart\'s own, then the self-review\'s latest trend lesson', async () => {
-  const { rulesForChart, CHART_RULES } = await import('../js/lib/autotrader.js');
-  const d = rulesForChart(DEFAULT_CONFIG, '1d');
-  for (const [k, v] of Object.entries(CHART_RULES['1d'])) assert.equal(d[k], v, k);
-  assert.equal(d.interval, '1d');
-  assert.equal(rulesForChart(DEFAULT_CONFIG, '4h').entryMode, DEFAULT_CONFIG.entryMode, '4h keeps the standard rules');
+  const { rulesForChart, CHART_RULES, RULE_KEYS } = await import('../js/lib/autotrader.js');
+  for (const iv of ['15m', '1h', '4h', '1d']) {
+    const d = rulesForChart(DEFAULT_CONFIG, iv);
+    const want = { ...Object.fromEntries(RULE_KEYS.map((k) => [k, DEFAULT_CONFIG[k]])), ...(CHART_RULES[iv] || {}) };
+    for (const k of RULE_KEYS) assert.equal(d[k], want[k], `${iv} ${k}`);
+    assert.equal(d.interval, iv);
+  }
+  // a stale rule in saved settings never replaces the tested one
+  const stale = rulesForChart({ ...DEFAULT_CONFIG, entryMode: 'pullback', atrStop: 1.5, trendFilter: false }, '4h');
+  assert.equal(stale.entryMode, DEFAULT_CONFIG.entryMode);
+  assert.equal(stale.atrStop, DEFAULT_CONFIG.atrStop);
   // a saved setting does not decide the trend filter; the lessons do
-  assert.equal(rulesForChart({ ...DEFAULT_CONFIG, trendFilter: true }, '1d').trendFilter, false);
+  assert.equal(stale.trendFilter, DEFAULT_CONFIG.trendFilter);
   assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'trend', at: 1 }]).trendFilter, true, 'learned');
   assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'trend', at: 1 }, { lens: 'trend', at: 2, undo: true }]).trendFilter, false, 'then unlearned');
-  assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'adx', at: 1 }]).trendFilter, false, 'other lessons leave it alone');
+  assert.equal(rulesForChart(DEFAULT_CONFIG, '1d', [{ lens: 'adx', at: 1 }]).trendFilter, DEFAULT_CONFIG.trendFilter, 'other lessons leave it alone');
 });
 
 test('the coin page\'s "would it buy?" is the trader\'s own decision, candle by candle', async () => {
@@ -308,11 +314,15 @@ test('volatility-scaled risk only ever buys less, and only while a coin is unusu
 
 test('volatility-scaled size is on only where it cleared its bar, and never on your own rules', async () => {
   const { rulesForChart, VOL_SCALE } = await import('../js/lib/autotrader.js');
+  // a decision changes only when two runs in a row agree: on needs the latest
+  // or the run before to have cleared the bar, and off needs one of them not to
+  const clears = (t) => !!t && t.better >= 2 && t.objective >= 1 && t.ret >= -1;
   for (const iv of ['15m', '1h', '4h', '1d']) {
     const t = VOL_SCALE.tested[iv];
-    const cleared = t.better >= 2 && t.objective >= 1 && t.ret >= -1;
-    assert.equal(rulesForChart({ ...DEFAULT_CONFIG }, iv).volScale, cleared, iv);
-    assert.equal(VOL_SCALE.charts.includes(iv), cleared, iv);
+    const on = VOL_SCALE.charts.includes(iv);
+    assert.equal(rulesForChart({ ...DEFAULT_CONFIG }, iv).volScale, on, iv);
+    if (on) assert.ok(clears(t) || clears(t?.previous), `${iv}: on only with a test behind it`);
+    else assert.ok(!(clears(t) && clears(t?.previous)), `${iv}: two passing runs switch it on`);
   }
   assert.equal(rulesForChart({ ...DEFAULT_CONFIG, strategy: 'custom' }, '4h').volScale, false);
 });

@@ -57,40 +57,40 @@ export const AUTOTRADER_TESTED = {
 };
 
 /**
- * Rules picked for one chart. tools/evaluate-trader-folds.mjs (24 coins in one
- * account, shared cash, fees) cuts each chart's history into four blocks and
- * three times picks the best of 432 rule sets on everything before a block,
- * then runs it on that block next to the standard rules. The bar, set before
- * the first run: better in two of three blocks, by a point on average, worst
- * drop no more than five points deeper. 1h and 1d have cleared it in every
- * run and trade the same pick made on their full history; 4h never has and
- * keeps the standard rules. 15m (ten-day blocks) has gone both ways between
- * runs hours apart; the last two cleared it with the same pick, so it trades
- * that pick (re-run 2026-10-13).
+ * Rules picked for one chart. tools/evaluate-trader-folds.mjs (all coins in
+ * one account, shared cash, fees) cuts each chart's history into four blocks
+ * and three times picks the best of 432 rule sets on everything before a
+ * block, then runs it on that block next to the standard rules. The bar, set
+ * before the first run: better in two of three blocks, by a point on average,
+ * worst drop no more than five points deeper. On 24 coins 1h and 1d cleared
+ * it in every run and 15m in the last two, so they traded their own picks. On
+ * all 106 coins (2026-10-15, two runs in a row, the second on nearly the same
+ * candles) none did: the pick was better in 0 of 3 blocks on 15m, 1 of 3 on
+ * 1h and 4h, and on 1d it made more (+95.8% against +27.8% a block) with a
+ * worst drop 10 points deeper than the bar allows. So every chart trades the
+ * standard rules (each coin's own daily rules, PER_COIN_RULES, still apply on
+ * 1d). An entry here overrides them on its chart.
  */
-export const CHART_RULES = {
-  '15m': { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, marketFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: 2 },
-  '1h': { entryMode: 'trend', momentumConfirm: true, trendFilter: true, marketFilter: false, atrStop: 3, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-  '1d': { entryMode: 'breakout', momentumConfirm: true, trendFilter: false, marketFilter: false, atrStop: 2, rMultiple: 3, trailAtr: 4, signalExitBars: 2 },
-};
+export const CHART_RULES = {};
 
 /**
- * That test's results (run 2026-10-13), averaged over its three blocks:
- * `standard` is the standard rules, `own` the chart's own pick, `hold` equal
- * amounts of every coin held through the block. Returns, drops and fees are %
- * of the balance per block; trades are the total over the three. `dd` is the
- * worst drop with open trades valued at every candle close — what the account
- * would have shown; `ddClosed` counts only closed trades, the measure the
- * rules were picked and the bar judged by (it hid every fall a trade recovered
- * from before it closed). `holdDrop` is holding's worst drop, measured the
- * same way. `range` and `up` are the worst and best block and the blocks with
- * a gain, for the rules the chart trades. `byRisk` is the same test with every
- * block replayed at six risk levels (same rules, 5 open at most, 25% a coin):
- * average, worst and best block, average worst drop, blocks with a gain,
- * trades a block. `fillCost`: points a block the shipped rules lost with
- * every fill 0.05% worse each way (spread and slippage, which the test
- * otherwise leaves out) — from a re-run 30 minutes later that made the same
- * decisions.
+ * That test's results (the second 106-coin run, 2026-10-15), averaged over its
+ * three blocks: `standard` is the standard rules, `own` the chart's own pick,
+ * `hold` equal amounts of every coin held through the block. `coins` is how
+ * many had candles for the chart's whole test (fewer on 1d: many coins are
+ * younger than its four years). Returns, drops and fees are % of the balance
+ * per block; trades are the total over the three. `dd` is the worst drop with
+ * open trades valued at every candle close — what the account would have
+ * shown; `ddClosed` counts only closed trades, the measure the rules were
+ * picked and the bar judged by. `holdDrop` is holding's worst drop, measured
+ * the same way. `range` and `up` are the worst and best block and the blocks
+ * with a gain, for the rules the chart trades. `byRisk` is the same test with
+ * every block replayed at six risk levels (same rules, 5 open at most, 25% a
+ * coin): average, worst and best block, average worst drop, blocks with a
+ * gain, trades a block. `fillCost`: points a block the rules lost with every
+ * fill 0.05% worse each way (spread and slippage, which the test otherwise
+ * leaves out); the run measured it on the rules each chart traded then, so
+ * only 4h has it for the standard rules (the own picks lost 1.9–2.6 points).
  *
  * `signals`: what followed each buy of those rules on its own (every coin run
  * alone, one trade at a time, blocks the rules were not picked on). R is the
@@ -98,25 +98,26 @@ export const CHART_RULES = {
  * of buys followed by a higher price H candles later (95% range fwdLo–fwdHi)
  * against `baseUpPct` from any candle; `randPct` a buy at a random candle of
  * the block held as long. On no chart did a buy pick direction better than
- * chance, and on none did it beat a random buy held as long: the 1d account
- * beat holding by sitting out falls (+3.3% against −56.8% in 2022–23, a worst
- * drop of 19.7% against 64.0% for holding), not by picking winners. The coin
- * page shows it.
+ * chance (on 15m and 1h a rise followed less often than after any candle),
+ * and on none did it beat a random buy held as long: the 1d account beat
+ * holding by sitting out falls (−9.8% against −57.7% in 2022–23, a worst drop
+ * of 18.2% against 66.2% for holding), not by picking winners. The coin page
+ * shows it.
  */
 export const CHART_TESTED = {
-  measuredOn: '2026-10-13', coins: 24, configs: 432, blocks: 3,
-  '15m': { range: [-4.69, 22.01], up: 2, from: '2026-09-12', to: '2026-10-13', block: '10 days', better: 2, adopt: true, hold: 7.19, holdDrop: 9.86, fillCost: 1.55, standard: { ret: 4.21, dd: 11.68, ddClosed: 8.49, trades: 279, win: 27.24, fees: 3.71 }, own: { ret: 6.88, dd: 9.26, ddClosed: 7.09, trades: 201, win: 32.84, fees: 2.95 },
-    byRisk: { 0.5: { ret: 5.05, lo: -2.78, hi: 19.37, dd: 6.32, up: 1, trades: 68 }, 1: { ret: 5.89, lo: -4.25, hi: 22.18, dd: 8.79, up: 1, trades: 67 }, 1.5: { ret: 6.88, lo: -4.69, hi: 22.01, dd: 9.26, up: 2, trades: 67 }, 2: { ret: 7.36, lo: -4.74, hi: 22.01, dd: 9.5, up: 2, trades: 66 }, 3: { ret: 7.45, lo: -4.74, hi: 22.01, dd: 9.53, up: 2, trades: 66 }, 5: { ret: 7.45, lo: -4.74, hi: 22.01, dd: 9.53, up: 2, trades: 66 } },
-    signals: { n: 583, winPct: 28.82, avgR: -0.09, avgWinR: 2.42, avgLossR: -1.11, holdMedian: 22, avgPct: 0.18, randPct: 0.42, H: 8, fwdN: 582, fwdUpPct: 45.7, fwdLo: 41.7, fwdHi: 49.77, baseUpPct: 50.39 } },
-  '1h': { range: [-12.34, 19.29], up: 2, from: '2026-06-10', to: '2026-10-13', block: '6 weeks', better: 2, adopt: true, hold: 15.22, holdDrop: 13.79, fillCost: 1.62, standard: { ret: -1.53, dd: 17.67, ddClosed: 15.56, trades: 261, win: 25.67, fees: 3.59 }, own: { ret: 6.69, dd: 15.29, ddClosed: 12.97, trades: 210, win: 29.52, fees: 2.99 },
-    byRisk: { 0.5: { ret: 3.91, lo: -2.95, hi: 10.51, dd: 9.63, up: 2, trades: 70 }, 1: { ret: 4.79, lo: -8.53, hi: 13.93, dd: 14.32, up: 2, trades: 70 }, 1.5: { ret: 6.69, lo: -12.34, hi: 19.29, dd: 15.29, up: 2, trades: 70 }, 2: { ret: 5.63, lo: -11.83, hi: 16.22, dd: 14.8, up: 2, trades: 69 }, 3: { ret: 4.97, lo: -11.85, hi: 15.93, dd: 15.25, up: 2, trades: 69 }, 5: { ret: 4.76, lo: -11.85, hi: 15.3, dd: 15.4, up: 2, trades: 69 } },
-    signals: { n: 553, winPct: 27.31, avgR: 0.01, avgWinR: 2.65, avgLossR: -0.98, holdMedian: 27, avgPct: 0.25, randPct: 1.05, H: 12, fwdN: 553, fwdUpPct: 46.29, fwdLo: 42.18, fwdHi: 50.46, baseUpPct: 50.35 } },
-  '4h': { range: [-18.21, 18], up: 1, from: '2025-08-02', to: '2026-10-13', block: '5 months', better: 1, adopt: false, hold: -10.59, holdDrop: 38.39, fillCost: 1.36, standard: { ret: -1.81, dd: 27.05, ddClosed: 24.59, trades: 216, win: 24.07, fees: 2.54 }, own: { ret: -3.38, dd: 20.57, ddClosed: 17.35, trades: 173, win: 30.06, fees: 2.56 },
-    byRisk: { 0.5: { ret: 2, lo: -4.63, hi: 13.71, dd: 11.6, up: 1, trades: 72 }, 1: { ret: -0.09, lo: -13.14, hi: 17.99, dd: 21.33, up: 1, trades: 72 }, 1.5: { ret: -1.81, lo: -18.21, hi: 18, dd: 27.05, up: 1, trades: 72 }, 2: { ret: -5.47, lo: -19.63, hi: 10.45, dd: 30.66, up: 1, trades: 72 }, 3: { ret: -9.65, lo: -19.47, hi: 7.39, dd: 34.36, up: 1, trades: 70 }, 5: { ret: -14.43, lo: -24.85, hi: -0.27, dd: 38.26, up: 0, trades: 67 } },
-    signals: { n: 547, winPct: 21.39, avgR: -0.06, avgWinR: 2.49, avgLossR: -0.75, holdMedian: 22, avgPct: -0.41, randPct: 0.22, H: 6, fwdN: 547, fwdUpPct: 46.62, fwdLo: 42.48, fwdHi: 50.81, baseUpPct: 47.61 } },
-  '1d': { range: [3.34, 23.28], up: 3, from: '2022-04-08', to: '2026-10-13', block: '18 months', better: 2, adopt: true, hold: 10.71, holdDrop: 63.97, fillCost: 1.18, standard: { ret: 12.66, dd: 19.88, ddClosed: 17, trades: 133, win: 27.82, fees: 0.97 }, own: { ret: 16.26, dd: 19.69, ddClosed: 14.22, trades: 176, win: 34.66, fees: 2.55 },
-    byRisk: { 0.5: { ret: 8.7, lo: 1.02, hi: 13.68, dd: 7.8, up: 3, trades: 59 }, 1: { ret: 15.85, lo: 2.19, hi: 23.65, dd: 14.37, up: 3, trades: 59 }, 1.5: { ret: 16.26, lo: 3.34, hi: 23.28, dd: 19.69, up: 3, trades: 59 }, 2: { ret: 17.13, lo: 4.75, hi: 33.82, dd: 25.03, up: 3, trades: 59 }, 3: { ret: 9.09, lo: 3.3, hi: 19.72, dd: 30.42, up: 3, trades: 59 }, 5: { ret: 9.25, lo: -0.97, hi: 23.59, dd: 31.6, up: 2, trades: 56 } },
-    signals: { n: 327, winPct: 31.19, avgR: 0.2, avgWinR: 2.54, avgLossR: -0.86, holdMedian: 8, avgPct: 0.87, randPct: 1.78, H: 7, fwdN: 325, fwdUpPct: 48.31, fwdLo: 42.93, fwdHi: 53.73, baseUpPct: 46.93 } },
+  measuredOn: '2026-10-15', coins: 106, configs: 432, blocks: 3,
+  '15m': { coins: 105, range: [-2.05, 11.04], up: 2, from: '2026-09-14', to: '2026-10-15', block: '10 days', better: 0, adopt: false, hold: 8.27, holdDrop: 8.96, fillCost: null, standard: { ret: 6.13, dd: 11.3, ddClosed: 10.21, trades: 300, win: 23.67, fees: 3.96 }, own: { ret: -10.62, dd: 15.54, ddClosed: 14.82, trades: 425, win: 29.17, fees: 5.41 },
+    byRisk: { 0.5: { ret: 0.19, lo: -8.15, hi: 7.79, dd: 9.1, up: 2, trades: 97 }, 1: { ret: 1.95, lo: -6.2, hi: 7.71, dd: 11.04, up: 2, trades: 98 }, 1.5: { ret: 6.13, lo: -2.05, hi: 11.04, dd: 11.3, up: 2, trades: 100 }, 2: { ret: 5.89, lo: -5.57, hi: 12.45, dd: 12.24, up: 2, trades: 100 }, 3: { ret: 5.11, lo: -7.85, hi: 14.08, dd: 13.84, up: 2, trades: 100 }, 5: { ret: 4.99, lo: -8.36, hi: 14.31, dd: 14.47, up: 2, trades: 100 } },
+    signals: { n: 3220, winPct: 24.57, avgR: -0.04, avgWinR: 2.51, avgLossR: -0.87, holdMedian: 23, avgPct: 0.36, randPct: 0.59, H: 8, fwdN: 3218, fwdUpPct: 45.49, fwdLo: 43.78, fwdHi: 47.22, baseUpPct: 49.18 } },
+  '1h': { coins: 103, range: [-0.73, 31.67], up: 2, from: '2026-06-12', to: '2026-10-15', block: '6 weeks', better: 1, adopt: false, hold: 19.34, holdDrop: 12.99, fillCost: null, standard: { ret: 12.46, dd: 17.66, ddClosed: 17.61, trades: 310, win: 26.13, fees: 4.33 }, own: { ret: 1.04, dd: 21.83, ddClosed: 19.36, trades: 259, win: 28.18, fees: 3.64 },
+    byRisk: { 0.5: { ret: 3.1, lo: -2.88, hi: 11.71, dd: 10.22, up: 2, trades: 104 }, 1: { ret: 8.76, lo: -1.66, hi: 25.25, dd: 16.32, up: 2, trades: 103 }, 1.5: { ret: 12.46, lo: -0.73, hi: 31.67, dd: 17.66, up: 2, trades: 103 }, 2: { ret: 16.16, lo: -2.13, hi: 40.61, dd: 18.31, up: 2, trades: 105 }, 3: { ret: 19.46, lo: -4.57, hi: 53.02, dd: 18.76, up: 2, trades: 105 }, 5: { ret: 21.47, lo: -8.04, hi: 61.48, dd: 18.14, up: 2, trades: 105 } },
+    signals: { n: 3124, winPct: 24.84, avgR: 0.04, avgWinR: 2.44, avgLossR: -0.75, holdMedian: 24, avgPct: 0.58, randPct: 1.08, H: 12, fwdN: 3119, fwdUpPct: 46.1, fwdLo: 44.36, fwdHi: 47.86, baseUpPct: 48.85 } },
+  '4h': { coins: 99, range: [-5.9, 19.52], up: 2, from: '2025-08-04', to: '2026-10-15', block: '5 months', better: 1, adopt: false, hold: 35.62, holdDrop: 40.61, fillCost: 1.76, standard: { ret: 8.31, dd: 26.73, ddClosed: 25.87, trades: 294, win: 26.19, fees: 3.26 }, own: { ret: -4.61, dd: 41.83, ddClosed: 38.51, trades: 706, win: 25.5, fees: 8.56 },
+    byRisk: { 0.5: { ret: 4.95, lo: 0.32, hi: 9.83, dd: 11.05, up: 3, trades: 98 }, 1: { ret: 7.62, lo: -2.46, hi: 16.14, dd: 20.07, up: 2, trades: 98 }, 1.5: { ret: 8.31, lo: -5.9, hi: 19.52, dd: 26.73, up: 2, trades: 98 }, 2: { ret: 8.36, lo: -16.44, hi: 26.93, dd: 30.68, up: 2, trades: 96 }, 3: { ret: 10.39, lo: -23.78, hi: 31.17, dd: 35.41, up: 2, trades: 96 }, 5: { ret: 14.5, lo: -22.65, hi: 40.02, dd: 37.51, up: 2, trades: 97 } },
+    signals: { n: 2086, winPct: 23.2, avgR: 0.03, avgWinR: 2.53, avgLossR: -0.73, holdMedian: 23, avgPct: 0.84, randPct: 1.63, H: 6, fwdN: 2084, fwdUpPct: 45.44, fwdLo: 43.31, fwdHi: 47.59, baseUpPct: 47.09 } },
+  '1d': { coins: 49, range: [-9.8, 54.9], up: 2, from: '2022-04-10', to: '2026-10-15', block: '18 months', better: 2, adopt: false, hold: 42.96, holdDrop: 59.51, fillCost: null, standard: { ret: 27.79, dd: 18.49, ddClosed: 16.6, trades: 161, win: 31.05, fees: 1.18 }, own: { ret: 95.84, dd: 31.51, ddClosed: 26.74, trades: 272, win: 30.15, fees: 3.44 },
+    byRisk: { 0.5: { ret: 8.94, lo: -3.08, hi: 17.75, dd: 6.69, up: 2, trades: 54 }, 1: { ret: 18.19, lo: -6.36, hi: 36.12, dd: 12.86, up: 2, trades: 54 }, 1.5: { ret: 27.79, lo: -9.8, hi: 54.9, dd: 18.49, up: 2, trades: 54 }, 2: { ret: 36.87, lo: -13.56, hi: 72.86, dd: 23.57, up: 2, trades: 54 }, 3: { ret: 48.01, lo: -20.51, hi: 89.82, dd: 32.33, up: 2, trades: 54 }, 5: { ret: 52.76, lo: -30.58, hi: 98.57, dd: 41.47, up: 2, trades: 53 } },
+    signals: { n: 638, winPct: 27.27, avgR: 0.2, avgWinR: 2.73, avgLossR: -0.75, holdMedian: 21, avgPct: 3.27, randPct: 8, H: 7, fwdN: 637, fwdUpPct: 49.76, fwdLo: 45.89, fwdHi: 53.64, baseUpPct: 46.69 } },
 };
 
 /**
@@ -139,27 +140,33 @@ export function rulesForChart(cfg, interval, lessons = []) {
   // Your own rules are traded as you set them: neither the chart's tested
   // rules nor the self-review's trend lesson overrides what you chose.
   if (cfg.strategy === 'custom') return { ...cfg, ...pickRules({ ...CUSTOM_DEFAULT, ...(cfg.custom || {}) }), interval };
+  // The tested rules, never a stale copy of them in saved settings: the
+  // standard set, then the chart's own where it has them.
+  const standard = Object.fromEntries([...RULE_KEYS, 'marketFilter'].map((k) => [k, DEFAULT_CONFIG[k]]));
   const trend = [...(lessons || [])].reverse().find((h) => h.lens === 'trend');
-  return { ...cfg, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), volScale: VOL_SCALE.charts.includes(interval), interval };
+  return { ...cfg, ...standard, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), volScale: VOL_SCALE.charts.includes(interval), interval };
 }
 
 /**
  * Volatility-scaled position size (DEFAULT_CONFIG.volScale), A/B-tested by
- * tools/evaluate-trader-folds.mjs on the rules each chart ships, block by
+ * tools/evaluate-trader-folds.mjs on the rules each chart trades, block by
  * block. The bar, written in the script before the run: better on return −
  * ½·worst drop in at least 2 of 3 blocks, by at least a point on average, and
- * an average return no more than a point lower. Only 4h cleared it, so only
- * 4h uses it. Differences are percentage points per block, with minus without.
+ * an average return no more than a point lower. 4h cleared it on 24 coins
+ * (2026-10-13) and in the first 106-coin run, not in the second (`tested`,
+ * −1.51 points a period, worst drop 1.94 points smaller); a published
+ * decision changes only when two runs in a row agree, so 4h keeps it. On 15m,
+ * 1h and 1d both 106-coin runs cleared it, but on the charts' own picks,
+ * which no longer trade; it stays off there until it clears the bar on the
+ * standard rules. Differences are percentage points per block, with minus
+ * without.
  */
 export const VOL_SCALE = {
-  measuredOn: '2026-10-13', charts: ['4h'],
+  measuredOn: '2026-10-15', charts: ['4h'],
   // the run behind CHART_TESTED; `dd` is the change in the worst drop with
   // open trades valued at every close, `objective` the bar's (closed trades)
   tested: {
-    '15m': { better: 1, ret: -2.19, dd: -1.48, objective: -2.06 },
-    '1h': { better: 1, ret: -1.04, dd: -0.72, objective: -0.75 },
-    '4h': { better: 3, ret: 0.15, dd: -2.29, objective: 1.38 },
-    '1d': { better: 1, ret: 4.17, dd: -1.54, objective: 4.89 },
+    '4h': { better: 2, ret: -1.51, dd: -1.94, objective: -0.33, previous: { better: 2, ret: 0.07, dd: -2.7, objective: 1.34 } },
   },
 };
 
