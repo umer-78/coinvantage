@@ -114,8 +114,8 @@ It's a static site, so any static host works (GitHub Pages, Netlify, Vercel, Clo
 1. Create a repository and push this folder to `main`.
 2. Repository → **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/ (root)`**.
 3. Wait ~1 minute; the site appears at `https://<user>.github.io/<repo>/`.
-4. Generate the sitemap for that address and commit it:
-   `node tools/build-sitemap.mjs https://<user>.github.io/<repo>/`
+4. Generate the indexable pages, sitemap and robots.txt for that address and commit them:
+   `node tools/build-pages.mjs --site=https://<user>.github.io/<repo>/` (`tools/deploy-push.sh` runs it on every deploy)
 5. Open the site → **Admin → Settings → Site** and paste the same URL. Alert e-mails and Telegram messages use it to link back to charts.
 
 Everything on the free tier is fetched by the visitor's browser from public, CORS-enabled APIs, so the static site needs no server and no keys.

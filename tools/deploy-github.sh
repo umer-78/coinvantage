@@ -25,9 +25,6 @@ git symbolic-ref -q HEAD >/dev/null || git checkout -b "$BRANCH"
 git branch -M "$BRANCH"
 [ -f .nojekyll ] || touch .nojekyll
 
-# Sitemap and robots point at the real address before the first push.
-node tools/build-sitemap.mjs "$SITE"
-
 # Stamp this release. The app fetches version.txt on every load and reloads
 # itself when the number changes, so nobody is ever left on a stale build.
 BUILD="$(date -u +%Y%m%d-%H%M%S)"
@@ -42,6 +39,9 @@ node -e '
   fs.writeFileSync("sw.js", sw);
 ' "$BUILD"
 echo "Build $BUILD stamped into version.txt, js/app.js and sw.js"
+# the pages search engines index, the sitemap and robots.txt, for this address
+node tools/build-deps.mjs
+node tools/build-pages.mjs --site="$SITE"
 
 git add -A
 git diff --cached --quiet || git commit -q -m "Deploy CoinVantage to GitHub Pages"

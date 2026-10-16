@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-route="#/coin/SPX">
+<head>
+  <meta charset="utf-8">
+  <base href="/coinvantage/">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SPX Price, Live Chart &amp; Tested AI Forecast | CoinVantage</title>
+  <meta name="description" content="Live SPX price and chart from Gate.io, 13 indicators, a price-range forecast tested on 106 coins and an AI paper-trading signal with its measured record.">
+  <!-- Locks the page down against injected scripts: only our own files and the
+       pinned CDN may run code, framing is blocked by the server header, and forms cannot be
+       redirected off-site. Inline markup styles still work; inline SCRIPTS do not,
+       which is the attack this closes. The one inline script below is allowed by
+       its exact hash — change it and you must update the hash. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-m7v0T+41AdKl0dUdyHrXrQhNl2dT2S6AEr9UN/Q71nI=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src 'self' https: wss: blob: data: http://localhost:* http://127.0.0.1:*; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#080b11" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="SPX Price, Live Chart &amp; Tested AI Forecast | CoinVantage">
+  <meta property="og:description" content="Live SPX price and chart from Gate.io, 13 indicators, a price-range forecast tested on 106 coins and an AI paper-trading signal with its measured record.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CoinVantage">
+  <meta property="og:url" content="https://umer-78.github.io/coinvantage/coin/spx/">
+  <meta property="og:image" content="https://umer-78.github.io/coinvantage/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="CoinVantage: live crypto markets, honest signals and AI forecasts in your browser">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://umer-78.github.io/coinvantage/coin/spx/">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <!-- ld:start -->
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"SPX Price, Live Chart & Tested AI Forecast | CoinVantage","url":"https://umer-78.github.io/coinvantage/coin/spx/","description":"Live SPX price and chart from Gate.io, 13 indicators, a price-range forecast tested on 106 coins and an AI paper-trading signal with its measured record.","isPartOf":{"@type":"WebSite","name":"CoinVantage","url":"https://umer-78.github.io/coinvantage/"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"CoinVantage","item":"https://umer-78.github.io/coinvantage/"},{"@type":"ListItem","position":2,"name":"Coins","item":"https://umer-78.github.io/coinvantage/"},{"@type":"ListItem","position":3,"name":"SPX","item":"https://umer-78.github.io/coinvantage/coin/spx/"}]}</script>
+  <!-- ld:end -->
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f5b301'/%3E%3Cstop offset='1' stop-color='%23ea580c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M14 42l12-12 8 8 16-18' stroke='%231b1405' stroke-width='6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://data-api.binance.vision">
+  <link rel="preconnect" href="https://api.coingecko.com">
+  <link rel="stylesheet" href="css/app.css">
+  <!-- The app shell's modules, fetched in parallel (tools/build-deps.mjs). -->
+  <!-- modulepreload:start -->
+  <link rel="modulepreload" href="js/app.js">
+  <link rel="modulepreload" href="js/api/backend.js">
+  <link rel="modulepreload" href="js/api/clock.js">
+  <link rel="modulepreload" href="js/api/fx.js">
+  <link rel="modulepreload" href="js/api/http.js">
+  <link rel="modulepreload" href="js/api/live.js">
+  <link rel="modulepreload" href="js/api/market.js">
+  <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/deps.js">
+  <link rel="modulepreload" href="js/format.js">
+  <link rel="modulepreload" href="js/i18n.js">
+  <link rel="modulepreload" href="js/lib/cloudsync.js">
+  <link rel="modulepreload" href="js/lib/demo.js">
+  <link rel="modulepreload" href="js/lib/indicators.js">
+  <link rel="modulepreload" href="js/lib/signals.js">
+  <link rel="modulepreload" href="js/store.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <!-- modulepreload:end -->
+  <style>
+    /* Premium design system tokens — layered over app.css, project accent kept. */
+    :root {
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --shadow-md: 0 4px 6px rgba(12, 17, 28, .06), 0 10px 24px rgba(12, 17, 28, .1);
+      --accent-glow: var(--accent-soft);
+      --mono: "SF Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    :root[data-theme="dark"] {
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, .3), 0 10px 24px rgba(0, 0, 0, .35);
+    }
+
+    /* Animated background mesh on body::before. Layers above the static html
+       glow from app.css; transparent so surfaces still read as solid. */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% -10%, var(--accent-soft), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 85% 110%, var(--accent-soft), transparent 55%);
+      animation: meshDrift 18s ease-in-out infinite alternate;
+    }
+    @keyframes meshDrift {
+      from { opacity: .8; transform: scale(1); }
+      to { opacity: 1; transform: scale(1.04); }
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .topbar { animation: fadeDown .55s var(--ease) backwards; }
+
+    /* Glass cards with staggered fadeUp entrances. `backwards` (not `both`)
+       so the end state never pins transform over hover lifts. */
+    .card {
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      animation: fadeUp .5s var(--ease) backwards;
+    }
+    #view > .card:nth-child(1), .grid > .card:nth-child(1) { animation-delay: .05s; }
+    #view > .card:nth-child(2), .grid > .card:nth-child(2) { animation-delay: .1s; }
+    #view > .card:nth-child(3), .grid > .card:nth-child(3) { animation-delay: .15s; }
+    #view > .card:nth-child(4), .grid > .card:nth-child(4) { animation-delay: .2s; }
+    .page-head { animation: fadeUp .5s var(--ease) .04s backwards; }
+    .foot { animation: fadeUp .5s var(--ease) .3s backwards; }
+
+    /* Primary action: warm gradient + glow so it reads as the one thing to press. */
+    .btn.primary {
+      background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 65%, #ea580c));
+      color: var(--accent-ink);
+      border-color: transparent;
+      box-shadow: 0 2px 10px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, .15);
+    }
+    .btn.primary:hover {
+      filter: brightness(1.06);
+      box-shadow: 0 4px 16px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, .2);
+      transform: translateY(-1px);
+    }
+
+    /* Branded gradient icon glow on the header marks. */
+    .brand svg {
+      filter: drop-shadow(0 2px 8px var(--accent-soft));
+      transition: filter .2s var(--ease);
+    }
+    .brand:hover svg { filter: drop-shadow(0 3px 12px var(--accent-soft)); }
+
+    @media (prefers-reduced-motion: reduce) {
+      body::before, .topbar, .card, .page-head, .foot { animation: none; }
+    }
+  
+:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 2px;
+}
+</style>
+  <script>
+    try { const s = JSON.parse(localStorage.getItem('cv:settings') || '{}'); if (s.theme) document.documentElement.dataset.theme = s.theme; } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#view">Skip to content</a>
+
+  <div class="app">
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="#/">
+        <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradSide" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5b301"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#cvGradSide)"/><path d="M14 42l12-12 8 8 16-18" stroke="#1b1405" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="brand-name" data-app-name>CoinVantage</span>
+      </a>
+      <nav class="nav" id="nav"></nav>
+      <div class="side-foot">
+        <div class="live-pill" id="livePill"><i></i><span>Connecting…</span></div>
+        <p class="fine">Data: 10 exchanges (Binance first) and CoinGecko. Signals and forecasts are not financial advice.</p>
+        <a class="side-gh" href="https://github.com/umer-78/coinvantage">GitHub ↗</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <a class="brand brand-m" href="#/" aria-label="Home">
+          <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5b301"/><stop offset="1" stop-color="#ea580c"/></linearGradient></defs><rect width="64" height="64" rx="14" fill="url(#cvGradTop)"/><path d="M14 42l12-12 8 8 16-18" stroke="#1b1405" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <div class="search" id="search">
+          <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="searchInput" type="search" placeholder="Search coin (BTC, Ethereum…)" autocomplete="off" aria-label="Search coins">
+          <div class="search-results" id="searchResults" hidden></div>
+        </div>
+        <select class="mini-sel" id="curSel" aria-label="Display currency"></select>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme" type="button"></button>
+        <button class="btn sm" id="accountBtn" aria-label="Account" type="button"></button>
+      </header>
+      <div id="banner"></div>
+      <div class="ticker" id="ticker" aria-label="Live prices"></div>
+      <main id="view" tabindex="-1">
+        <section class="card seo-intro"><h1>SPX price, chart and AI forecast</h1><p>The live SPX price and candlestick chart come from Gate.io. When you open the page the app trains its forecast models on SPX's own candles, in your browser, and shows the price range they give for the next candles, the indicators and the AI trader's signal for SPX.</p><p>Its price range is measured: the 80% range held 79–80.1% of the time across about 540,000 tests on 106 coins.</p><p>No model has beaten chance at calling which way price goes next, so the page never presents a direction as a buy or sell call.</p><p class="row" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="#/coin/SPX">Open the live SPX chart</a> <a class="btn" href="#/trader">AI trading simulator</a> <a class="btn" href="#/learn">How it is tested</a></p><p class="fine">Not financial advice. Crypto is volatile; never risk money you cannot afford to lose.</p></section>
+      </main>
+      <footer class="foot">
+        <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts and AI answers are educational tools, <b>not financial advice</b>. Crypto is volatile — never risk money you can't afford to lose.
+        <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a> · <a href="https://github.com/umer-78/coinvantage">Source on GitHub</a> · <span id="buildTag"></span></span>
+      </footer>
+
+      <!-- Quick chat: live-data commands (/price, /signal, /market). Open questions go to the Ask page. -->
+      <button class="chat-fab" id="chatBtn" type="button" aria-controls="chatPanel" aria-expanded="false" aria-label="Open quick chat"></button>
+      <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Quick chat" hidden>
+        <div class="chat-header">
+          <div class="chat-title">Quick chat</div>
+          <button class="chat-close" id="chatClose" type="button" aria-label="Close chat">&times;</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-message bot">
+            <span class="avatar">AI</span>
+            <span class="msg">Live market answers in one line. Try /price BTC, /signal ETH or /market. For open questions, use the Ask page.</span>
+          </div>
+        </div>
+        <div class="chat-input-wrapper">
+          <input type="text" id="chatInput" placeholder="/price BTC" aria-label="Chat command">
+          <button class="chat-send" id="chatSend" type="button">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <nav class="bottombar" id="bottombar" aria-label="Mobile navigation"></nav>
+  </div>
+  <noscript><p style="padding:24px;color:#fff">This site needs JavaScript enabled.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

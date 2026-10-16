@@ -19,6 +19,9 @@ jobs:
       - name: Unit tests
         run: node --test tests/*.test.mjs
 
+      - name: The indexable pages, sitemap and robots.txt match index.html and the tested records
+        run: node tools/build-pages.mjs --check
+
   # The edge function, booted with Deno and no database: it must start, and its
   # selftest must answer exactly what the site's engine computes. Nothing else
   # checks the server code before it is deployed.

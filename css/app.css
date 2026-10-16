@@ -638,3 +638,7 @@ body { background: transparent; }
   .suggest { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; }
   .suggest button { flex: 0 0 auto; max-width: 78%; }
 }
+
+/* The text a search engine (or a reader without scripts) sees before the app draws the page. */
+.seo-intro h1 { font-size: 1.45rem; margin: 0 0 10px; }
+.seo-intro p { max-width: 70ch; }

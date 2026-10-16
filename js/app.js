@@ -425,6 +425,13 @@ getAppSettings().then((s) => {
 }).catch(() => { /* backend optional */ });
 
 // ---------------------------------------------------------------- boot
+// The font loads after the first paint instead of holding it up (a stylesheet
+// link in the page head blocks rendering until Google answers).
+{ const f = document.createElement('link'); f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'; document.head.append(f); }
+// The pages search engines index (coin/btc/, trader/ …, tools/build-pages.mjs)
+// carry the route they stand for. Opening it moves the address to the app's
+// own (/#/coin/BTC), so every link after this stays in the page.
+{ const entry = document.documentElement.dataset.route; if (entry && !location.hash) history.replaceState(null, '', entry); }
 $$('[data-app-name]').forEach((n) => { n.textContent = CONFIG.APP_NAME; });
 applyTheme(settings.get().theme || 'dark');
 applyDir();
@@ -480,7 +487,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261016-004835";
+export const BUILD = "20261016-005827";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

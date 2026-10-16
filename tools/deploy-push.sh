@@ -28,7 +28,6 @@ if ! git --version >/dev/null 2>&1; then
   exit 1
 fi
 
-node tools/build-sitemap.mjs "$SITE"
 node tools/build-deps.mjs
 BUILD="$(date -u +%Y%m%d-%H%M%S)"
 printf '%s\n' "$BUILD" > version.txt
@@ -41,6 +40,8 @@ node -e '
   fs.writeFileSync("sw.js", sw);
 ' "$BUILD"
 echo "Build $BUILD stamped"
+# the pages search engines index, the sitemap and robots.txt (they copy index.html)
+node tools/build-pages.mjs
 
 git add -A
 git diff --cached --quiet || git commit -q -m "${MSG:-Release $BUILD}"
