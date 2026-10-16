@@ -105,14 +105,16 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
   // so most coins were never forecast and could never be recommended.
   const shortlist = rows.filter((r) => r.signal.ok);
   const horizon = DEFAULT_HORIZON[interval] || 12;
-  for (const row of shortlist) {
-    onStep?.(`Forecasting ${row.coin.symbol}…`);
+  // All at once: the worker pool (js/lib/compute.js) runs as many as the device has cores for.
+  let forecasted = 0;
+  await Promise.all(shortlist.map(async (row) => {
     try {
       const fc = await runForecast(row.candles, { horizon, intervalMs: INTERVAL_MS[interval] });
       row.forecast = fc;
       row.timing = fc?.ok ? timingOutlook(fc, { intervalMs: INTERVAL_MS[interval], interval }) : null;
     } catch { /* advice still works from the signal alone */ }
-  }
+    onStep?.(`Forecasting… ${++forecasted}/${shortlist.length}`);
+  }));
   for (const row of rows) {
     row.advice = adviseCoin({ signal: row.signal, forecast: row.forecast, timing: row.timing, interval: row.interval || interval, trust: directionTrustFor(row.interval || interval).trust });
     row.candles = null;
@@ -163,11 +165,12 @@ export const SCAN_FRAMES = [
 ];
 
 export async function scanMarketMulti({ intervals = SCAN_FRAMES.map((f) => f.interval), count = 30, onStep } = {}) {
+  // The charts are read side by side; the worker pool shares the forecasts out.
   const byInterval = {};
-  for (const interval of intervals) {
-    onStep?.(`Scanning the market on the ${interval} chart…`);
+  onStep?.(`Scanning the market on the ${intervals.join(', ')} charts…`);
+  await Promise.all(intervals.map(async (interval) => {
     byInterval[interval] = await scanMarket({ interval, count, onStep: (t) => onStep?.(`${interval}: ${t.replace('Scanning the market… ', '')}`) });
-  }
+  }));
   return byInterval;
 }
 

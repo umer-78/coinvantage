@@ -33,7 +33,7 @@ export function adviseCoin({ signal, forecast, timing, history, holding = null, 
   // track record justifies — and this one was the sole exception: a hardcoded
   // weight of 0.9, the heaviest of the four, never passed through edgeWeight().
   // It is also the reading that was since measured to point the WRONG way:
-  // across 244,000 bars the share of bars that rose falls as the score rises.
+  // across 1.58 million candles of 106 coins (SCORE_BUCKETS_TESTED) the share that rose falls as the score rises.
   //
   // So it now goes through the same gate as everything else, using its measured
   // directional accuracy — for a positive score, how often bars in that band

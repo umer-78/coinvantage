@@ -94,25 +94,27 @@ export async function render(el, [symParam]) {
     const card = $('#engineCard', el);
     const status = aiState.status;
     const opts = CONFIG.LLM_MODELS.map((m) => `<option value="${m.id}" ${(s.llmModel || '').startsWith(m.id.split('-q4')[0]) ? 'selected' : ''}>${m.label} · ${m.size}</option>`).join('');
-    let body;
+    // The built-in engine answers every question; a language model is an
+    // optional extra that rewords its answers and adds no knowledge.
+    const base = `<p><span class="chip up">● Ready</span></p><p class="fine">Answers instantly from live prices and the app's tested models, on this device. Nothing to download, no account, no API key, and every figure in an answer comes from that data.</p>`;
+    let extra = '';
     if (customReady()) {
-      body = customState.reached
-        ? `<p><span class="chip up">● Connected</span> Using your AI endpoint <b>${esc(settings.get().customModel || '')}</b>.</p>`
-        : `<p><span class="chip warn">● Configured, not yet reached</span> Set to <b>${esc(settings.get().customModel || '')}</b>. It is contacted when you ask a question — if it cannot be reached, answers come from the rule-based analyst instead.${customState.lastError ? `<br><small class="fine down">Last attempt: ${esc(customState.lastError)}</small>` : ''}</p>`;
+      extra = customState.reached
+        ? `<p class="fine mt"><span class="chip up">● Connected</span> Your AI endpoint <b>${esc(settings.get().customModel || '')}</b> words the answers.</p>`
+        : `<p class="fine mt"><span class="chip warn">● Configured, not yet reached</span> Your endpoint <b>${esc(settings.get().customModel || '')}</b> is tried when you ask; if it cannot be reached, the built-in answer is shown.${customState.lastError ? `<br><small class="down">Last attempt: ${esc(customState.lastError)}</small>` : ''}</p>`;
     } else if (status === 'ready') {
-      body = `<p><span class="chip up">● Running on this device</span></p><p class="fine">${esc(aiState.model)} · private, free, works offline once downloaded.</p>`;
+      extra = `<p class="fine mt"><span class="chip up">● Language model on</span> ${esc(aiState.model)} rewords the answers on this device.</p>`;
     } else if (status === 'loading') {
-      body = `<p class="row"><span class="spinner"></span><b>Starting built-in AI…</b></p><div class="meter"><i style="width:${Math.round(aiState.progress * 100)}%"></i></div><p class="fine mt">${esc(aiState.text.slice(0, 140))}</p><p class="fine">First start downloads the model once; after that it loads from cache in seconds.</p>`;
-    } else if (!support.webgpu) {
-      body = `<p><span class="chip warn">Instant analyst mode</span></p><p class="fine">This browser has no WebGPU, so the language model can't run here. You still get full answers from the rule-based analyst. For the LLM, use Chrome, Edge or Safari 26+ on a computer or recent phone.</p>`;
-    } else {
-      body = `<p class="fine">Download a free AI model that runs <b>inside your browser</b> (WebGPU). Nothing is sent to any server.</p>
+      extra = `<p class="row mt"><span class="spinner"></span><b>Loading the language model…</b></p><div class="meter"><i style="width:${Math.round(aiState.progress * 100)}%"></i></div><p class="fine mt">${esc(aiState.text.slice(0, 140))}</p><p class="fine">Answers keep coming from the built-in engine meanwhile.</p>`;
+    } else if (support.webgpu) {
+      extra = `<details class="mt"><summary class="fine" style="cursor:pointer">Optional: let a language model reword the answers</summary>
+        <p class="fine mt">A free model that runs inside your browser (WebGPU) and puts the same answers in its own words. It adds no knowledge: the facts still come from the built-in engine. It downloads once (${(() => { const gb = CONFIG.LLM_MODELS.map((m) => parseFloat(String(m.size).replace(/[^\d.]/g, ''))).filter(Number.isFinite); return gb.length ? `about ${Math.min(...gb)} to ${Math.max(...gb)} GB, by model` : 'size by model'; })()}) and then loads from cache.</p>
         <label class="fld mt">Model<select class="inp" id="modelSel">${opts}</select></label>
-        <button class="btn primary mt" id="startAi" style="width:100%">${icon('chip', 16)} Start built-in AI</button>
-        ${status === 'error' ? `<p class="fine down mt">${esc(aiState.text)}</p>` : ''}
-        <p class="fine mt">Until then, answers come instantly from the rule-based analyst.</p>`;
+        <button class="btn mt" id="startAi" style="width:100%">${icon('chip', 16)} Load the language model</button>
+        ${status === 'error' ? `<p class="fine down mt">${esc(aiState.text)}</p>` : ''}</details>`;
     }
-    card.innerHTML = `<div class="card-h"><h3>${icon('ai', 16)} Built-in AI</h3></div>${body}
+    const body = base + extra;
+    card.innerHTML = `<div class="card-h"><h3>${icon('ai', 16)} CoinVantage AI · built in</h3></div>${body}
       <details class="mt"><summary class="fine" style="cursor:pointer">Advanced: use your own AI server</summary>
         <form id="customForm" class="stack mt" style="gap:8px">
           <label class="fld">OpenAI-compatible URL<input class="inp" name="url" placeholder="http://localhost:11434/v1" value="${esc(settings.get().customEndpoint)}"></label>
@@ -122,7 +124,7 @@ export async function render(el, [symParam]) {
           <p class="fine">Works with Ollama, LM Studio, vLLM or any OpenAI-compatible service. The key stays in this browser. Ollama only answers other websites when started with <code>OLLAMA_ORIGINS=${esc(location.origin)}</code>; in LM Studio, turn on CORS in the server settings.</p>
         </form></details>`;
     $('#startAi', card)?.addEventListener('click', async () => {
-      try { await loadLocalModel($('#modelSel', card).value); toast('Built-in AI is ready', 'up'); }
+      try { await loadLocalModel($('#modelSel', card).value); toast('The language model is on', 'up'); }
       catch (e) { toast(e.message, 'down'); }
     });
     $('#customForm', card).addEventListener('submit', (e) => {
@@ -149,7 +151,7 @@ export async function render(el, [symParam]) {
     if (!history.length) {
       addMsg('bot', markdown(`**Ask me anything about the market.**
 
-Start broad — *"What should I buy right now?"* — and I'll rank every coin across three horizons: short term, swing and position, each with an entry, a stop and a target.
+Start broad — *"What should I buy right now?"* — and I'll read every coin across three horizons (short term, swing and position) and tell you which, if any, clear the evidence bar, with an entry, a stop and a target for those that do.
 
 Or ask about one coin: *"Is ETH worth buying this week?"* · *"Where should I sell SOL?"* · *"How is my portfolio doing?"*
 

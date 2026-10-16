@@ -3,25 +3,37 @@ import { forecast } from './predict.js';
 import { backtest, generateSignal } from './signals.js';
 import { analyzeHistory } from './history.js';
 
-let worker = null;
+// A few workers, so a scan of many coins trains several forecasts at once
+// instead of one after another (one core is left for the page itself).
+const POOL = Math.max(1, Math.min(3, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+let pool = null; // [{ w, pending: Map }] once started; false when workers cannot run here
 let seq = 0;
-const pending = new Map();
 
-function getWorker() {
-  if (worker !== null) return worker;
+function getPool() {
+  if (pool !== null) return pool;
   try {
-    worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-    worker.onmessage = (e) => {
-      const p = pending.get(e.data.id);
-      if (!p) return;
-      pending.delete(e.data.id);
-      if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.result);
-    };
-    worker.onerror = () => { worker = false; for (const [, p] of pending) p.fallback(); pending.clear(); };
+    pool = [];
+    for (let i = 0; i < POOL; i++) {
+      const slot = { w: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), pending: new Map() };
+      slot.w.onmessage = (e) => {
+        const p = slot.pending.get(e.data.id);
+        if (!p) return;
+        slot.pending.delete(e.data.id);
+        if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.result);
+      };
+      // a worker that dies hands its jobs to the page and leaves the pool
+      slot.w.onerror = () => {
+        for (const [, p] of slot.pending) p.fallback();
+        slot.pending.clear();
+        pool = pool && pool.filter((x) => x !== slot);
+        if (pool && !pool.length) pool = false;
+      };
+      pool.push(slot);
+    }
   } catch {
-    worker = false;
+    pool = false;
   }
-  return worker;
+  return pool;
 }
 
 function run(type, candles, opts) {
@@ -29,12 +41,14 @@ function run(type, candles, opts) {
     : type === 'backtest' ? backtest(candles, opts)
       : type === 'history' ? analyzeHistory(candles, opts)
         : generateSignal(candles, opts));
-  const w = getWorker();
-  if (!w) return new Promise((resolve) => setTimeout(() => resolve(local()), 0));
+  const slots = getPool();
+  if (!slots || !slots.length) return new Promise((resolve) => setTimeout(() => resolve(local()), 0));
+  // the least busy worker takes the job
+  const slot = slots.reduce((a, b) => (b.pending.size < a.pending.size ? b : a));
   return new Promise((resolve, reject) => {
     const id = ++seq;
-    pending.set(id, { resolve, reject, fallback: () => resolve(local()) });
-    w.postMessage({ id, type, candles, opts });
+    slot.pending.set(id, { resolve, reject, fallback: () => resolve(local()) });
+    slot.w.postMessage({ id, type, candles, opts });
   });
 }
 

@@ -2,7 +2,7 @@
 // stands behind it. This was "What to buy" until the chart score it ranked on
 // was measured to point the wrong way; it reports now instead of recommending.
 import { markets, getCandles, isStable, isTestedSource, INTERVAL_MS } from '../api/market.js';
-import { generateSignal } from '../lib/signals.js';
+import { generateSignal, SCORE_BUCKETS_TESTED } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
 import { adviseCoin, rankAdvice, ADVICE_DISCLAIMER } from '../lib/advice.js';
@@ -86,7 +86,7 @@ export async function render(el) {
 
       <div class="card mt" style="background:var(--surface-2)">
         <h3>How much to trust this</h3>
-        <p class="fine">The chart score is <b>not</b> part of any verdict here. Across 244,000 bars the share of bars that rose falls as the score rises, so it is shown as a reading and given no vote — the same accuracy gate every other component passes through.</p>
+        <p class="fine">The chart score is <b>not</b> part of any verdict here. Across ${SCORE_BUCKETS_TESTED.bars.toLocaleString('en-US')} candles of ${SCORE_BUCKETS_TESTED.coins} coins the share that rose mostly falls as the score rises, so it is shown as a reading and given no vote — the same accuracy gate every other component passes through.</p>
         <p class="fine">Each verdict blends four readings, and each one is weighted by its own measured accuracy — a reading that has shown no edge barely moves the result. ${(() => {
           // one chart's score with that chart's own test count, the latest test where there is one
           const r = TESTED_ACCURACY.recheck?.[st.interval];

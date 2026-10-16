@@ -228,7 +228,7 @@ function marketMultiBlock(m) {
     for (const a of m.avoid) out.push(`- **${a.coin}** — ${a.verdict} on the ${a.interval} chart (conviction ${a.conviction}/100)${a.topReason ? `: ${a.topReason}` : ''}`);
   }
 
-  out.push('\nEvery verdict weights each reading by how accurate it has actually been on past data, so one with no measured edge counts for nothing — which currently includes the chart score itself, measured across 244,000 bars as pointing the wrong way. Open **Market scan** for the same list with charts, or ask me about any single coin for the full breakdown.');
+  out.push(`\nEvery verdict weights each reading by how accurate it has actually been on past data, so one with no measured edge counts for nothing — which currently includes the chart score itself: across ${SCORE_BUCKETS_TESTED.bars.toLocaleString('en-US')} candles of ${SCORE_BUCKETS_TESTED.coins} coins, its strongest readings were followed by a rise least often. Open **Market scan** for the same list with charts, or ask me about any single coin for the full breakdown.`);
   return `${out.join('\n')}\n`;
 }
 

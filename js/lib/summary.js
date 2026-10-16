@@ -253,7 +253,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   const caveats = [];
   let verdict, tone, headline;
 
-  // The verdict is the reading, not an instruction. Sorting 244,000 bars by
+  // The verdict is the reading, not an instruction. Sorting 1.58 million candles by
   // score showed the highest-scoring ones were the LEAST likely to rise, so a
   // word like "BUY" here would tell the reader the opposite of what was
   // measured. What the engine can honestly say is how extended the indicators

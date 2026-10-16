@@ -1,7 +1,7 @@
 import { markets, getCandles, isStable, isTestedSource, INTERVAL_MS } from '../api/market.js';
 import { TESTED_ACCURACY, shownProbUp, directionReliable } from '../lib/predict.js';
 import { directionTrustFor } from '../lib/selfimprove.js';
-import { generateSignal, THRESHOLDS } from '../lib/signals.js';
+import { generateSignal, THRESHOLDS, SCORE_BUCKETS_TESTED } from '../lib/signals.js';
 import { runForecast } from '../lib/compute.js';
 import { timingOutlook } from '../lib/timing.js';
 import { forecastForDisplay } from '../lib/forecastview.js';
@@ -30,7 +30,7 @@ export async function render(el) {
       </div>
       <div class="meter" id="meter" style="margin-bottom:10px"><i style="width:0%"></i></div>
       <div id="tbl">${skeleton(10, 26)}</div>
-      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across 244,000 bars, the share of bars that rose <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI signal" is what the chart's tested trading rules do with the coin now — BUY, HOLD (in a trade), SELL or WAIT; in testing its buys picked direction no better than chance, and a coin's page shows the record. "AI up" is the coin page's forecast for the next <span id="hz"></span>, shown only where its direction held up in testing. "80% range" is where price should end up 8 times in 10 by then, centred on today's price where the direction is not reliable — the part of the forecast that tests accurate (in a test of 24 coins and about 100,000 ranges it held 77–80% of outcomes, depending on the chart); sort by it to find the coins that swing most. "Move timing" is when the high (or low) of that span came in similar past charts — when, not which way. Open a coin for the full forecast with accuracy stats.</p>
+      <p class="fine mt">Score: −100 to +100, measuring how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree. It is <b>not</b> a buy or sell rating — tested across ${SCORE_BUCKETS_TESTED.bars.toLocaleString('en-US')} candles of ${SCORE_BUCKETS_TESTED.coins} coins, the share that rose mostly <b>falls</b> as the score rises, so a high number means a move is extended rather than likely to continue. "AI signal" is what the chart's tested trading rules do with the coin now — BUY, HOLD (in a trade), SELL or WAIT; in testing its buys picked direction no better than chance, and a coin's page shows the record. "AI up" is the coin page's forecast for the next <span id="hz"></span>, shown only where its direction held up in testing. "80% range" is where price should end up 8 times in 10 by then, centred on today's price where the direction is not reliable — the part of the forecast that tests accurate (in a test of 24 coins and about 100,000 ranges it held 77–80% of outcomes, depending on the chart); sort by it to find the coins that swing most. "Move timing" is when the high (or low) of that span came in similar past charts — when, not which way. Open a coin for the full forecast with accuracy stats.</p>
     </div>`;
 
   // How far price may travel by the horizon: the forecast's 80% range, as a
