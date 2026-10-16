@@ -47,14 +47,22 @@ export const GEOMETRY_TESTED = { coins: 106, measuredOn: '2026-10-15', entries: 
  * which looks like a real edge.
  *
  * TEST 2 — trade it (`tools/evaluate-band-strategy.mjs`). Take only those
- * signals, in sequence, one position at a time, with fees, and compound the
- * result. That is what a person can actually do, and it tells a different story:
+ * signals, in sequence, one position at a time, with fees, and compare them with
+ * an entry at every candle of the same stretch under the same exits. Re-run
+ * 2026-10-16 on all 106 coins, on both halves of each coin's candles, with the
+ * best-looking band of each chart (the 1d one picked from the newer half):
  *
- *   1h, scores 45-59 : +0.040 R per trade over 712 trades, profitable on 8/12
- *                      coins — against +0.126 R for RANDOM entries under the
- *                      same rules. Three times worse than not choosing at all.
- *   4h, scores 18-29 : +0.044 R over 752 trades vs +0.019 R random. A margin too
- *                      small to call an edge.
+ *                        newer half              older half
+ *   1h, scores 45-59 :  +0.145R vs +0.093R      −0.166R vs −0.115R
+ *   4h, scores 18-29 :  +0.039R vs −0.024R      −0.012R vs −0.011R
+ *   1d, scores 60-100:  +0.176R vs −0.014R      −0.076R vs −0.032R
+ *
+ * Every band beat any-candle entries on the half where it looked good and
+ * none did on the other; the daily band, the strongest, did worse than any
+ * candle on the half it was not picked from. (Until this run the control was
+ * 60 fixed moments a coin and counted a time-out as 0R while the band's own
+ * time-outs counted their move, which made the comparison unfair; the 12-coin
+ * figures below that, +0.040R against +0.126R on 1h, used it.)
  *
  * The bucket average was inflated by two things a real account does not get:
  * overlapping positions it could never have held simultaneously, and partial
@@ -63,12 +71,12 @@ export const GEOMETRY_TESTED = { coins: 106, measuredOn: '2026-10-15', entries: 
  *
  * So: no score band has been shown to be tradeable. The score describes how
  * strongly the indicators agree right now. It does not predict profit, it is not
- * a gradient — on the 4h chart, 60+ did worse than an average bar — and the UI
- * says so rather than implying otherwise.
+ * a gradient, and the UI says so rather than implying otherwise.
  */
 export const SIGNAL_EDGE_TESTED = {
-  '1h': { lo: 45, hi: 59, bucketLift: 1.29, tradedR: 0.040, randomR: 0.126, trades: 712, beatsRandom: false },
-  '4h': { lo: 18, hi: 29, bucketLift: 1.10, tradedR: 0.044, randomR: 0.019, trades: 752, beatsRandom: false },
+  '1h': { lo: 45, hi: 59, bucketLift: 1.09, tradedR: 0.145, randomR: 0.093, trades: 5811, older: { tradedR: -0.166, randomR: -0.115, trades: 3439 }, beatsRandom: false },
+  '4h': { lo: 18, hi: 29, bucketLift: 1.04, tradedR: 0.039, randomR: -0.024, trades: 6880, older: { tradedR: -0.012, randomR: -0.011, trades: 5564 }, beatsRandom: false },
+  '1d': { lo: 60, hi: 100, bucketLift: 1.21, tradedR: 0.176, randomR: -0.014, trades: 417, older: { tradedR: -0.076, randomR: -0.032, trades: 201 }, beatsRandom: false },
 };
 
 /**

@@ -373,7 +373,8 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   // can actually do.
   const { tested } = edgeBand(interval, signal.score);
   if (tested && !conflict) {
-    caveats.push(`What the score is: how strongly the indicators agree right now, not a prediction of profit. Trading the best-looking band on this timeframe (scores ${tested.lo}–${tested.hi}) returned ${tested.tradedR >= 0 ? '+' : ''}${tested.tradedR.toFixed(3)}R per trade over ${tested.trades} tested trades, against ${tested.randomR >= 0 ? '+' : ''}${tested.randomR.toFixed(3)}R for entering at random under the same rules. A higher score does not mean a better trade.`);
+    const r = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}R`;
+    caveats.push(`What the score is: how strongly the indicators agree right now, not a prediction of profit. Trading the best-looking band on this timeframe (scores ${tested.lo}–${tested.hi}) returned ${r(tested.tradedR)} per trade over ${tested.trades.toLocaleString('en-US')} tested trades on the newer half of the data, against ${r(tested.randomR)} for entering at any candle under the same rules${tested.older ? `; on the older half it returned ${r(tested.older.tradedR)} against ${r(tested.older.randomR)}` : ''}. It did not hold across both, so a higher score does not mean a better trade.`);
   }
   if (measured) {
     caveats.push(`Measured across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins, the share of readings followed by a higher price FALLS as this score rises — on ${interval}, from ${SCORE_BUCKETS_TESTED.upRateByBucket[interval]?.extendedDown ?? '—'}% at the bottom of the scale to ${SCORE_BUCKETS_TESTED.upRateByBucket[interval]?.extendedUp ?? '—'}% at the top. A high score means the move is extended, not that it will continue. Trading the reverse does not work either: both directions were tested over a held-out half with fees and neither came out positive.`);

@@ -1,4 +1,4 @@
-import { findCoin, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, isTestedSource, isStable, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
+import { findCoin, markets, dataStatus, getCandles, exchangeCandles, getCoinProfile, getDepth, getTrades, getTickSize, isTestedSource, isStable, INTERVAL_MS, isSecondInterval, MAX_BARS } from '../api/market.js';
 import { compareExchanges } from '../api/exchanges.js';
 import { live } from '../api/live.js';
 import { streamCandles } from '../api/exstream.js';
@@ -44,7 +44,7 @@ export async function render(el, [symParam]) {
   const sym = (symParam || 'BTC').toUpperCase();
   el.innerHTML = skeleton(8, 30);
   const coin = await findCoin(sym);
-  if (!coin) { el.innerHTML = errorBox(`Coin "${sym}" was not found in the top 250.`); return; }
+  if (!coin) { el.innerHTML = await notFound(sym, () => render(el, [symParam])); return; }
 
   const st = {
     interval: INTERVALS.includes(settings.get().interval) ? settings.get().interval : '1h',
@@ -1511,4 +1511,16 @@ function shortTime(t, interval) {
   const d = new Date(t);
   if (['1d', '1w', '4h'].includes(interval)) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return d.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+// A coin the list does not hold: say why, and offer the nearest names instead of a dead end.
+async function notFound(sym, retry) {
+  if (dataStatus.demo) return errorBox(`Live market data cannot be reached right now, so "${sym}" cannot be looked up. The app switches back to live data on its own.`, retry);
+  const list = await markets().catch(() => []);
+  const q = sym.toLowerCase();
+  const near = list.filter((c) => c.symbol.toLowerCase().startsWith(q.slice(0, 2)) || (c.name || '').toLowerCase().includes(q)).slice(0, 6);
+  return `<div class="card empty"><h1 style="font-size:1.3rem">No coin called "${esc(sym)}"</h1>
+    <p>It is not among the ${list.length || 250} largest coins the app follows, or the ticker is mistyped. Search by name or ticker at the top of the page.</p>
+    ${near.length ? `<p class="fine">Closest matches:</p><p class="row" style="gap:8px;flex-wrap:wrap;justify-content:center">${near.map((c) => `<a class="btn sm" href="#/coin/${encodeURIComponent(c.symbol)}">${esc(c.symbol)} · ${esc(c.name)}</a>`).join('')}</p>` : ''}
+    <a class="btn primary" href="#/">Browse all coins</a></div>`;
 }

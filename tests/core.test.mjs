@@ -594,14 +594,18 @@ test('no score band is presented as a tradeable edge, because none survived the 
     assert.ok(t.trades >= 300, `${iv} conclusion drawn from too few trades`);
     assert.ok(typeof t.randomR === 'number', `${iv} has no random control to compare against`);
   }
-  // the 1h band, which looked strongest as a bucket, lost to random entries
-  assert.ok(SIGNAL_EDGE_TESTED['1h'].tradedR < SIGNAL_EDGE_TESTED['1h'].randomR);
+  // a band would count only if it beat entering at any candle on both halves of
+  // the data; each beat it on one and not on the other
+  for (const [iv, t] of Object.entries(SIGNAL_EDGE_TESTED)) {
+    assert.ok(t.older && typeof t.older.randomR === 'number', `${iv}: tested on the other half too`);
+    assert.equal(t.tradedR > t.randomR && t.older.tradedR > t.older.randomR, false, `${iv} beat any-candle entries on both halves — re-measure before claiming an edge`);
+  }
 
   // edgeBand no longer hands anyone a band to treat as evidence
   assert.equal(edgeBand('1h', 50).band, null);
   assert.equal(edgeBand('1h', 50).inside, false);
   assert.ok(edgeBand('1h', 50).tested, 'but the test result is still available to show');
-  assert.equal(edgeBand('1d', 50).tested, null, 'untested timeframes claim nothing');
+  assert.equal(edgeBand('15m', 50).tested, null, 'untested timeframes claim nothing');
 
   const sum = tradeSummary({
     signal: { ok: true, score: 50, coinSymbol: 'BTC',
@@ -612,7 +616,7 @@ test('no score band is presented as a tradeable edge, because none survived the 
   assert.ok(!sum.steps.some((x) => x.label === 'Tested zone'), 'no step may present the score as evidence');
   const said = sum.caveats.join(' ');
   assert.match(said, /not a prediction of profit/i);
-  assert.match(said, /entering at random/i);
+  assert.match(said, /entering at any candle/i);
   assert.match(said, /higher score does not mean a better trade/i);
 });
 
