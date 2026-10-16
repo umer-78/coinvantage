@@ -17,15 +17,24 @@ export const THRESHOLDS = { strong: 45, normal: 18 };
  * backtest, and no forecasting model can rescue a plan whose exits do not pay.
  *
  * `ev` is the measured expected value per trade in R (risk units), after fees,
- * entering at every bar. A negative number means the geometry itself loses —
- * the UI says so rather than printing levels that quietly cost money.
+ * entering at every bar of the newer half of each coin's candles. A negative
+ * number means the geometry itself loses — the UI says so rather than
+ * printing levels that quietly cost money. Re-measured 2026-10-15 on all 106
+ * coins (Evaluate job "signals", two runs hours apart, the later shown): 15m
+ * −0.002 and −0.004R, 1h +0.084 and +0.053R, 4h −0.033 and −0.038R, 1d −0.036
+ * and −0.033R. The daily plan, +0.058R on 12 coins, loses on 106. On no chart
+ * did another of the 30 stop/target pairs do more than 0.01R better, well
+ * inside how much one chart's figure moved between the two runs, so the
+ * levels are unchanged.
  */
 export const TRADE_GEOMETRY = {
-  '15m': { stopAtr: 1, rr: 1, ev: -0.009, tested: true },
-  '1h':  { stopAtr: 1, rr: 3, ev: +0.055, tested: true },
-  '4h':  { stopAtr: 1, rr: 1, ev: -0.047, tested: true },
-  '1d':  { stopAtr: 1, rr: 2, ev: +0.058, tested: true },
+  '15m': { stopAtr: 1, rr: 1, ev: -0.004, tested: true },
+  '1h':  { stopAtr: 1, rr: 3, ev: +0.053, tested: true },
+  '4h':  { stopAtr: 1, rr: 1, ev: -0.038, tested: true },
+  '1d':  { stopAtr: 1, rr: 2, ev: -0.033, tested: true },
 };
+/** How many entries and coins the `ev` figures above rest on. */
+export const GEOMETRY_TESTED = { coins: 106, measuredOn: '2026-10-15', entries: { '15m': 51359, '1h': 33128, '4h': 53599, '1d': 22146 } };
 /**
  * What the score is, and what it is not — settled by measurement.
  *
@@ -78,17 +87,21 @@ export const geometryFor = (interval) => TRADE_GEOMETRY[interval] || DEFAULT_GEO
 /**
  * What a score means, measured rather than assumed.
  *
- * Every bar of 12 coins was sorted by its score and matched against what price
- * actually did over the following candles — 244,000 bars in total. The share
- * that rose falls as the score rises, on every timeframe tested:
+ * Every candle of every coin is sorted by its score and matched against
+ * whether price was higher H candles later (the coin page's horizon), with
+ * tools/evaluate-score-buckets.mjs. First run on 12 coins (244,000 bars); on
+ * all 106 coins, 2026-10-15 (1,576,070 candles):
  *
- *            Extended down  Leaning down  No trend  Leaning up  Extended up
- *   5m           57.4%          52.6%       48.6%      47.7%       46.5%
- *   1h           52.4%          52.5%       50.3%      48.0%       46.2%
- *   4h           52.0%          50.2%       49.1%      48.4%       47.1%
- *   1d           49.7%          47.7%       48.1%      50.0%       46.6%
+ *            Strong fall  Falling  No clear trend  Rising  Strong rise
+ *   5m           50.0%     51.4%       49.7%       47.1%     45.4%
+ *   15m          53.2%     51.2%       50.0%       48.5%     46.1%
+ *   1h           51.2%     49.5%       47.4%       47.1%     46.4%
+ *   4h           51.0%     48.6%       47.9%       47.7%     45.3%
+ *   1d           47.0%     46.6%       45.4%       46.9%     45.1%
  *
- * So the bars this engine scored highest were the ones LEAST likely to rise.
+ * On every chart the strong-rise reading was followed by a rise least often,
+ * and in neither half of the data did it beat the strong-fall reading. So the
+ * bars this engine scored highest were the ones LEAST likely to rise.
  * These are trend indicators, and at these horizons crypto mean-reverts: a high
  * score means "this has already run", which is not the same as "this will keep
  * running". Calling that a Buy — and a big one a Strong Buy — told the reader
@@ -106,13 +119,13 @@ export const geometryFor = (interval) => TRADE_GEOMETRY[interval] || DEFAULT_GEO
  * the direction the indicators lean, not a recommendation.
  */
 export const SCORE_BUCKETS_TESTED = {
-  bars: 244205, coins: 12,
+  bars: 1576070, coins: 106, measuredOn: '2026-10-15',
   upRateByBucket: {
-    '5m': { extendedDown: 57.4, leaningDown: 52.6, noTrend: 48.6, leaningUp: 47.7, extendedUp: 46.5 },
-    '15m': { extendedDown: 55.7, leaningDown: 54.6, noTrend: 51.4, leaningUp: 48.2, extendedUp: 47.3 },
-    '1h': { extendedDown: 52.4, leaningDown: 52.5, noTrend: 50.3, leaningUp: 48.0, extendedUp: 46.2 },
-    '4h': { extendedDown: 52.0, leaningDown: 50.2, noTrend: 49.1, leaningUp: 48.4, extendedUp: 47.1 },
-    '1d': { extendedDown: 49.7, leaningDown: 47.7, noTrend: 48.1, leaningUp: 50.0, extendedUp: 46.6 },
+    '5m': { extendedDown: 50.0, leaningDown: 51.4, noTrend: 49.7, leaningUp: 47.1, extendedUp: 45.4 },
+    '15m': { extendedDown: 53.2, leaningDown: 51.2, noTrend: 50.0, leaningUp: 48.5, extendedUp: 46.1 },
+    '1h': { extendedDown: 51.2, leaningDown: 49.5, noTrend: 47.4, leaningUp: 47.1, extendedUp: 46.4 },
+    '4h': { extendedDown: 51.0, leaningDown: 48.6, noTrend: 47.9, leaningUp: 47.7, extendedUp: 45.3 },
+    '1d': { extendedDown: 47.0, leaningDown: 46.6, noTrend: 45.4, leaningUp: 46.9, extendedUp: 45.1 },
   },
   higherScoreMeansHigherChance: false,
   invertingItAlsoFails: true,

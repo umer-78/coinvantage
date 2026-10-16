@@ -12,13 +12,15 @@ import { directionReliable, summarizeForecast, TESTED_ACCURACY } from './predict
 
 /**
  * How much wider the centred range is drawn on each chart (log distance from
- * today's price × the factor). Fitted on the older half of each series and
- * kept only where it helped the newer half (tools/evaluate-bands.mjs): on 1d
- * the 80% range held 75.8% of the newer half as drawn and 77.4% 5% wider, the
- * 50% and 90% ranges moved closer to target too. Every other chart is
- * unchanged.
+ * today's price × the factor). A factor is fitted on the older half of each
+ * series and kept only where it helps the newer half (tools/evaluate-bands.mjs).
+ * On 24 coins (2026-10-13) the daily 80% range held 75.8% of the newer half and
+ * 5% wider held 77.4%, so 1d was drawn 5% wider. On 106 coins (two runs,
+ * 2026-10-15) the daily range held 81.0% of the newer half as drawn and 82.4%
+ * wider, further from 80%, so it is drawn as measured again. No chart is
+ * widened.
  */
-export const RANGE_WIDEN = { '1d': 1.05 };
+export const RANGE_WIDEN = {};
 
 /** The forecast with its lean taken out: centred on today's price, same spread (× `widen`). */
 export function withoutLean(f, widen = 1) {
@@ -51,61 +53,61 @@ export function forecastForDisplay(f, interval, trust) {
  * Evaluate job "engine"): 1,440 forecasts on fresh candles, 12 coins, 240 per
  * chart, each made only from candles before it.
  *
- * `centred`: share of outcomes inside the 50% and 80% ranges centred on
- * today's price (the lean taken out). They held as well as the leaned ones or
- * better on every chart (1h 81.7% against 82.5%; 5m 83.3% against 78.8%) —
- * except that the daily 80% range is too narrow either way (72.5%).
+ * `centred`: share of outcomes inside the 50%, 80% and 90% ranges centred on
+ * today's price (the lean taken out), measured at scale (see below): within
+ * 1.3 points of the target on every chart.
  *
  * `move`: "a bigger (or smaller) move than usual" — volatility now against the
  * coin's own normal, judged on whether the move that followed was bigger than
  * the coin's usual move. `big`/`small` are the average size of the move that
  * followed each call, in units of the usual move; `rho` the rank correlation.
  * The call is shown only where it separated the two clearly (sizes at least
- * 1.3× apart and rho ≥ 0.15) in two runs in a row: 5m and 1h. Hit rates sit near the hindsight
+ * 1.3× apart and rho ≥ 0.15) in two runs in a row: 5m, 15m and 1h. Hit rates sit near the hindsight
  * baseline (always naming whichever outcome was commoner in the window), so
  * the size of the move, not the hit rate, is what it tells.
  *
  * `perCoinCheck`: the coin page used to show each forecast's own recent check
  * as "tested accuracy". When that read 60% or more the forecast was right
- * 51.3% of the time (892 cases, 2026-10-15); otherwise 49.3% (4,818). It says nothing, so
+ * 52.1% of the time (881 cases, 2026-10-15); otherwise 49.1% (4,829). It says nothing, so
  * it is no longer shown as accuracy.
  */
 export const FORECAST_TESTED = {
   measuredOn: '2026-10-12', tests: 1440, coins: 12, perChart: 240,
-  // Centred ranges, re-measured 2026-10-13 at scale by tools/evaluate-bands.mjs
-  // (Evaluate job "bands", run 38330515049): 24 coins, every non-overlapping
-  // horizon, the engine's own range functions; 5m and 15m over ~100 days.
-  // 1d is drawn 5% wider (RANGE_WIDEN), so its figures are the newer half
-  // only, the part the factor was not fitted on. 1m is from the 240-forecast
-  // test above (its direction keeps the lean).
+  // Centred ranges, re-measured 2026-10-15 by tools/evaluate-bands.mjs on every
+  // coin the app can trade (Evaluate job "bands", run 38801349761): every
+  // non-overlapping horizon, the engine's own range functions; 1m over ~21
+  // days, 5m and 15m over ~100. The forecast re-check above (ten forecasts a
+  // coin and chart) put the 1m 80% range at 69.9% in one run and 83.3% in the
+  // next, 90 minutes later: its ten test moments are shared by every coin, so
+  // it is far too few to judge a range by. These are 160,000 1m ranges.
   centred: {
-    '1m': { band50: 50.8, band80: 78.8, tests: 240, coins: 12 },
-    '5m': { band50: 50.1, band80: 79.8, band90: 89.6, tests: 57000, coins: 24 },
-    '15m': { band50: 50.1, band80: 79.8, band90: 89.7, tests: 31488, coins: 24 },
-    '1h': { band50: 48.9, band80: 78.5, band90: 88.5, tests: 4992, coins: 24 },
-    '4h': { band50: 49.5, band80: 78.9, band90: 89.4, tests: 7992, coins: 24 },
-    '1d': { band50: 49.8, band80: 77.4, band90: 88.5, tests: 1195, coins: 24, widen: 1.05, asDrawnBefore: { band50: 47.9, band80: 75.8, band90: 86.9 } },
+    '1m': { band50: 50.2, band80: 79.7, band90: 89.4, tests: 161733, coins: 106 },
+    '5m': { band50: 49.9, band80: 79.6, band90: 89.5, tests: 199483, coins: 106 },
+    '15m': { band50: 49.3, band80: 79.3, band90: 89.5, tests: 124373, coins: 105 },
+    '1h': { band50: 49.0, band80: 79.0, band90: 89.1, tests: 20875, coins: 103 },
+    '4h': { band50: 48.7, band80: 79.6, band90: 89.7, tests: 29096, coins: 98 },
+    '1d': { band50: 50.5, band80: 80.1, band90: 89.5, tests: 4375, coins: 47 },
   },
-  centredMeasuredOn: '2026-10-13',
-  // Re-measured 2026-10-15 on every coin the app can trade (106; 5,710
-  // forecasts, ten per coin and chart). The call is shown only on charts where
-  // it separated big moves from small ones in this run and in the one before
-  // (2026-10-12, 12 coins: 5m, 1h, 4h): 4h failed this time (1.22×, rho 0.05)
-  // and 15m passed for the first time (1.49×, rho 0.21), so 4h is dropped now
-  // and 15m waits for a second run to agree. 1m: too few calls of each kind to
-  // size the moves.
+  centredMeasuredOn: '2026-10-15',
+  // Re-measured twice on 2026-10-15 on every coin the app can trade (106; 5,710
+  // forecasts each, ten per coin and chart, the runs 90 minutes apart). The
+  // call is shown only on charts where it separated big moves from small ones
+  // in both: 5m, 15m and 1h. 4h failed both (the move after a "bigger" call
+  // was 1.2× the one after a "smaller" call, rho 0.05 and 0.10), as did 1d
+  // (1.04×). 1m: the sizes could not be measured. Figures are the later run;
+  // `movePassedBefore` is what passed in the run before it.
   move: {
-    '1m': { hit: 63.7, baseline: 68.2, rho: 0.216, big: null, small: null },
-    '5m': { hit: 69.5, baseline: 59.7, rho: 0.487, big: 2.59, small: 1.31 },
-    '15m': { hit: 58.1, baseline: 57.8, rho: 0.211, big: 1.49, small: 1.0 },
-    '1h': { hit: 59.1, baseline: 54.0, rho: 0.3, big: 2.04, small: 1.07 },
-    '4h': { hit: 49.7, baseline: 51.3, rho: 0.054, big: 1.61, small: 1.32 },
+    '1m': { hit: 60.1, baseline: 51.4, rho: 0.309, big: null, small: null },
+    '5m': { hit: 63.6, baseline: 51.3, rho: 0.325, big: 1.95, small: 1.01 },
+    '15m': { hit: 62.5, baseline: 55.7, rho: 0.273, big: 1.6, small: 1.02 },
+    '1h': { hit: 58.3, baseline: 54.3, rho: 0.252, big: 2.04, small: 1.14 },
+    '4h': { hit: 54.6, baseline: 56.3, rho: 0.098, big: 1.61, small: 1.31 },
     '1d': { hit: 50.0, baseline: 54.5, rho: 0.098, big: 1.39, small: 1.34 },
   },
-  movePassedBefore: ['5m', '1h', '4h'],
+  movePassedBefore: ['5m', '15m', '1h'],
   moveMeasuredOn: '2026-10-15',
-  // all six charts together, 2026-10-15
-  perCoinCheck: { highN: 892, highHit: 51.3, lowN: 4818, lowHit: 49.3 },
+  // all six charts together, the later 2026-10-15 run
+  perCoinCheck: { highN: 881, highHit: 52.1, lowN: 4829, lowHit: 49.1 },
 };
 
 /** Whether the move-size call separated big moves from small ones on this chart. */

@@ -183,18 +183,20 @@ export function diffWeights(before = {}, after = {}) {
 
 // ---------------------------------------------------------------- champion / challenger
 /**
- * The blend was tested walk-forward before shipping (tools/evaluate-learning.mjs,
- * 2026-09-26, the same 1,440 forecasts as TESTED_ACCURACY, weights learned only
- * from candles before each forecast). Overall it TIED the plain forecast (53.9%
- * each): better on 1h, 4h and 1d, worse on 1m, 5m and 15m. A tie is not a
- * reason to switch, so the forecast starts as the champion and the blend has to
- * beat it on this device's own live record first.
+ * The blend is tested walk-forward (tools/evaluate-learning.mjs, on the same
+ * forecasts as the latest forecast re-check, weights learned only from
+ * candles before each forecast). 2026-09-26, 1,440 forecasts on 12 coins: it
+ * tied the plain forecast (53.9% each). 2026-10-15, 5,710 forecasts on 106
+ * coins: 49.5% against 49.6%, better only on 4h. Neither is a reason to
+ * switch, so the forecast starts as the champion and the blend has to beat it
+ * on this device's own live record first. `indicatorsAlone`: each indicator's
+ * own call at the same test points, where it made one.
  */
 export const LEARN_TESTED = {
-  tests: 1440, forecast: 53.9, blend: 53.9,
-  byInterval: { '1m': [59.6, 57.5], '5m': [56.7, 54.2], '15m': [55.0, 53.8], '1h': [52.1, 54.2], '4h': [47.5, 50.4], '1d': [52.5, 53.3] },
-  indicatorsAlone: { macd: 48.8, ema200: 51.6, emaCross: 50.1, supertrend: 48.7, stoch: 54.2, cci: 53.6, willr: 56.5, adx: 50.1, rsi: 53.1, mfi: 53.1, donchian: 50.0, bollinger: 49.7 },
-  measuredOn: '2026-09-26',
+  tests: 5710, coins: 106, forecast: 49.6, blend: 49.5,
+  byInterval: { '1m': [53.1, 52.5], '5m': [48.1, 47.3], '15m': [46.6, 45.8], '1h': [48.0, 47.6], '4h': [47.3, 50.5], '1d': [59.0, 57.6] },
+  indicatorsAlone: { macd: 50.1, ema200: 48.5, emaCross: 48.8, supertrend: 47.7, stoch: 53.5, cci: 53.8, willr: 53.0, adx: 47.4, rsi: 52.5, mfi: 49.9, donchian: 42.4, bollinger: 59.4 },
+  measuredOn: '2026-10-15',
 };
 
 export const SWITCH_MIN = 100;   // resolved live calls before a switch is considered

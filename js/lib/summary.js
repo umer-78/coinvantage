@@ -26,7 +26,7 @@
 //     timeframe leads and why they differ.
 
 import { conflictCheck } from './analyst.js';
-import { edgeBand, confluence, upRateFor, SCORE_BUCKETS_TESTED } from './signals.js';
+import { edgeBand, confluence, upRateFor, SCORE_BUCKETS_TESTED, GEOMETRY_TESTED } from './signals.js';
 import { TESTED_ACCURACY } from './predict.js';
 import { FORECAST_TESTED } from './forecastview.js';
 
@@ -379,16 +379,16 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     caveats.push(`Measured across ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins, the share of readings followed by a higher price FALLS as this score rises — on ${interval}, from ${SCORE_BUCKETS_TESTED.upRateByBucket[interval]?.extendedDown ?? '—'}% at the bottom of the scale to ${SCORE_BUCKETS_TESTED.upRateByBucket[interval]?.extendedUp ?? '—'}% at the top. A high score means the move is extended, not that it will continue. Trading the reverse does not work either: both directions were tested over a held-out half with fees and neither came out positive.`);
   }
 
-  // The geometry's own expectancy, measured over ~21,000 entries. If the levels
+  // The geometry's own expectancy, measured at every candle of 106 coins. If the levels
   // themselves lose money there is no honest way to present them as a trade.
   if (p && expectancyR !== null && expectancyR !== undefined) {
     if (expectancyR <= 0) {
-      caveats.push(`Tested across 12 coins, entries on this timeframe with these stop and target distances came out at ${expectancyR.toFixed(3)}R per trade — slightly negative before you add slippage. The levels are shown for reference; on the evidence this timeframe is one to read, not to trade.`);
+      caveats.push(`Tested across ${GEOMETRY_TESTED.coins} coins${GEOMETRY_TESTED.entries[interval] ? ` (${GEOMETRY_TESTED.entries[interval].toLocaleString('en-US')} entries)` : ''}, entries on this timeframe with these stop and target distances came out at ${expectancyR.toFixed(3)}R per trade — slightly negative before you add slippage. The levels are shown for reference; on the evidence this timeframe is one to read, not to trade.`);
       tone = 'warn';
     } else if (planUsable) {
       steps.push({
         label: 'Does this pay?',
-        text: `Measured over about 21,000 entries across 12 coins, this stop and target combination returned ${expectancyR > 0 ? '+' : ''}${expectancyR.toFixed(3)}R per trade after fees. Small, positive, and only true if you take the exits as written.`,
+        text: `Measured over ${GEOMETRY_TESTED.entries[interval] ? `${GEOMETRY_TESTED.entries[interval].toLocaleString('en-US')} entries` : 'every candle'} across ${GEOMETRY_TESTED.coins} coins, this stop and target combination returned ${expectancyR > 0 ? '+' : ''}${expectancyR.toFixed(3)}R per trade after fees. Small, positive, and only true if you take the exits as written.`,
       });
     }
   }

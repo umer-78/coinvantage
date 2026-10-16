@@ -32,26 +32,28 @@ test('without the lean the forecast keeps its spread but is centred on today\'s 
   assert.equal(withoutLean({ ok: false, reason: 'x' }).ok, false);
 });
 
-test('the daily range is drawn 5% wider, as tested; the other charts keep their width', () => {
+test('the ranges are drawn as measured: no chart is widened, and a width factor scales every distance from today\'s price', () => {
   const f = forecast(demoCandles('bitcoin', '1d', 900, END), { horizon: 7 });
   assert.ok(f.ok);
-  const plain = withoutLean(f), wide = forecastForDisplay(f, '1d', 0);
-  assert.equal(wide.rangeWiden, RANGE_WIDEN['1d']);
-  assert.equal(forecastForDisplay(f, '1h', 0).rangeWiden, undefined);
+  assert.deepEqual(RANGE_WIDEN, {});
+  for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) assert.equal(forecastForDisplay(f, iv, 0).rangeWiden, undefined, iv);
+  const plain = withoutLean(f), wide = withoutLean(f, 1.05);
+  assert.equal(wide.rangeWiden, 1.05);
   assert.ok(Math.abs(wide.range.p50 - f.lastPrice) < 1e-9 * f.lastPrice);
   for (const key of ['p05', 'p10', 'p25', 'p75', 'p90', 'p95']) {
     const a = Math.log(plain.range[key] / f.lastPrice), b = Math.log(wide.range[key] / f.lastPrice);
     assert.ok(Math.abs(b - 1.05 * a) < 1e-9, key);
   }
-  // the figures shown for 1d are from the half the width was not fitted on
-  const d = FORECAST_TESTED.centred['1d'];
-  assert.equal(d.widen, RANGE_WIDEN['1d']);
-  assert.ok(d.band80 > d.asDrawnBefore.band80 && d.band50 > d.asDrawnBefore.band50);
+  // every chart's centred range held close to its target in the at-scale test
+  for (const [iv, x] of Object.entries(FORECAST_TESTED.centred)) {
+    assert.ok(Math.abs(x.band50 - 50) <= 1.5 && Math.abs(x.band80 - 80) <= 1.5 && Math.abs(x.band90 - 90) <= 1.5, iv);
+    assert.ok(x.tests > 1000 && x.coins > 40, iv);
+  }
 });
 
 test('the move-size call follows volatility now against the coin\'s normal, and is offered only where it was measured to help', () => {
-  // shown where it told big moves from small in two runs in a row: 4h failed on 106 coins, 15m has passed once
-  assert.deepEqual(['1m', '5m', '15m', '1h', '4h', '1d'].filter(moveCallUseful), ['5m', '1h']);
+  // shown where it told big moves from small in two runs in a row: 4h and 1d failed both 106-coin runs
+  assert.deepEqual(['1m', '5m', '15m', '1h', '4h', '1d'].filter(moveCallUseful), ['5m', '15m', '1h']);
   // calm history, then a wild stretch at the end
   const mk = (n, wildFrom) => Array.from({ length: n }, (_, i) => ({ c: 100 * Math.exp(Math.sin(i * 1.7) * (i >= wildFrom ? 0.03 : 0.004)) }));
   const wild = moveSizeCall(mk(900, 860), 12, '1h');

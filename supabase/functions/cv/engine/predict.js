@@ -853,17 +853,22 @@ export const TESTED_ACCURACY = {
   // tools/report-engine.mjs, Evaluate workflow job "engine") on every coin the
   // app can trade (tools/universe.json): 5,710 forecasts, ten per coin and
   // chart, 106 coins (fewer on 1h, 4h and 1d, where recent listings have too
-  // little history). hit/baseline in %, trust as above. The 2026-10-12 run (12
-  // coins, 240 per chart) had found no edge either.
+  // little history). hit/baseline in %, trust as above. Two runs 90 minutes
+  // apart (both 2026-10-15; these figures are the later one) found no edge on
+  // any chart, nor did the 2026-10-12 run (12 coins, 240 per chart). How far
+  // they moved shows how few independent tests they hold: on 1m the hit rate
+  // went 47.5% → 53.1% and the 80% range 68.5% → 83.6%, because a chart's ten
+  // test moments are the same for every coin and crypto moves together.
   recheck: {
     measuredOn: '2026-10-15', tests: 5710, coins: 106,
-    '1m': { hit: 47.5, baseline: 52.1, trust: 0, band50: 33.8, band80: 68.5, n: 1060, coins: 106 },
-    '5m': { hit: 52.4, baseline: 52.5, trust: 0, band50: 38.1, band80: 71.3, n: 1060, coins: 106 },
-    '15m': { hit: 47.5, baseline: 58.4, trust: 0, band50: 52.7, band80: 83.9, n: 1060, coins: 106 },
-    '1h': { hit: 47.8, baseline: 69.9, trust: 0, band50: 50.1, band80: 82.4, n: 1030, coins: 103 },
-    '4h': { hit: 48.5, baseline: 59.2, trust: 0, band50: 46.8, band80: 73.3, n: 990, coins: 99 },
+    '1m': { hit: 53.1, baseline: 56.2, trust: 0, band50: 50.6, band80: 83.6, n: 1060, coins: 106 },
+    '5m': { hit: 48.1, baseline: 54.1, trust: 0, band50: 51.1, band80: 81.9, n: 1060, coins: 106 },
+    '15m': { hit: 46.6, baseline: 58.6, trust: 0, band50: 50.0, band80: 82.5, n: 1060, coins: 106 },
+    '1h': { hit: 48.0, baseline: 66.0, trust: 0, band50: 49.7, band80: 79.7, n: 1030, coins: 103 },
+    '4h': { hit: 47.3, baseline: 67.2, trust: 0, band50: 51.5, band80: 75.5, n: 990, coins: 99 },
     '1d': { hit: 59.0, baseline: 63.3, trust: 0, band50: 52.0, band80: 77.1, n: 510, coins: 51 },
   },
+
   // Timeframes where the model scored at or below the do-nothing baseline.
   noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
   beatsBaselineOverall: false,

@@ -83,7 +83,7 @@ export async function render(el) {
             <dt>Blend, live</dt><dd>${pctTxt(liveAll.blend, L.rows, 'blendProb')}</dd>
             <dt>Release test</dt><dd>forecast ${LEARN_TESTED.forecast}% · blend ${LEARN_TESTED.blend}% <span class="fine">(${LEARN_TESTED.tests.toLocaleString()} calls${tested ? `; ${esc(st.interval)}: ${tested[0]}% vs ${tested[1]}%` : ''})</span></dd>
           </dl>
-          <p class="fine mt">In the release test the blend <b>tied</b> the forecast overall. It did better on 1h, 4h and 1d and worse on 1m, 5m and 15m. A tie is not a reason to switch, so it starts as the challenger and has to prove itself on this device first.</p>
+          <p class="fine mt">${(() => { const by = Object.entries(LEARN_TESTED.byInterval); const better = by.filter(([, [f, b]]) => b > f).map(([k]) => k), worse = by.filter(([, [f, b]]) => b < f).map(([k]) => k); return `In the latest test (${LEARN_TESTED.tests.toLocaleString()} calls on ${LEARN_TESTED.coins} coins) the blend scored ${LEARN_TESTED.blend}% against the forecast's ${LEARN_TESTED.forecast}%${better.length ? `: better on ${better.join(', ')}` : ''}${worse.length ? `${better.length ? ', ' : ': '}worse on ${worse.join(', ')}` : ''}. That is not a reason to switch, so it starts as the challenger and has to prove itself on this device first.`; })()}</p>
         </div>
         <div class="card">
           <div class="card-h"><h3>${icon('forecast', 16)} Forecast record</h3><span class="chip">${esc(TREND_WORDS[fl.trend] || fl.trend)}</span></div>
