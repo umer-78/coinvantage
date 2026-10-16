@@ -763,17 +763,22 @@ export async function render(el, [symParam]) {
     // AI learning center: this chart's readings and forecast are logged for grading.
     st.learned = st.tested && !stable ? learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null }) : null;
 
+    const trustNow = directionTrustFor(iv, st.ledger || loadLedger()).trust;
     if (fc.ok && st.tested && !stable) {
       // Logged before the outcome is known, so "your hit rate" is honest. Never
-      // for demo prices: this goes to the account's record on the server.
+      // for demo prices: this goes to the account's record on the server. What
+      // is logged is what the page shows: where the direction is not reliable
+      // no chance of a rise is shown, so none is logged and none is graded.
+      const shownDir = directionReliable(iv, trustNow);
       logForecastShown({
-        symbol: coin.symbol, interval: iv, price: fc.lastPrice, probUp: fc.probUp,
-        targetPrice: fc.targetPrice, horizonBars: fc.horizon,
+        symbol: coin.symbol, interval: iv, price: fc.lastPrice,
+        probUp: shownDir ? shownProbUp(fc.probUp, iv, trustNow) : null,
+        targetPrice: shownDir ? fc.targetPrice : fc.lastPrice, horizonBars: fc.horizon,
         horizonAt: fc.path[fc.path.length - 1]?.t, modelAccuracy: fc.ensemble?.accuracy ?? null,
       });
     }
     // what is shown: without the lean where the direction is not reliable
-    st.fcView = fc.ok ? forecastForDisplay(fc, iv, directionTrustFor(iv, st.ledger || loadLedger()).trust) : fc;
+    st.fcView = fc.ok ? forecastForDisplay(fc, iv, trustNow) : fc;
     st.moveCall = fc.ok ? moveSizeCall(st.candles, fc.horizon, iv) : null;
     remember(coin.symbol, iv, { forecast: st.fcView, timing: st.timing });
     // the summary reads the forecast, so redraw the signal card now it exists

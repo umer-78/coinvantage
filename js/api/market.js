@@ -526,6 +526,55 @@ export async function getCandles(coin, interval = '1h', total = 500) {
   throw new HttpError('No price history available for this coin', 404);
 }
 
+/**
+ * The close of the candle that opened at `atMs`, read from the coin's exchange
+ * at that moment rather than from its latest candles, so a forecast logged
+ * days ago can still be graded (the latest 500 one-minute candles reach back
+ * eight hours, and 500 five-second ones 42 minutes). `{ close }`;
+ * `{ retry: true }` when it cannot be read yet (the candle is still forming,
+ * or a request failed); `{ missing: true }` when the exchange answered
+ * without that candle (its history does not reach back that far, or it does
+ * not list the coin).
+ */
+export async function closeAtTime(coin, interval, atMs) {
+  const step = INTERVAL_MS[interval];
+  if (!step || !Number.isFinite(atMs)) return { missing: true };
+  if (atMs + step > now()) return { retry: true };
+  const inside = (t) => t <= atMs && atMs - t < step; // the candle that holds atMs
+  try {
+    const pair = typeof coin === 'string' ? coin : coin?.binance;
+    if (pair) {
+      // A second chart is built from 1s candles: its close is the last 1s close inside it.
+      const second = isSecondInterval(interval);
+      const end = second ? atMs + step - 1e3 : atMs;
+      const path = `/api/v3/klines?symbol=${pair}&interval=${second ? '1s' : interval}&endTime=${end}&limit=1`;
+      const r = mapKlines(await getJsonAny(CONFIG.BINANCE_REST, path, { ttl: 864e5, key: `bn:${path}` }))[0];
+      const ok = r && r.c > 0 && (second ? r.t >= atMs && r.t <= end : inside(r.t));
+      return ok ? { close: r.c } : { missing: true };
+    }
+    if (!coin || typeof coin !== 'object' || !EX_BAR.gate[interval]) return { missing: true };
+    const venue = await findVenue(coin);
+    if (venue === null) return { missing: true };
+    if (!EX_FETCH[venue]) return { retry: true };
+    const sym = String(coin.symbol).toUpperCase(), bar = EX_BAR[venue][interval];
+    let rows;
+    if (venue === 'gate') {
+      const to = Math.floor(atMs / 1e3), from = Math.floor((atMs - step) / 1e3) + 1;
+      rows = (await getJson(`https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${sym}_USDT&interval=${bar}&from=${from}&to=${to}`, { ttl: 864e5, timeout: 9000 }))
+        .map((r) => ({ t: r[0] * 1e3, c: num(r[2]) }));
+    } else if (venue === 'okx') {
+      const j = await getJson(`https://www.okx.com/api/v5/market/history-candles?instId=${sym}-USDT&bar=${bar}&after=${atMs + 1}&limit=1`, { ttl: 864e5, timeout: 9000 });
+      rows = (Array.isArray(j?.data) ? j.data : []).map((r) => ({ t: num(r[0]), c: num(r[4]) }));
+    } else {
+      rows = await htxCandles(sym, bar, 2000, 60e3); // HTX serves only its latest 2,000 candles
+    }
+    const r = rows.filter((x) => inside(x.t) && x.c > 0).pop();
+    return r ? { close: r.c } : { missing: true };
+  } catch {
+    return { retry: true };
+  }
+}
+
 // How many decimals the exchange itself quotes this pair to. Showing fewer is a
 // rounded price pretending to be the real one, so the coin page asks for this.
 const tickCache = new Map();

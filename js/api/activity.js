@@ -56,21 +56,30 @@ export async function myForecasts(limit = 100) {
 
 /**
  * Fill in the outcome for forecasts whose horizon has passed, using the public
- * close at that time. The database derives right/wrong itself.
+ * close at that time. The database derives right/wrong itself. The newest are
+ * graded first, so a row that can never be read (its exchange keeps no candles
+ * that old) cannot hold the others back; once the exchange has answered
+ * without its candle for a day, it is closed as not available instead of being
+ * asked about on every visit.
  */
 export async function resolveDueForecasts(getCloseAt) {
   if (!ok()) return 0;
   const client = await sb();
   if (!client) return 0;
   const { data: due } = await client.from('user_forecasts').select('*')
-    .eq('resolved', false).lte('horizon_at', new Date().toISOString()).limit(20);
+    .eq('resolved', false).lte('horizon_at', new Date().toISOString())
+    .order('horizon_at', { ascending: false }).limit(40);
   let n = 0;
   for (const row of due || []) {
     try {
-      const close = await getCloseAt(row.symbol, row.interval, new Date(row.horizon_at).getTime());
-      if (!Number.isFinite(close)) continue;
-      await client.from('user_forecasts').update({ resolved: true, outcome_price: close }).eq('id', row.id);
-      n++;
+      const at = new Date(row.horizon_at).getTime();
+      const r = await getCloseAt(row.symbol, row.interval, at);
+      if (Number.isFinite(r?.close)) {
+        await client.from('user_forecasts').update({ resolved: true, outcome_price: r.close }).eq('id', row.id);
+        n++;
+      } else if (r?.missing && Date.now() - at > 864e5) {
+        await client.from('user_forecasts').update({ resolved: true, outcome_price: null }).eq('id', row.id);
+      }
     } catch { /* try again next time */ }
   }
   return n;

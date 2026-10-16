@@ -80,6 +80,25 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Learning loops checked end to end (2026-10-16)
+A browser run with the clock moved forward (one coin page view, then 3, 12 and 30 days on, on
+mocked candles that never change once closed) confirmed each loop: the coin page logs a
+forecast (`cv:aiLedger`) and indicator calls (`cv:aiLearn`) before the outcome, grades them
+once the horizon candle is on screen, the learning pass grades the rest, and the AI trader
+trades the new candles and reviews its log after every check (47 trades read; no condition
+kept losing, so it changed nothing). The server's `signal_log` and `ai_signal_log` are written
+and graded every hour with nothing overdue. Two faults found and fixed:
+- **Your forecasts on the Account page were graded from the latest 500 candles**, so any older
+  than that (eight hours of 1m candles, 42 minutes of 5s ones) could never be graded, and the
+  oldest 20 due rows, fetched first every visit, kept the rest waiting. `closeAtTime` in
+  `js/api/market.js` now reads the close at the horizon itself (Binance `endTime`, Gate.io
+  `from`/`to`, OKX `after`; HTX only has its latest 2,000 candles); due rows are taken newest
+  first, 40 a visit; a row whose exchange answered without its candle for a day is closed as
+  "not available" (`outcome_price` null, so the database scores it neither right nor wrong).
+- **The same log graded the models' raw lean even where the page showed no direction.** It now
+  logs the chance the page shows, or none where no direction is shown (every chart at
+  present), so "your hit rate" counts only direction calls you actually saw.
+
 ### Every model re-measured on all 106 tradable coins (2026-10-15/16)
 The tests used to run on 12 or 24 large Binance coins. They now run on `tools/universe.json`:
 CoinGecko's top 150 on 2026-10-15, less stablecoins, tokenised funds and gold tokens, each coin

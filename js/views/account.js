@@ -4,7 +4,7 @@ import { esc, money } from '../format.js';
 import { load, settings } from '../store.js';
 import { myActivity, myForecasts, forecastScore, resolveDueForecasts, clearMyActivity } from '../api/activity.js';
 import { changePassword, signOutEverywhere } from '../api/security.js';
-import { getCandles, findCoin, isTestedSource } from '../api/market.js';
+import { findCoin, closeAtTime } from '../api/market.js';
 import { dateTime, pct, ago } from '../format.js';
 import { auth, sb, isPremium, isAdmin, callFn, updateProfile, refreshProfile, signOut } from '../api/backend.js';
 import { openAuth } from './auth.js';
@@ -236,21 +236,12 @@ export async function render(el, [flag]) {
   // Forecasts you were shown are logged before the outcome is known, then scored
   // against the real close — so this hit rate is yours, not a marketing number.
   const closeAt = async (symbol, interval, atMs) => {
-    let coin, r;
-    try {
-      coin = await findCoin(symbol);
-      if (!coin) return NaN;
-      r = await getCandles(coin, interval, 500);
-    } catch { return NaN; }
+    let coin;
+    try { coin = await findCoin(symbol); } catch { return { retry: true }; }
     // A forecast is graded against exchange candles only. Demo prices are
     // invented, and the grade is saved to your record on the server.
-    if (!isTestedSource(r)) return NaN;
-    let best = NaN, bestGap = Infinity;
-    for (const c of r.candles) {
-      const gap = Math.abs(c.t - atMs);
-      if (c.t <= atMs && gap < bestGap) { bestGap = gap; best = c.c; }
-    }
-    return bestGap < 6 * 3600e3 ? best : NaN;
+    if (!coin || coin.source === 'demo') return { retry: true };
+    return closeAtTime(coin, interval, atMs);
   };
 
   const paintActivity = async () => {
@@ -264,10 +255,11 @@ export async function render(el, [flag]) {
         <div class="grid g4">
           <div class="stat"><span class="k">Forecasts you were shown</span><span class="v">${sc.shown}</span><span class="s fine">${sc.open} still open</span></div>
           <div class="stat"><span class="k">Scored so far</span><span class="v">${sc.resolved}</span><span class="s fine">${sc.right} called right</span></div>
-          <div class="stat"><span class="k">Your hit rate</span><span class="v ${sc.accuracy === null ? '' : sc.accuracy >= 55 ? 'up' : sc.accuracy < 50 ? 'down' : ''}">${sc.accuracy === null ? '—' : `${sc.accuracy.toFixed(0)}%`}</span><span class="s fine">on what you actually viewed</span></div>
+          <div class="stat"><span class="k">Your hit rate</span><span class="v ${sc.accuracy === null ? '' : sc.accuracy >= 55 ? 'up' : sc.accuracy < 50 ? 'down' : ''}">${sc.accuracy === null ? '—' : `${sc.accuracy.toFixed(0)}%`}</span><span class="s fine">on the direction calls you were shown</span></div>
           <div class="stat"><span class="k">Coins you follow most</span><span class="v" style="font-size:16px">${topCoins(acts) || '—'}</span></div>
         </div>
 
+        ${fcs.some((f) => f.prob_up === null) ? '<p class="fine mt">A forecast with no "AI up" figure was on a chart where the page showed no direction, because none has been shown to work there; it records the price before and after but is not scored right or wrong.</p>' : ''}
         ${fcs.length ? `<h4 class="mt fine">Forecasts you were shown</h4>
           <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>TF</th><th class="l">Shown</th><th>Price then</th><th>AI up</th><th>Price after</th><th>Result</th></tr></thead><tbody>
           ${fcs.slice(0, 25).map((f) => `<tr data-sym="${esc(f.symbol)}">
@@ -275,7 +267,7 @@ export async function render(el, [flag]) {
             <td class="l fine">${dateTime(new Date(f.shown_at).getTime())}</td>
             <td>${money(f.price)}</td>
             <td class="${f.prob_up >= 0.54 ? 'up' : f.prob_up <= 0.46 ? 'down' : ''}">${f.prob_up === null ? '—' : `${(f.prob_up * 100).toFixed(0)}%`}</td>
-            <td>${f.resolved ? money(f.outcome_price) : '<span class="fine muted">open</span>'}</td>
+            <td>${!f.resolved ? '<span class="fine muted">open</span>' : f.outcome_price === null ? '<span class="fine muted">not available</span>' : money(f.outcome_price)}</td>
             <td>${f.was_right === null ? '—' : f.was_right ? '<span class="up">✓ right</span>' : '<span class="down">✕ wrong</span>'}</td></tr>`).join('')}
           </tbody></table></div>` : '<p class="fine mt">No forecasts logged yet — open a coin page and one will be recorded here.</p>'}
 
