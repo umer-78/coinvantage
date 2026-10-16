@@ -80,6 +80,97 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Every model re-measured on all 106 tradable coins (2026-10-15/16)
+The tests used to run on 12 or 24 large Binance coins. They now run on `tools/universe.json`:
+CoinGecko's top 150 on 2026-10-15, less stablecoins, tokenised funds and gold tokens, each coin
+from the exchange the app reads it on (78 Binance, 27 Gate.io, XMR on HTX), plus SAND. Eight
+coins have no readable exchange and are named in the file's `noData` (FIGR_HELOC, WBT, BGB, KCS,
+BCAP, HASH, OHM, PRL). `TESTED_COINS` lists the 106. Coins listed recently drop out of tests
+that need long history (1d: 47–83 coins depending on the test).
+
+Found and fixed on the way: the AI trader rounded prices to 6 decimals, so coins below a
+millionth (BTT and others) entered at 0 and showed infinite returns. Prices now keep 10
+significant digits (`px` in `js/lib/autotrader.js`); the first 106-coin trader runs were on the
+broken engine and were discarded.
+
+A rule used throughout: a published decision changes only when two runs in a row agree. On
+this pass the second run was minutes to hours after the first, on nearly the same candles, so
+it confirms the measurement, not a new period; the monthly scheduled run is the first on new
+data. Each chart's engine test has ten forecast moments shared by every coin (crypto moves
+together), so 1,060 forecasts are far fewer independent tests than they look: the 1m 80% range
+read 69.9% in one engine run and 83.3% in the next, 90 minutes later.
+
+- **AI trader rules (trader-folds) — every chart now trades the standard rules.** Two runs:
+  the chart's own pick beat the standard rules in 0 of 3 blocks on 15m, 1 of 3 on 1h and 4h;
+  on 1d it made more (+95.8% against +27.8% a block) with a worst drop 10 points deeper than
+  the bar allows. `CHART_RULES` is empty, and `rulesForChart` now applies the standard rule
+  keys explicitly, so stale saved values cannot replace them. A third run on the standard
+  rules (2026-10-16) is `CHART_TESTED`: 15m +3.21% a 10-day block, 1h +8.55% a 6-week block,
+  4h +0.71% a 5-month block, 1d +20.50% an 18-month block; holding the same coins made more
+  on every chart (+7.42%, +18.23%, +34.01%, +44.24%). The run four hours before, on nearly
+  the same candles, had +6.13/+12.46/+8.31/+27.79% (`previous`): with every coin in one
+  account a slightly different start changes which trades are taken, so one run's average is
+  rough to within several points, and the Trading page says so. The trader's gain is the
+  drop: 1d 19.5% against 59.4% for holding, 4h 30.1% against 40.6% (on 15m and 1h it fell
+  further than holding). The 1d account beat holding in 2022–23 by sitting out the fall
+  (−10.5% against −54.3%), not by picking winners. On no chart did a buy pick direction
+  better than chance; on 15m and 1h a rise followed a buy less often than any candle.
+  Volatility sizing (`VOL_SCALE`): 4h, on since the 24-coin run, failed the bar on the
+  standard rules twice in a row (objective −0.33, then +0.56), so it is off and `charts` is
+  empty; 1d cleared it for the first time (+1.32 points a block, drop 2.4 points smaller) and
+  stays off until the next run agrees; 15m and 1h failed. Fee filter: the runs disagreed,
+  stays off. Risk levels (`byRisk`): in the third run more risk made more on average on every
+  chart at 5% a trade, always with a deeper drop and a worse worst block (1d: drop 43.4% at
+  5% against 13.6% at 1%); the Trading page reads its sentence off the rows.
+- **Trader rule search (trader-rules, 432 sets):** the current rules beat the older-half pick on
+  15m, 1h and 1d; kept. Beats holding on 15m and 1d only. `AUTOTRADER_TESTED`.
+- **Per-coin daily rules (selection):** re-picked on 73 coins. Older-half picks on the newer half,
+  one account: +265.0% against +155.4% for the daily rules alone, drop 34.1% vs 32.4% — inside
+  the bar, stay on. The walk-forward check (49 coins) disagrees: better in 1 of 3 periods
+  (+2.7% vs +6.3%); the Settings switch says so. Rotation passed its written bar on daily
+  (+139% vs +20% holding) with a 94% worst drop and fees of 128% of the balance; the earlier run
+  failed it, so it is still not offered.
+- **Forecast direction (engine, two runs):** no edge on any chart; `directionTrust` stays 0.
+  `TESTED_ACCURACY.recheck` holds the later run.
+- **Price ranges (bands, two runs, 1m added):** centred ranges within 1.3 points of target on
+  every chart (1m over ~162,000 ranges: 80% held 79.7%). The 1d 5% widening from the 24-coin
+  run failed on 106 coins in both runs (81.0% as drawn, 82.4% wider), so `RANGE_WIDEN` is empty.
+  Faster volatility and time-of-day adjustments: still not worth it.
+- **Move-size call:** passed on 5m, 15m and 1h in both runs, so 15m joins; 4h and 1d failed both.
+- **Learned blend (new step in the engine job):** 49.5% against the forecast's 49.6% on 5,710
+  forecasts, better only on 4h; the forecast stays champion. `LEARN_TESTED`.
+- **Score readings (new `tools/evaluate-score-buckets.mjs`, 1.58 million candles):** the
+  "strong rise so far" reading was followed by a rise least often on every chart (45–46%); a
+  higher reading never beat a lower one in both halves. `SCORE_BUCKETS_TESTED`.
+- **Score bands as strategies:** each chart's best-looking band, traded one position at a time with
+  fees against an entry at every candle under the same exits, on both halves of every coin's
+  candles (`tools/evaluate-band-strategy.mjs`, with a fair every-candle control): 1h 45–59
+  +0.145R vs +0.093R on the newer half, −0.166R vs −0.115R on the older; 4h 18–29 +0.039R vs
+  −0.024R, then −0.012R vs −0.011R; 1d 60–100 +0.176R vs −0.014R, then −0.076R vs −0.032R.
+  Each band beat any-candle entries only on the half it was picked from, so none is tradeable
+  (`SIGNAL_EDGE_TESTED.*.beatsRandom` false). The old control used 60 fixed moments a coin and
+  scored a time-out as 0R; a same-data re-run reading 0.166R then 0.052R is how it was found.
+- **Trade-plan levels (geometry), two runs:** on the newer half, entering at every candle, with
+  the shipped stops and targets: 15m −0.002R then −0.004R a trade, 1h +0.084R then +0.053R, 4h
+  −0.033R then −0.038R, 1d −0.036R then −0.033R (`TRADE_GEOMETRY` holds the later run). The
+  daily plan, +0.058R on 12 coins, now loses. The best alternatives were within 0.01R, so the
+  levels stay.
+- **Timing, history matcher, cross-coin model (timing job):** timing (when a move's high or low
+  comes) on all six charts, 3,822 tests: 52.8% against 51.4% for a random guess on the same
+  tests (12 coins had read 58.0% vs 54.1%). By chart: 1m 49.4/48.9, 5m 42.7/47.0, 15m
+  51.4/48.7, 1h 45.9/44.6, 4h 63.9/61.6, 1d 56.6/53.6. The run before (`previousRun`, no
+  per-chart baselines yet) put single charts 1.2–4.0 points away, as much as most of the
+  edges, so no chart is labelled "good": `timingTrust` now also needs the edge to exceed that
+  swing, and a failing chart points to the measured best one (`bestTimingChart`) instead of a
+  hard-coded 4h. History matcher (`ANALOG_TESTED`): below its majority baseline on every chart
+  in both runs (second: 1h 50.5% vs 53.4%, 4h 51.0% vs 57.7%, 1d 50.6% vs 56.1%; 44 of 287
+  coin/chart pairs beat theirs). Cross-coin model (`tools/evaluate-pooled.mjs`, now printing
+  baselines): no model beat naming the training part's commoner direction by more than 1.3
+  points on any chart (15m 52.1% vs 51.7%, 1h 51.3% vs 50.0%, 4h 52.2% vs 51.9%, 1d 55.1% vs
+  55.6%), so it stays out of the roster (note above `MODEL_INFO` in `js/lib/predict.js`).
+- **Outside data (external, momentum):** Fear & Greed, funding (market and coin against coin),
+  taker share, momentum and reversal: none held up on 106 coins.
+
 ### Cloud sync, trade results and the schema (2026-10-12)
 - **Sync** (`js/lib/cloudsync.js`): every synced key merges on its own against a
   fingerprint of the value both sides last agreed on; whichever side changed
@@ -484,6 +575,13 @@ A short-side test has not been run.
   CSV import. Keep it that way.
 
 ## Measured numbers currently published (do not change without re-measuring)
+- **106-coin re-measure, 2026-10-15/16 — supersedes the lines below where they differ.** See
+  "Every model re-measured on all 106 tradable coins" above. Sources of truth: `TESTED_ACCURACY`
+  (+ `.recheck`) in `js/lib/predict.js`, `FORECAST_TESTED` and `RANGE_WIDEN` in
+  `js/lib/forecastview.js`, `CHART_TESTED`, `CHART_RULES`, `VOL_SCALE`, `PER_COIN_RULES` and
+  `AUTOTRADER_TESTED` in `js/lib/autotrader.js`, `SCORE_BUCKETS_TESTED`, `SIGNAL_EDGE_TESTED` and
+  `GEOMETRY_TESTED` in `js/lib/signals.js`, `LEARN_TESTED` in `js/lib/learncenter.js`,
+  `TESTED_TIMING` in `js/lib/timing.js`, `ANALOG_TESTED` in `js/lib/analog.js`.
 - **Forecast direction, re-checked 2026-10-12** (`TESTED_ACCURACY.recheck`, Evaluate job `engine`,
   1,440 fresh forecasts): 1m 54.2% vs 66.3% baseline (trust 0.05), 5m 52.1% vs 65.0% (0),
   15m 47.1% vs 57.9% (0), 1h 50.8% vs 59.6%, 4h 51.2% vs 52.5%, 1d 43.3% vs 52.1%. Each
@@ -523,8 +621,9 @@ A short-side test has not been run.
   54.0%, Brier 0.2529 to 0.2483, confident-subset accuracy 53.0% to 56.9%.
   Also rejected: a pooled cross-coin model (53.7%), and more validation points
   with below-chance models zeroed out (51.5%). Four variants tested, one shipped.
-- Timing peak-hit: 58.0% vs 54.1% random (931 tests, 12 coins) — 5m 52.6% vs 48.7%, 15m 48.6% vs 49.0% (no edge),
-  1h 52.5% vs 46.8%, 4h 68.7% vs 61.8%, 1d 56.1% vs 55.0%. Source of truth: TESTED_TIMING in js/lib/timing.js.
+- Timing peak-hit (superseded 2026-10-16 by 52.8% vs 51.4% on 3,822 tests and 106 coins): 58.0% vs 54.1% random
+  (931 tests, 12 coins) — 5m 52.6% vs 48.7%, 15m 48.6% vs 49.0% (no edge), 1h 52.5% vs 46.8%, 4h 68.7% vs 61.8%,
+  1d 56.1% vs 55.0%. Source of truth: TESTED_TIMING in js/lib/timing.js.
 
 ### Assistant and advice fixes (2026-09-25)
 - `adviseCoin` scales the score by the evidence behind it (divides by `max(total weight, 1)`), so one barely-trusted reading can no longer produce "BUY, conviction 100/100".

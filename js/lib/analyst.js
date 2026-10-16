@@ -181,7 +181,7 @@ function timingBlock(ctx) {
   }
   if (t.peakPrice) lines.push(`- Expected high around ${fmtNum(t.peakPrice)} (${pct(t.peakMovePct)}); at the horizon ${pct(t.moveAtHorizonPct)}.`);
   if (t.pctOfPastCasesUpAtPeak !== null && t.pctOfPastCasesUpAtPeak !== undefined) lines.push(`- ${t.pctOfPastCasesUpAtPeak}% of the ${t.basedOnSimilarPastCharts} matched past charts were still up at that point.`);
-  lines.push('- Timing is the least reliable part of a forecast — use it to plan an exit, not to skip the stop-loss.');
+  lines.push('- Timing\'s measured edge is small and moves between runs — use it to plan an exit, not to skip the stop-loss.');
   return lines.length ? `\n${lines.join('\n')}\n` : '';
 }
 

@@ -980,7 +980,7 @@ export async function render(el) {
       ${y.levels.length ? `<div class="tbl-wrap mt"><table class="tbl fine"><thead><tr><th class="l">Risk a trade</th><th>Average a period</th><th>Worst → best</th><th>Worst drop</th><th>Periods up</th></tr></thead><tbody>
         ${y.levels.map((l) => `<tr${l.risk === y.risk ? ' style="font-weight:700"' : ''}><td class="l">${l.risk}%${l.risk === y.risk ? ' ← yours' : ''}</td><td class="${l.ret >= 0 ? 'up' : 'down'}">${sign(l.ret)}</td><td>${sign(l.lo)} → ${sign(l.hi)}</td><td>${l.dd}%</td><td>${l.up} of ${y.periods}</td></tr>`).join('')}
       </tbody></table></div>
-      <p class="fine" style="margin:6px 0 0">Each row is the same test at that risk${y.levels.some((l) => l.risk === y.risk) ? '' : `; yours (${y.risk}%) is read between the two nearest rows`}. The best average came at ${top.risk}% a trade${top.risk < y.levels[y.levels.length - 1].risk ? ' and higher settings made no more' : ''}: with at most 25% in one coin, a higher setting soon stops making positions bigger. Read off these same periods, so a guide, not a promise.</p>` : ''}`;
+      <p class="fine" style="margin:6px 0 0">Each row is the same test at that risk${y.levels.some((l) => l.risk === y.risk) ? '' : `; yours (${y.risk}%) is read between the two nearest rows`}. The best average came at ${top.risk}% a trade${top.risk < y.levels[y.levels.length - 1].risk ? ' and higher settings made no more: with at most 25% in one coin, a higher setting soon stops making positions bigger' : `, with a worst drop of ${top.dd}% against ${y.levels[0].dd}% at ${y.levels[0].risk}% and a worst period of ${sign(top.lo)}`}. Read off these same periods, so a guide, not a promise.</p>` : ''}`;
   }
 
   $('#cfgBtn', el).addEventListener('click', () => {

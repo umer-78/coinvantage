@@ -7,7 +7,7 @@ import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
 import { computeAll } from '../lib/indicators.js';
 import { TESTED_ACCURACY, shownProbUp, directionReliable } from '../lib/predict.js';
-import { timingOutlook, TESTED_TIMING, timingTrust, condenseTiming } from '../lib/timing.js';
+import { timingOutlook, TESTED_TIMING, timingTrust, condenseTiming, bestTimingChart } from '../lib/timing.js';
 import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
 import { LineChart } from '../charts/line.js';
@@ -941,8 +941,8 @@ export async function render(el, [symParam]) {
             <dt>Where it ends at the horizon</dt><dd class="${t.endPct >= 0 ? 'up' : 'down'}">${pct(t.endPct, 1)}</dd>
           </dl>
           <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'good' ? '' : 'warn'}">${esc(trust.text)}</p>
-          <p class="fine">Across all timeframes: ${TESTED_TIMING.tests} walk-forward tests on ${TESTED_TIMING.coins} coins, ${TESTED_TIMING.peakHitPct}% hit versus a ${TESTED_TIMING.baselinePct}% random baseline, and the move really did turn inside the horizon ${TESTED_TIMING.turnedInsideHorizonPct}% of the time.</p>
-          <p class="fine warn">Timing is the least reliable part of any forecast. Use it to plan an exit window, never as a reason to skip a stop-loss.</p>
+          <p class="fine">Across all timeframes: ${TESTED_TIMING.tests.toLocaleString('en-US')} walk-forward tests on ${TESTED_TIMING.coins} coins, ${TESTED_TIMING.peakHitPct}% hit versus a ${TESTED_TIMING.baselinePct}% random baseline, and the move really did turn inside the horizon ${TESTED_TIMING.turnedInsideHorizonPct}% of the time.</p>
+          <p class="fine warn">Timing's measured edge is small and moves between runs. Use it to plan an exit window, never as a reason to skip a stop-loss.</p>
         </div>
       </div>`;
   }
@@ -992,7 +992,7 @@ export async function render(el, [symParam]) {
             : `Expect weakness for about <b>${esc(dur(main.bar))}</b>, bottoming near <b>${money(main.price)}</b> (${pct(main.pct, 1)})${t.recover ? `, with a bounce starting in about <b>${esc(dur(t.recover.bar))}</b>` : ', with no clear bounce inside this horizon'}.`}
           ${!t.priceless && main.agreement !== null && main.agreement !== undefined ? ` ${Math.round(main.agreement)}% of the ${t.matchesUsed} matched past charts were still up at that point.` : ''}
         </p>
-        <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% on ${esc(st.interval)} charts against a ${TESTED_TIMING.byInterval[st.interval].baselinePct}% random baseline.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts — the 4h chart is the one it tested best on.` : trust.level === 'unknown' ? 'Timing has not been measured on this timeframe.' : `Timing barely clears chance here${TESTED_TIMING.byInterval[st.interval] ? ` (${TESTED_TIMING.byInterval[st.interval].hitPct}% against ${TESTED_TIMING.byInterval[st.interval].baselinePct}%)` : ''}.`}</p>
+        <p class="fine ${trust.level === 'bad' ? 'down' : trust.level === 'weak' ? 'warn' : 'muted'}" style="margin:6px 0 0">${trust.level === 'good' ? `Timing measured ${TESTED_TIMING.byInterval[st.interval].hitPct}% on ${esc(st.interval)} charts against a ${TESTED_TIMING.byInterval[st.interval].baselinePct}% random baseline.` : trust.level === 'bad' ? `⚠ Timing is unreliable on ${esc(st.interval)} charts${bestTimingChart() ? ` — it tested best on ${esc(bestTimingChart().interval)}, and even there the edge is small` : ''}.` : trust.level === 'unknown' ? 'Timing has not been measured on this timeframe.' : `Timing barely clears chance here${TESTED_TIMING.byInterval[st.interval] ? ` (${TESTED_TIMING.byInterval[st.interval].hitPct}% against ${TESTED_TIMING.byInterval[st.interval].baselinePct}%)` : ''}.`}</p>
       </div>`;
   }
 

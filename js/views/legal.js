@@ -3,7 +3,7 @@ import { CONFIG } from '../config.js';
 import { getAppSettings } from '../api/backend.js';
 import { esc } from '../format.js';
 import { TESTED_ACCURACY } from '../lib/predict.js';
-import { TESTED_TIMING } from '../lib/timing.js';
+import { TESTED_TIMING, timingSwing } from '../lib/timing.js';
 import { SCORE_BUCKETS_TESTED } from '../lib/signals.js';
 
 // The risk page used to restate the measured numbers as a hand-written
@@ -16,8 +16,13 @@ const accuracyLine = () => IVS
   .map((iv) => `${iv} ${TESTED_ACCURACY[iv]}% against a ${TESTED_ACCURACY.baseline[iv]}% baseline`)
   .join(', ');
 const timingLine = () => Object.entries(TESTED_TIMING.byInterval)
-  .map(([iv, t]) => `${iv} ${t.hitPct}% against ${t.baselinePct}%`)
+  .map(([iv, t]) => `${iv} ${t.hitPct.toFixed(1)}% against ${t.baselinePct.toFixed(1)}%`)
   .join(', ');
+// How far single charts moved between the last two timing runs, as "1.2 to 4.0".
+const timingSwingRange = () => {
+  const s = Object.keys(TESTED_TIMING.byInterval).map(timingSwing).filter((v) => v !== null);
+  return s.length ? `${Math.min(...s).toFixed(1)} to ${Math.max(...s).toFixed(1)}` : null;
+};
 
 export const title = (p) => ({ terms: 'Terms of Service', privacy: 'Privacy Policy', risk: 'Risk Disclosure' }[p?.[0]] || 'Legal');
 
@@ -79,8 +84,8 @@ const PAGES = (contact) => ({
       <p>${esc(TESTED_ACCURACY.caveat)}</p>
       <h2>The chart score does not mean what its name suggested</h2>
       <p>Sorting ${SCORE_BUCKETS_TESTED.bars.toLocaleString()} bars of ${SCORE_BUCKETS_TESTED.coins} coins by the score this engine assigns them shows the share that rose mostly <b>falls</b> as the score rises — on every chart tested, the highest-scoring bars were the ones least likely to go up. Trading the reverse does not work either; both directions were tested over held-out data with fees and neither produced a positive expectancy. The score is therefore labelled as a description of how extended a trend is, not as a recommendation to buy or sell.</p>
-      <h2>What does show a measured edge</h2>
-      <p>Timing — how long a move tends to run before turning — beat its random baseline across ${TESTED_TIMING.tests} tests: <b>${TESTED_TIMING.peakHitPct}%</b> against <b>${TESTED_TIMING.baselinePct}%</b>. By timeframe: ${timingLine()}. That edge is small, it is measured on ${TESTED_TIMING.coins} coins over one period, and it says nothing about direction. A well-placed turning point on a direction call with no edge is still a direction call with no edge.</p>
+      <h2>Timing: a small edge, not a dependable one</h2>
+      <p>Timing — when a move's high or low tends to come — beat its random baseline across ${TESTED_TIMING.tests.toLocaleString('en-US')} tests on ${TESTED_TIMING.coins} coins: <b>${TESTED_TIMING.peakHitPct}%</b> against <b>${TESTED_TIMING.baselinePct}%</b>. By timeframe: ${timingLine()}.${TESTED_TIMING.previousRun ? ` A run a few hours earlier on nearly the same candles read ${TESTED_TIMING.previousRun.peakHitPct}% overall${timingSwingRange() ? `, and single charts moved ${timingSwingRange()} points between the two runs, as much as most of the edges` : ''}.` : ''} It is measured over one period and says nothing about direction. A well-placed turning point on a direction call with no edge is still a direction call with no edge.</p>
       <p>None of this is a licence to bet large, and past measurements do not carry over to the future.</p>
       <h2>Leverage</h2>
       <p>The futures page shows what leveraged traders are doing because it is useful market context. It is not encouragement. Leverage magnifies losses, liquidations are permanent, and most retail leveraged accounts lose money.</p>

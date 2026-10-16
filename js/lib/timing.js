@@ -207,50 +207,79 @@ export function summarizeTiming(t) {
 // Measured timing accuracy — tools/evaluate-timing.mjs (current figures and how
 // they were measured are in the comment inside TESTED_TIMING below).
 export const TESTED_TIMING = {
-  // Re-measured across all six timeframes: 931 walk-forward tests, 12 coins,
-  // each prediction made only from candles that existed at that moment. A hit
-  // means the real high or low landed within +/-25% of the horizon of the bar
-  // the forecast named. `baselinePct` is what a uniform random guess scores on
-  // the SAME tests, so the edge is the gap and nothing else.
+  // Measured on every coin the app can trade (106, each from the exchange it is
+  // read on; Evaluate job "timing", 2026-10-16): 3,822 walk-forward tests on all
+  // six charts, each prediction made only from candles that existed at that
+  // moment. A hit means the real high or low landed within +/-25% of the horizon
+  // of the bar the forecast named. `baselinePct` is what a uniform random guess
+  // scores on the SAME tests, so the edge is the gap and nothing else.
   //
-  // This is the one component of the engine that beats its baseline. It is also
-  // smaller than the number previously published here: the old block claimed
-  // 61.2% against 53.6% on 245 tests, and on a sample almost four times larger
-  // that edge roughly halves. The daily figure moved most — it was 66.3% and is
-  // 56.1% — so the earlier number was optimistic rather than wrong in kind.
+  // The edge is small. On 12 coins it read 58.0% against 54.1%; on 106 coins it
+  // is 52.8% against 51.4%. No chart clears its own baseline by 4 points, and 5m
+  // and 1m sit below or at theirs. A run a few hours earlier on nearly the same
+  // candles (`previousRun`) put single charts 1 to 4 points away from these
+  // figures, as much as most of the edges: the tests on one chart share their
+  // moments across coins, and crypto moves together, so they are far fewer
+  // independent tests than the count suggests.
   //
   // Timing answers "when", never "which way". A well-placed turning point on a
   // direction call with no edge is still a direction call with no edge.
-  tests: 931, coins: 12,
-  peakHitPct: 58.0, baselinePct: 54.1, medianBarsOff: 2,
-  turnedInsideHorizonPct: 79.2,
+  tests: 3822, coins: 106, measuredOn: '2026-10-16',
+  peakHitPct: 52.8, baselinePct: 51.4, medianBarsOff: 3,
+  turnedInsideHorizonPct: 81.3,
   byInterval: {
-    // 1m produced no qualifying tests at all — the shaped path almost never
-    // forms there — so it is absent rather than reported as zero.
-    '5m': { tests: 38, hitPct: 52.6, baselinePct: 48.7, medianOff: 3 },
-    '15m': { tests: 72, hitPct: 48.6, baselinePct: 49.0, medianOff: 3 },
-    '1h': { tests: 244, hitPct: 52.5, baselinePct: 46.8, medianOff: 3 },
-    '4h': { tests: 265, hitPct: 68.7, baselinePct: 61.8, medianOff: 2 },
-    '1d': { tests: 312, hitPct: 56.1, baselinePct: 55.0, medianOff: 2 },
+    '1m': { tests: 170, hitPct: 49.4, baselinePct: 48.9, medianOff: 5 },
+    '5m': { tests: 424, hitPct: 42.7, baselinePct: 47.0, medianOff: 4 },
+    '15m': { tests: 640, hitPct: 51.4, baselinePct: 48.7, medianOff: 2 },
+    '1h': { tests: 1059, hitPct: 45.9, baselinePct: 44.6, medianOff: 4 },
+    '4h': { tests: 992, hitPct: 63.9, baselinePct: 61.6, medianOff: 2 },
+    '1d': { tests: 537, hitPct: 56.6, baselinePct: 53.6, medianOff: 2 },
   },
+  // The run before, on the same 106 coins; it scored no per-chart baselines.
+  previousRun: { tests: 3874, peakHitPct: 53.7, baselinePct: 51.9, hitPct: { '1m': 45.4, '5m': 41.5, '15m': 48.3, '1h': 48.1, '4h': 66.4, '1d': 60.3 } },
 };
+
+/** How far a chart's hit rate moved between the last two runs, in points (null if unknown). */
+export function timingSwing(interval) {
+  const now = TESTED_TIMING.byInterval[interval]?.hitPct;
+  const before = TESTED_TIMING.previousRun?.hitPct?.[interval];
+  return Number.isFinite(now) && Number.isFinite(before) ? +Math.abs(now - before).toFixed(1) : null;
+}
+
+/** The chart where timing beat its own baseline by the most (at least 1 point), or null. */
+export function bestTimingChart() {
+  let best = null;
+  for (const [interval, t] of Object.entries(TESTED_TIMING.byInterval)) {
+    const edge = +(t.hitPct - t.baselinePct).toFixed(1);
+    if (edge >= 1 && (!best || edge > best.edge)) best = { interval, edge, hitPct: t.hitPct, baselinePct: t.baselinePct };
+  }
+  return best;
+}
 
 /** Is the timing call worth showing on this timeframe, and what should we admit? */
 export function timingTrust(interval) {
   const iv = TESTED_TIMING.byInterval[interval];
-  if (!iv) return { level: 'unknown', text: `Timing has not been measured on the ${interval} chart — no prediction here produced enough shaped paths to score, so treat any turning point as a rough guide only. The 1h and 4h charts are where it was tested.` };
+  if (!iv) return { level: 'unknown', text: `Timing has not been measured on the ${interval} chart, so treat any turning point there as a rough guide only.` };
   // Each timeframe is judged against its OWN random baseline. Comparing every
   // timeframe to one global number made a 68.7% look far better than a 52.5%
-  // when, against what each had to beat, they are worth about the same.
+  // when, against what each had to beat, they are worth about the same. An edge
+  // no bigger than the move between two runs is not counted as a clear one.
   const edge = iv.hitPct - iv.baselinePct;
+  const swing = timingSwing(interval);
+  const before = TESTED_TIMING.previousRun?.hitPct?.[interval];
   const thin = iv.tests < 100;
-  if (edge >= 4) {
-    return { level: 'good', text: `On ${interval} charts the real high or low landed inside the predicted window ${iv.hitPct}% of the time across ${iv.tests} tests, against ${iv.baselinePct}% for a random guess on the same tests — an edge of ${edge.toFixed(1)} points. Typical miss ${iv.medianOff} candle${iv.medianOff === 1 ? '' : 's'}.${thin ? ' That is a small sample, so treat it as provisional.' : ''}` };
+  const best = bestTimingChart();
+  if (edge >= 4 && (swing === null || swing < edge)) {
+    return { level: 'good', text: `On ${interval} charts the real high or low landed inside the predicted window ${iv.hitPct.toFixed(1)}% of the time across ${iv.tests} tests, against ${iv.baselinePct.toFixed(1)}% for a random guess on the same tests: an edge of ${edge.toFixed(1)} points. Typical miss ${iv.medianOff} candle${iv.medianOff === 1 ? '' : 's'}.${thin ? ' That is a small sample, so treat it as provisional.' : ''}` };
   }
   if (edge >= 1) {
-    return { level: 'weak', text: `On ${interval} charts this scored ${iv.hitPct}% against a ${iv.baselinePct}% random baseline over ${iv.tests} tests — ${edge.toFixed(1)} points, which is barely an edge. Use the direction of the move, not the clock.` };
+    const moved = swing === null ? '' : swing >= edge
+      ? ` A run a few hours earlier read ${before}%: the figure moved ${swing.toFixed(1)} points between runs, more than the edge.`
+      : ` A run a few hours earlier read ${before}%.`;
+    return { level: 'weak', text: `On ${interval} charts the real high or low landed inside the predicted window ${iv.hitPct.toFixed(1)}% of the time across ${iv.tests} tests, against ${iv.baselinePct.toFixed(1)}% for a random guess on the same tests: ${edge.toFixed(1)} points, which is barely an edge.${moved} Treat the turning point as a rough guide, not a clock.` };
   }
-  return { level: 'bad', text: `Timing does not work on ${interval} charts: ${iv.hitPct}% against a ${iv.baselinePct}% random baseline over ${iv.tests} tests. Ignore the turning point here — the 4h chart is where it tested best.` };
+  const elsewhere = best && best.interval !== interval ? ` It tested best on ${best.interval} (${best.hitPct.toFixed(1)}% against ${best.baselinePct.toFixed(1)}%), and even that edge is small.` : '';
+  return { level: 'bad', text: `Timing does not work on ${interval} charts: ${iv.hitPct.toFixed(1)}% against a ${iv.baselinePct.toFixed(1)}% random baseline over ${iv.tests} tests. Ignore the turning point here.${elsewhere}` };
 }
 
 void clamp;

@@ -182,10 +182,12 @@ export const VOL_SCALE = {
  * What the settings can be expected to make, from the walk-forward test of
  * the rules this chart trades (CHART_TESTED): the average per test period and
  * the worst and best period. The test was run at six risk levels (byRisk);
- * between two of them the figures are read off a straight line. More risk did
- * not mean more return: above 2% a trade the results stayed about flat on 15m and
- * 1h (the 25%-a-coin cap binds first) and got worse on 4h and 1d, with deeper
- * drops. Measured with the standard caps (5 open, 25% a coin) on every coin;
+ * between two of them the figures are read off a straight line. In the run
+ * before the latest, above 2% a trade the results stayed about flat on 15m and
+ * 1h (the 25%-a-coin cap binds first) and got worse on 4h and 1d; in the latest,
+ * 5% a trade made the most on every chart, always with a deeper drop and a
+ * worse worst block. The Trading page reads its sentence off the rows.
+ * Measured with the standard caps (5 open, 25% a coin) on every coin;
  * `capsDiffer` flags other caps.
  * Null for your own rules or an untested chart: nothing measured to expect.
  */

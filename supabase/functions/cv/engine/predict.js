@@ -439,8 +439,14 @@ function moveStatsModel(samples) {
 // The models that get a vote. A cross-coin model was built, trained on 25k
 // pooled rows per timeframe and measured on the same 672-forecast harness: it
 // scored 53.7% against this roster's 54.0%, with a worse Brier score, so it is
-// not in the list. tools/train-pooled.mjs and js/lib/pooled.js are kept so the
-// experiment can be repeated rather than guessed at — see docs/HANDOVER.md.
+// not in the list. Re-tested on all 106 coins (tools/evaluate-pooled.mjs, two
+// runs, 2026-10-15/16: about 75,000-240,000 training rows a chart, tested on the
+// later 40% of every coin), no cross-coin model beat simply naming the
+// direction that was commoner in the training part by more than 1.3 points on
+// any chart (second run: 15m 52.1% vs 51.7%, 1h 51.3% vs 50.0%, 4h 52.2% vs
+// 51.9%, 1d 55.1% vs 55.6%), so it stays out. tools/train-pooled.mjs and
+// js/lib/pooled.js are kept so the experiment can be repeated rather than
+// guessed at — see docs/HANDOVER.md.
 export const MODEL_INFO = {
   gbdt: 'Gradient-boosted trees',
   mlp: 'Neural network',

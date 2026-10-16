@@ -342,7 +342,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
       text: timing.priceless
         ? `In similar past setups the ${timing.rising ? 'high' : 'low'} of the next ${dur(timing.horizonBars)} came about ${dur(timing.bars)} in. That is when, not which way or how far: the direction is not reliable on this chart. Use it to plan an exit, never to skip the stop.`
         : timing.rising
-        ? `Strength has typically lasted about ${dur(timing.bars)} in similar past setups, topping near ${fmt(timing.targetPrice)}${timing.turnBars ? `, then turning down about ${dur(timing.turnBars)} from now` : ''}. Timing is the least reliable part of any forecast — use it to plan an exit, never to skip the stop.`
+        ? `Strength has typically lasted about ${dur(timing.bars)} in similar past setups, topping near ${fmt(timing.targetPrice)}${timing.turnBars ? `, then turning down about ${dur(timing.turnBars)} from now` : ''}. Timing's measured edge is small — use it to plan an exit, never to skip the stop.`
         : `Weakness has typically run about ${dur(timing.bars)} in similar setups, bottoming near ${fmt(timing.targetPrice)}; waiting may get a better price, but that is a pattern, not a forecast.`,
     });
   }

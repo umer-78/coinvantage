@@ -22,23 +22,27 @@ import { findPatterns } from './predict.js';
 /**
  * What the method scored on real candles, each coin judged against its own
  * majority-class baseline, measured with tools/evaluate-analog.mjs (Evaluate
- * job "timing"). First on 12 Binance coins; on 2026-10-15 on every coin the app
- * can trade (106, from the exchange it reads each on; fewer on 4h and 1d where
- * history is short).
+ * job "timing"). First on 12 Binance coins; on 2026-10-15 and again on 2026-10-16
+ * on every coin the app can trade (106, from the exchange it reads each on;
+ * fewer on 4h and 1d where history is short).
  *
  * The result is negative and it is published here rather than buried: shape
  * matching draws a genuinely useful picture of what followed similar stretches,
  * but as a direction call it did not beat simply always naming the more common
- * outcome. On 106 coins 43 of 287 coin/chart pairs beat their baseline (15%),
- * and on every chart the average fell short of it. The page still runs the
+ * outcome. On 106 coins 44 of 287 coin/chart pairs beat their baseline (15%;
+ * 43 in the run before), and on every chart, in both runs, the average fell
+ * short of it. The page still runs the
  * test live per coin, so a coin that does beat its own baseline is reported as
  * beating it — but the default framing is description, not prediction.
  */
 export const ANALOG_TESTED = {
-  '1h': { meanAccuracy: 50.4, meanBaseline: 53.5, coinsBeatingBaseline: 25, coins: 104, tests: 13478 },
-  '4h': { meanAccuracy: 50.6, meanBaseline: 56.6, coinsBeatingBaseline: 8, coins: 100, tests: 13004 },
-  '1d': { meanAccuracy: 51.4, meanBaseline: 55.9, coinsBeatingBaseline: 10, coins: 83, tests: 8019 },
-  beatsBaselineOverall: false, measuredOn: '2026-10-15',
+  '1h': { meanAccuracy: 50.5, meanBaseline: 53.4, coinsBeatingBaseline: 27, coins: 104, tests: 13435 },
+  '4h': { meanAccuracy: 51.0, meanBaseline: 57.7, coinsBeatingBaseline: 9, coins: 100, tests: 13008 },
+  '1d': { meanAccuracy: 50.6, meanBaseline: 56.1, coinsBeatingBaseline: 8, coins: 83, tests: 8031 },
+  beatsBaselineOverall: false, measuredOn: '2026-10-16',
+  // The run before, on the same coins: 1h 50.4% vs 53.5%, 4h 50.6% vs 56.6%,
+  // 1d 51.4% vs 55.9%; 43 of 287 coin/chart pairs beat their baseline.
+  previousRun: { measuredOn: '2026-10-15', pairsBeating: 43, pairs: 287 },
 };
 
 /** Window / horizon defaults per timeframe, in candles. */

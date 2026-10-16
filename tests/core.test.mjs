@@ -1123,7 +1123,7 @@ test('the score is labelled as what it measured, never as an instruction', async
 });
 
 test('timing is judged against its own baseline, per timeframe', async () => {
-  const { TESTED_TIMING, timingTrust } = await import('../js/lib/timing.js');
+  const { TESTED_TIMING, timingTrust, timingSwing, bestTimingChart } = await import('../js/lib/timing.js');
 
   // Every timeframe must carry the number it had to beat. Comparing them all to
   // one global baseline flattered whichever timeframe sat in an easy window.
@@ -1132,8 +1132,11 @@ test('timing is judged against its own baseline, per timeframe', async () => {
     assert.ok(t.tests >= 20, `${iv} drawn from too few tests`);
     const trust = timingTrust(iv);
     const edge = t.hitPct - t.baselinePct;
+    const swing = timingSwing(iv);
     if (edge < 1) assert.equal(trust.level, 'bad', `${iv} has no edge but is not labelled as such`);
-    if (edge >= 4) assert.equal(trust.level, 'good', `${iv} clears its baseline but is not labelled as such`);
+    if (edge >= 4 && (swing === null || swing < edge)) assert.equal(trust.level, 'good', `${iv} clears its baseline but is not labelled as such`);
+    // an edge no bigger than the move between two runs is never called a clear one
+    if (swing !== null && swing >= edge) assert.notEqual(trust.level, 'good', `${iv} is called good inside its run-to-run swing`);
     assert.ok(trust.text.includes(String(t.baselinePct)), `${iv} does not show the reader its baseline`);
   }
 
@@ -1145,6 +1148,11 @@ test('timing is judged against its own baseline, per timeframe', async () => {
   // the headline must stay consistent with the parts
   assert.ok(TESTED_TIMING.peakHitPct > TESTED_TIMING.baselinePct, 'the overall claim must beat its own baseline');
   assert.ok(TESTED_TIMING.tests >= 900);
+  // a chart that fails points the reader at the measured best one, never a hard-coded name
+  const best = bestTimingChart();
+  for (const [iv, t] of Object.entries(TESTED_TIMING.byInterval)) {
+    if (t.hitPct - t.baselinePct >= 1) assert.ok(best && best.edge >= +(t.hitPct - t.baselinePct).toFixed(1) - 1e-9, `${iv} beats the chart named as best`);
+  }
 });
 
 test('the chart score earns no vote in any verdict, because it was measured to point the wrong way', async () => {
