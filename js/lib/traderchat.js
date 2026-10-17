@@ -18,7 +18,7 @@ export const TRADER_Q = new RegExp([
   String.raw`\b(ai|bot|settings)\b[^?.!]*\b(yield|expected (return|profit))\b`,
 ].join('|'), 'i');
 
-const pct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+const pct = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`;
 const day = (t) => new Date(t).toISOString().slice(0, 10);
 
 /**

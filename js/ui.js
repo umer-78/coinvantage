@@ -176,10 +176,10 @@ export function markdown(src) {
   return out.join('');
 }
 
-export function modal(html, { onClose } = {}) {
+export function modal(html, { onClose, wide = false } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'modal-bg';
-  wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><button class="icon-btn modal-x" aria-label="Close">${icon('close')}</button>${html}</div>`;
+  wrap.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true"><button class="icon-btn modal-x" aria-label="Close">${icon('close')}</button>${html}</div>`;
   // Focus was left on whatever opened the dialog, so keyboard users tabbed
   // straight past it into the page behind — which is still fully interactive.
   const opener = document.activeElement;

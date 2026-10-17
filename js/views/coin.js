@@ -554,7 +554,7 @@ export async function render(el, [symParam]) {
     const past = pt.trades
       ? `<details class="mt"><summary class="fine" style="cursor:pointer">Its trades on ${esc(coin.symbol)} over these candles: ${pt.trades}, ${pt.wins} won, average ${sg(pt.avgPct)} a trade after fees (holding ${esc(coin.symbol)} from ${esc(day(pt.from))}: ${sg(pt.holdPct)})</summary>
         <div class="tbl-wrap"><table class="tbl fine"><thead><tr><th class="l">Bought</th><th class="l">Sold</th><th>Entry → exit</th><th>Result</th><th class="l">Why it sold</th></tr></thead><tbody>
-          ${pt.recent.map((t) => `<tr><td class="l">${esc(day(t.openedAt))}</td><td class="l">${esc(day(t.exitAt))}</td><td>${m(t.entry)} → ${m(t.exit)}</td><td class="${t.netPct >= 0 ? 'up' : 'down'}">${sg(t.netPct)}</td><td class="l">${esc(t.why)}</td></tr>`).join('')}
+          ${pt.recent.map((t) => `<tr><td class="l">${esc(day(t.openedAt))}</td><td class="l">${esc(day(t.exitAt))}</td><td class="wrap">${m(t.entry)} → ${m(t.exit)}</td><td class="${t.netPct >= 0 ? 'up' : 'down'}">${sg(t.netPct)}</td><td class="l wrap">${esc(t.why)}</td></tr>`).join('')}
         </tbody></table></div>
         <p class="fine" style="margin:6px 0 0">The last ${pt.recent.length} shown. Real prices, but the rules were chosen on history that includes many of these candles, so this looks better than it will live; the record above is the one to expect.</p></details>`
       : `<p class="fine" style="margin:6px 0 0">It made no trades on ${esc(coin.symbol)} over these candles (holding from ${esc(day(pt.from))}: ${sg(pt.holdPct)}).</p>`;
@@ -596,7 +596,7 @@ export async function render(el, [symParam]) {
       const ind = computeAll(closed), i = closed.length - 1;
       const score = scoreAt(closed, ind, i).score;
       const code = entryBlocker(rules, { symbol: sym, candles: closed, ind, regime: null }, i, score);
-      status = code ? `On the last closed ${chart} candle it would not buy: ${blockerText(code, rules, score)}.${longSetup ? ' The long setup above comes from the chart score; the trader buys only on its own tested rule.' : ''}`
+      status = code ? `On the last closed ${chart} candle it would not buy: ${blockerText(code, rules, score, { rsi: ind.rsi[i] })}.${longSetup ? ' The long setup above comes from the chart score; the trader buys only on its own tested rule.' : ''}`
         : `On the last closed ${chart} candle its buy rule is met${rules.marketFilter ? ' (its Bitcoin-trend filter is checked on the Trading page)' : ''}; it buys at its next check if it has a free slot and the cash.${longSetup ? '' : ' The chart score shows no long setup above; the trader follows its own tested rule, not the score.'}`;
     }
     const html = `<div class="mt" style="border-top:1px solid var(--border);padding-top:10px"><div class="row spread"><b>AI trader on ${esc(sym)}</b><a class="fine" href="#/trader">Trading →</a></div>

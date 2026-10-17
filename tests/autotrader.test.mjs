@@ -74,9 +74,12 @@ test('coins advance together: the earlier signal gets the only slot', () => {
   assert.deepEqual(Object.keys(st.open), ['B']);
 });
 
+// A dip, as the pullback rule reads it: RSI scripted to 30 on one candle, 60 elsewhere.
+const dipAt = (s, k) => { s.ind = { ...s.ind, rsi: s.ind.rsi.map((v, i) => (v === null ? null : i === k ? 30 : 60)) }; return s; };
+
 test('pullback mode buys a dip in an uptrend and sells into strength', () => {
   const candles = climb(320);
-  const s = prepared('A', candles, (i) => (i === 250 ? -40 : i === 270 || i === 271 ? 40 : 0));
+  const s = dipAt(prepared('A', candles, (i) => (i === 270 || i === 271 ? 40 : 0)), 250);
   const cfg = cfgWith({ entryMode: 'pullback', signalExitBars: 2 });
   const st = newState(cfg);
   replaySymbol(st, cfg, 'A', candles, s);
@@ -88,6 +91,23 @@ test('pullback mode buys a dip in an uptrend and sells into strength', () => {
   replaySymbol(t, cfgWith({}), 'A', candles, s);
   assert.equal(t.closed.length + Object.keys(t.open).length, 1, 'trend mode buys the +40 at 270 only');
   assert.notEqual((t.closed[0] || t.open.A).openedAt, candles[250].t);
+});
+
+test('the dip rule buys real dips: computed indicators, no scripting', () => {
+  // an uptrend with a sharp pullback: RSI drops, the 200 and 50 averages stay below price
+  const candles = [];
+  let prev = 100;
+  for (let i = 0; i < 400; i++) {
+    const c = 100 * Math.pow(1.003, i) * (i >= 330 && i < 336 ? 1 - 0.012 * (i - 329) : i >= 336 ? 0.93 : 1);
+    candles.push({ t: T0 + i * H, o: prev, h: Math.max(prev, c) * 1.002, l: Math.min(prev, c) * 0.998, c, v: 1000 });
+    prev = c;
+  }
+  const cfg = cfgWith({ entryMode: 'pullback' });
+  const st = newState(cfg);
+  replaySymbol(st, cfg, 'A', candles);
+  const buys = [...st.closed, ...Object.values(st.open)].map((p) => candles.findIndex((c) => c.t === p.openedAt));
+  assert.ok(buys.length >= 1, 'it bought the dip');
+  assert.ok(buys.every((k) => k >= 330 && k < 345), `bought only in the dip (at ${buys})`);
 });
 
 test('the market filter blocks new buys while Bitcoin is in a downtrend', () => {
@@ -125,8 +145,8 @@ test('a coin with its own rules trades them; the others and the account settings
   assert.equal(rulesFor(cfg, 'B'), cfg);
   // same scripted dip as the pullback test: only the coin with its own rules buys it
   const candles = climb(320);
-  const a = prepared('A', candles, (i) => (i === 250 ? -40 : 0));
-  const b = prepared('B', candles, (i) => (i === 250 ? -40 : 0));
+  const a = dipAt(prepared('A', candles, () => 0), 250);
+  const b = dipAt(prepared('B', candles, () => 0), 250);
   const st = newState(cfg);
   replaySeries(st, cfg, [a, b]);
   assert.deepEqual(Object.keys(st.open), ['A']);

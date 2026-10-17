@@ -182,7 +182,7 @@ export function backtestAnalog(candles, { interval = '1d', topK = 8, minCorr = 0
  * cannot drift into describing the same numbers differently.
  */
 // "+1.26%", "−7.67%": signed, with a true minus.
-const sp = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}%`;
+const sp = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}%`;
 
 export function analogVerdict(match, score, { symbol = 'this coin', interval = '1d', horizonText = null } = {}) {
   if (!match?.ok) return { headline: match?.reason || 'No reading.', tone: 'flat', lines: [] };

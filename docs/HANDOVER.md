@@ -80,6 +80,39 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Trading page money and charts checked; labels fixed site-wide (2026-10-16)
+- **The AI trader's money, audited from first principles** (24 setups: four charts × standard,
+  trailing stop + break-even, 5% risk, ten positions at a 0.5% fee, volatility sizing, the dip
+  rule; ten coins including BTT and PEPE prices). Every closed trade's P&L and fees, every fill
+  (entry at the close, stop at or under the stop and never under the candle's low, target only
+  on a candle that reached it and did not also hit the stop), the balance (start + closed P&L −
+  open positions' entry fees), sizing (never more than the risk setting at the stop, never more
+  than 25% in one coin, never more in positions than the balance) and the stats (win rate,
+  profit factor, return, fees, worst drop from the curve) matched to the cent. In the browser,
+  after twelve simulated days, the page's balance (₨ at 280.5 to the dollar), return, win rate,
+  profit factor, drawdown, fee total and trade count matched the engine, and the balance chart's
+  last point equals the balance card.
+- **Fixed: the "buy the dip in an uptrend" rule (`entryMode: 'pullback'`) could never buy.** It
+  waited for the chart score to reach −18 in an uptrend, but the score counts oversold readings
+  as reasons to buy, so a real dip pushes it up: in an uptrend it never fell below −10 on 55,800
+  test candles, and reached −18 only at overbought tops. Its tests passed because they scripted
+  the score. The dip is now RSI(14) at 40 or lower (`PULLBACK_RSI`); a new test runs it on
+  computed indicators. No shipped rule used it (none of the 73 per-coin picks).
+- **The balance chart** gets a point only while a trade is open, so a week in cash ended the
+  line at the last trade; it is now carried flat to now.
+- **Labels** (scratch harness `cvlabels.mjs`: every page and the main pop-ups at 1280, 1024, 390
+  and 360 px, in PKR): overlapping text, text spilling out of its box, text cut off with "…"
+  and no way to read it, controls with no name, and boxes that scroll sideways behind a hidden
+  scrollbar. Fixed: stat values no longer end in "…" (they wrap at the dash and shrink in a
+  narrow box, `@container` rules at the end of `css/app.css`); the coin list in the trader
+  settings keeps "no exchange", "Gate.io" and the like inside each coin's cell (`.pick`); the
+  settings dialog is wider (`modal(..., { wide: true })`) and its expected-yield table fits
+  (`.tbl.fit`); the chart interval buttons and the coin page tabs wrap instead of hiding options
+  off the edge; table headers may wrap and cells of words carry `.wrap`, so tables fit the page
+  (the scanner's "Top reason" moved into the signal's tooltip; Trend, Bid and Ask hide below
+  1440 px with `.hide-l`); lists show the ticker first so a shortened name keeps it; sort arrows
+  stay on their header's line; measured percentages show two decimals everywhere.
+
 ### Learning loops checked end to end (2026-10-16)
 A browser run with the clock moved forward (one coin page view, then 3, 12 and 30 days on, on
 mocked candles that never change once closed) confirmed each loop: the coin page logs a

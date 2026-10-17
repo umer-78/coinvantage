@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS, knownVenue, findVenue } from '../api/market.js';
-import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
+import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PULLBACK_RSI, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
 import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { learningPass } from '../lib/learnpass.js';
 import { candleCache } from '../lib/candlecache.js';
@@ -159,7 +159,7 @@ export async function render(el) {
       <p class="fine">This strategy was measured on ${TFS.join(', ')} charts. On ${esc(iv)} it trades ${cfg.strategy === 'custom' ? 'your own rules' : 'the standard rules'} with no measured result to expect; "Test these settings" in Settings shows how they did on recent candles. Rules in force: ${esc(rulesText(effective(iv)))}</p>
     </div>`;
     }
-    const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+    const sign = (v) => pct(v, 2);
     const traded = (x) => (x.adopt ? x.own : x.standard);
     const r = traded(w);
     const e = effective(iv);
@@ -167,7 +167,7 @@ export async function render(el) {
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(CHART_TESTED.measuredOn)}, not estimated</span></div>
       <p>Run candle by candle over ${w.coins ?? CHART_TESTED.coins} coins in one account, fees included, in ${CHART_TESTED.blocks} back-to-back periods of about ${esc(w.block)} (${esc(w.from)} → ${esc(w.to)}). ${w.adopt ? `Before each period the rules were picked from ${CHART_TESTED.configs} rule sets on the history before it, then run on a period they had never seen.` : `The standard rules ran through all three; next to them, a pick from ${CHART_TESTED.configs} rule sets made on the history before each period ran too, and did not beat them clearly enough.`} ${cfg.strategy === 'custom' ? `<b>You are trading your own rules, which were not part of this test</b>, so it says nothing about them; use "Test these settings" in Settings for a look back. For comparison, the tested rules for ${esc(iv)} averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period against <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b> for holding the same coins.` : `On ${esc(iv)} the rules it trades averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period with an average worst drop of ${r.dd}%, while holding the same coins averaged <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b> with a worst drop of ${w.holdDrop}%. ${r.ret > w.hold ? 'On this chart it did better than holding, over three periods; that is evidence, not a promise.' : 'On this chart holding made more.'}${w.previous && Math.abs(w.previous.ret - r.ret) >= 2 ? ` A run a few hours earlier, on nearly the same candles, gave ${sign(w.previous.ret)} a period: read any one run's average as rough.` : ''}${r.dd < w.holdDrop - 5 ? (r.ret > w.hold ? ' It also fell much less.' : ' But it fell much less.') : ''} Worst drops count open trades at every candle close, as the account itself would have shown them.${w.fillCost ? ` The test fills every order at the candle's price; with fills 0.05% worse each way (spread and slippage) it made about ${w.fillCost} points less a period.` : ''}`}</p>
       <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested</th><th>Rules</th><th>Result a period</th><th>Worst drop</th><th>Standard rules</th><th>Holding</th><th>Holding's worst drop</th><th>Trades</th></tr></thead><tbody>
-        ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine">${esc(x.from)} → ${esc(x.to)}</td><td class="fine">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td class="down">−${x.holdDrop}%</td><td>${t.trades}</td></tr>`; }).join('')}
+        ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine wrap" style="min-width:96px">${esc(x.from)} → ${esc(x.to)}</td><td class="fine">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td class="down">−${x.holdDrop}%</td><td>${t.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
       <p class="fine mt">Rules in force on ${esc(iv)}: ${esc(rulesText(e))} ${cfg.strategy === 'custom' ? 'These are your own rules, set in Settings.' : w.adopt ? `They are this chart's own pick: in the test, picking rules for the chart beat the standard rules in ${w.better} of ${CHART_TESTED.blocks} periods (${sign(w.own.ret)} against ${sign(w.standard.ret)} a period, worst drop ${w.own.dd}% against ${w.standard.dd}%), so they are re-picked the same way on all the history.` : `The chart's own pick did not beat the standard rules clearly enough (better in ${w.better} of ${CHART_TESTED.blocks} periods), so it keeps them.`} Fees came to ${r.fees}% of the balance a period, and ${r.win}% of trades won.${iv === '15m' ? ' A 15m period is only ten days, so these numbers swing a lot between runs.' : ''}${ownRulesText()}${ownRulesOn() ? ` Tested on ${PER_COIN_RULES.coins} coins over ${esc(PER_COIN_RULES.tested.from)} → ${esc(PER_COIN_RULES.tested.to)}, with every rule chosen on the years before: ${sign(PER_COIN_RULES.tested.own.ret)} with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${sign(PER_COIN_RULES.tested.standard.ret)} and ${PER_COIN_RULES.tested.standard.dd}% for the daily rules alone, and ${sign(PER_COIN_RULES.tested.hold)} for holding the coins (worst drop ${PER_COIN_RULES.tested.holdDrop}%).${PER_COIN_RULES.tested.previousRun ? ` The run before, on ${PER_COIN_RULES.tested.previousRun.coins} coins, made ${sign(PER_COIN_RULES.tested.previousRun.own)} against ${sign(PER_COIN_RULES.tested.previousRun.standard)}: one long test swings with its coins and start date, so read the size of the gain as rough.` : ''} You can switch them off in Settings.` : ''}</p>
       ${ownRulesOn() ? coinRulesTable(e) : ''}
@@ -179,12 +179,12 @@ export async function render(el) {
   // What each watched coin trades on the daily chart, so "its own rules" is
   // something you can read rather than take on trust.
   function coinRulesTable(base) {
-    const buys = (r) => `${r.entryMode === 'breakout' ? 'new 20-candle high' : r.entryMode === 'pullback' ? 'dip in an uptrend' : `score +${r.entryScore} or more`}${r.momentumConfirm ? ', momentum up' : ''}${r.trendFilter && r.entryMode !== 'pullback' ? ', in an uptrend' : ''}`;
+    const buys = (r) => `${r.entryMode === 'breakout' ? 'new 20-candle high' : r.entryMode === 'pullback' ? `dip in an uptrend (RSI ${PULLBACK_RSI} or lower)` : `score +${r.entryScore} or more`}${r.momentumConfirm ? ', momentum up' : ''}${r.trendFilter && r.entryMode !== 'pullback' ? ', in an uptrend' : ''}`;
     const sells = (r) => `${r.trailAtr ? `stop trailing ${r.trailAtr} ATR` : `target ${r.rMultiple}R`}${r.signalExitBars ? `, or ${r.signalExitBars} reversal candles` : ''}`;
     const rows = cfg.universe.map((sym) => {
       const own = PER_COIN_RULES.rules[sym];
       const r = own ? { ...base, ...own } : base;
-      return `<tr><td class="l"><b>${esc(sym)}</b>${own ? '' : ' <small class="fine">daily rules</small>'}</td><td class="l fine">${esc(buys(r))}</td><td>${r.atrStop} ATR</td><td class="l fine">${esc(sells(r))}</td></tr>`;
+      return `<tr><td class="l"><b>${esc(sym)}</b>${own ? '' : ' <small class="fine">daily rules</small>'}</td><td class="l fine wrap">${esc(buys(r))}</td><td>${r.atrStop} ATR</td><td class="l fine wrap">${esc(sells(r))}</td></tr>`;
     }).join('');
     const n = cfg.universe.filter((sym) => PER_COIN_RULES.rules[sym]).length;
     return `<details class="mt"><summary class="fine" style="cursor:pointer">Each coin's rules on this chart (${n} of ${cfg.universe.length} have their own)</summary>
@@ -945,7 +945,12 @@ export async function render(el) {
     if ($('#eqChart', el)) {
       const lc = new LineChart($('#eqChart', el), { height: 240, yFormat: (v) => money(v), legend: false });
       st.charts.push(lc);
-      lc.set([{ name: 'Balance', color: 'var(--accent)', width: 2.2, data: state.equityCurve.map((p) => ({ x: p.t, y: p.equity })) }]);
+      // The curve gets a point only while a trade is open; a week in cash would
+      // end the line at the last trade, so it is carried flat to now.
+      const pts = state.equityCurve.map((p) => ({ x: p.t, y: p.equity }));
+      const nowT = Date.now(), lastPt = pts[pts.length - 1];
+      if (lastPt && nowT - lastPt.x > (INTERVAL_MS[state.interval] || 36e5)) pts.push({ x: nowT, y: s.equity });
+      lc.set([{ name: 'Balance', color: 'var(--accent)', width: 2.2, data: pts }]);
     }
   }
 
@@ -968,7 +973,7 @@ export async function render(el) {
   // spread between test periods, and the same test at each risk level.
   function yieldHtml(c) {
     const y = expectedYield(c);
-    const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+    const sign = (v) => pct(v, 2);
     if (!y) return `<b>Expected yield</b><p class="fine" style="margin:6px 0 0">Nothing measured to expect: ${c.strategy === 'custom' ? 'your own rules were never tested' : `the ${esc(c.interval)} chart was never tested`}. "Test these settings" below shows how they did on recent candles.</p>`;
     const own = c.strategy !== 'custom' && !c.ownRulesOff && c.interval === PER_COIN_RULES.interval;
     const cash = (v) => `${v >= 0 ? '+' : '−'}${money(Math.abs((c.startingBalance * v) / 100))}`;
@@ -977,8 +982,8 @@ export async function render(el) {
     return `<b>Expected yield</b> <span class="fine">from the walk-forward test of the ${esc(y.chart)} rules, at ${y.risk}% a trade</span>
       <p class="fine" style="margin:6px 0 0">About <b class="${y.ret >= 0 ? 'up' : 'down'}">${sign(y.ret)}</b> per ${esc(y.block)} on average (${cash(y.ret)} on ${money(c.startingBalance)}): ${sign(y.lo)} in the worst of the ${y.periods} test periods, ${sign(y.hi)} in the best, a gain in ${y.up} of ${y.periods}. Worst drop along the way about ${y.dd}%, open trades counted; about ${y.trades} trades a period. Holding the same coins made ${sign(y.hold)} a period${y.holdDrop ? `, falling as far as ${y.holdDrop}% on the way` : ''}.${y.fillCost ? ` Fills 0.05% worse each way (spread, slippage) would take about ${y.fillCost} points off a period.` : ''}</p>
       <p class="fine" style="margin:6px 0 0">Measured on ${y.coins} coins in one account${n && n < y.coins ? `; with ${n} coin${n === 1 ? '' : 's'} expect fewer trades` : ''}.${VOL_SCALE.charts.includes(c.interval) && c.strategy !== 'custom' ? ` These figures are from before ${esc(c.interval)} began buying less while a coin is unusually volatile; in a test on the same periods that added ${VOL_SCALE.tested[c.interval].ret >= 0 ? '+' : '−'}${Math.abs(VOL_SCALE.tested[c.interval].ret)} points a period and cut the worst drop by ${Math.abs(VOL_SCALE.tested[c.interval].dd)} points.` : ''}${y.capsDiffer ? ' Your caps on open trades or on one coin differ from the test\'s (5 open, 25% a coin), so treat it as rougher.' : ''}${own ? ` With each coin's own rules on, a separate test over ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)} made ${sign(PER_COIN_RULES.tested.own.ret)} against ${sign(PER_COIN_RULES.tested.standard.ret)} without them.` : ''} An expectation from past periods, not a promise.</p>
-      ${y.levels.length ? `<div class="tbl-wrap mt"><table class="tbl fine"><thead><tr><th class="l">Risk a trade</th><th>Average a period</th><th>Worst → best</th><th>Worst drop</th><th>Periods up</th></tr></thead><tbody>
-        ${y.levels.map((l) => `<tr${l.risk === y.risk ? ' style="font-weight:700"' : ''}><td class="l">${l.risk}%${l.risk === y.risk ? ' ← yours' : ''}</td><td class="${l.ret >= 0 ? 'up' : 'down'}">${sign(l.ret)}</td><td>${sign(l.lo)} → ${sign(l.hi)}</td><td>${l.dd}%</td><td>${l.up} of ${y.periods}</td></tr>`).join('')}
+      ${y.levels.length ? `<div class="tbl-wrap mt"><table class="tbl fine fit"><thead><tr><th class="l">Risk a trade</th><th>Average a period</th><th>Worst → best period</th><th>Worst drop</th><th>Periods up</th></tr></thead><tbody>
+        ${y.levels.map((l) => `<tr${l.risk === y.risk ? ' style="font-weight:700"' : ''}><td class="l">${l.risk}%${l.risk === y.risk ? '<small>yours</small>' : ''}</td><td class="${l.ret >= 0 ? 'up' : 'down'}">${sign(l.ret)}</td><td class="range">${sign(l.lo)} → ${sign(l.hi)}</td><td>${l.dd}%</td><td>${l.up} of ${y.periods}</td></tr>`).join('')}
       </tbody></table></div>
       <p class="fine" style="margin:6px 0 0">Each row is the same test at that risk${y.levels.some((l) => l.risk === y.risk) ? '' : `; yours (${y.risk}%) is read between the two nearest rows`}. The best average came at ${top.risk}% a trade${top.risk < y.levels[y.levels.length - 1].risk ? ' and higher settings made no more: with at most 25% in one coin, a higher setting soon stops making positions bigger' : `, with a worst drop of ${top.dd}% against ${y.levels[0].dd}% at ${y.levels[0].risk}% and a worst period of ${sign(top.lo)}`}. Read off these same periods, so a guide, not a promise.</p>` : ''}`;
   }
@@ -1007,11 +1012,11 @@ export async function render(el) {
       const x = CHART_TESTED[i];
       if (!x) return `${i} — not tested`;
       const t = x.adopt ? x.own : x.standard;
-      return `${i} — tested ${t.ret >= 0 ? '+' : '−'}${Math.abs(t.ret)}% per ${x.block} (holding ${x.hold >= 0 ? '+' : '−'}${Math.abs(x.hold)}%)`;
+      return `${i} — tested ${pct(t.ret, 2)} per ${x.block} (holding ${pct(x.hold, 2)})`;
     };
     const m = modal(`<h3>Trader settings</h3>
       <div class="card mt" style="padding:12px" id="todo"><b>What to do</b>
-        <p class="fine" style="margin:6px 0 0">Best tested setup: the <b>${esc(best.iv)}</b> chart with the tested rules — it made money in ${best.up} of 3 test periods, ${best.ret >= 0 ? '+' : '−'}${Math.abs(best.ret)}% per ${esc(best.block)} on average against ${best.hold >= 0 ? '+' : '−'}${Math.abs(best.hold)}% for holding the same coins. Keep risk at 1–2% a trade, pick at least five coins, and leave the self-review on. None of this is a promise: the tests looked back, the market goes forward.</p>
+        <p class="fine" style="margin:6px 0 0">Best tested setup: the <b>${esc(best.iv)}</b> chart with the tested rules — it made money in ${best.up} of 3 test periods, ${pct(best.ret, 2)} per ${esc(best.block)} on average against ${pct(best.hold, 2)} for holding the same coins. Keep risk at 1–2% a trade, pick at least five coins, and leave the self-review on. None of this is a promise: the tests looked back, the market goes forward.</p>
         <button class="btn sm mt" type="button" id="useBest">Use the best tested setup</button>
         <div id="todoLive"></div></div>
       <form class="stack mt" style="gap:12px" id="cf" novalidate>
@@ -1031,7 +1036,7 @@ export async function render(el) {
         </fieldset>
         <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Strategy</b></legend>
           <label class="row" style="gap:8px"><input type="radio" name="strategy" value="tested" ${cfg.strategy === 'custom' ? '' : 'checked'}><span>Tested rules for the chart <span class="fine">(recommended)</span></span></label>
-          <label class="row" style="gap:8px;align-items:flex-start;margin-left:24px" id="ownRow"><input type="checkbox" name="ownRules" ${cfg.ownRulesOff ? '' : 'checked'} style="margin-top:3px"><span class="fine">On the daily chart, each coin trades rules chosen on its own history (${PER_COIN_RULES.coins} coins have them). Tested ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)}: ${PER_COIN_RULES.tested.own.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.own.ret)}% against ${PER_COIN_RULES.tested.standard.ret >= 0 ? '+' : '−'}${Math.abs(PER_COIN_RULES.tested.standard.ret)}% for the daily rules alone, worst drop ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%.${(() => { const w = PER_COIN_RULES.tested.walkForward; return w && w.own < w.shared ? ` But coin by coin, over ${w.periods} walk-forward periods, they did worse than one shared rule set (${w.own >= 0 ? '+' : '−'}${Math.abs(w.own)}% against ${w.shared >= 0 ? '+' : '−'}${Math.abs(w.shared)}% a period, better in ${w.better} of ${w.periods}), so the account result rests on a few coins: switching this off is a fair choice.` : ''; })()}</span></label>
+          <label class="row" style="gap:8px;align-items:flex-start;margin-left:24px" id="ownRow"><input type="checkbox" name="ownRules" ${cfg.ownRulesOff ? '' : 'checked'} style="margin-top:3px"><span class="fine">On the daily chart, each coin trades rules chosen on its own history (${PER_COIN_RULES.coins} coins have them). Tested ${PER_COIN_RULES.tested.from.slice(0, 4)}–${PER_COIN_RULES.tested.to.slice(0, 4)}: ${pct(PER_COIN_RULES.tested.own.ret, 2)} against ${pct(PER_COIN_RULES.tested.standard.ret, 2)} for the daily rules alone, worst drop ${PER_COIN_RULES.tested.own.dd}% against ${PER_COIN_RULES.tested.standard.dd}%.${(() => { const w = PER_COIN_RULES.tested.walkForward; return w && w.own < w.shared ? ` But coin by coin, over ${w.periods} walk-forward periods, they did worse than one shared rule set (${pct(w.own, 2)} against ${pct(w.shared, 2)} a period, better in ${w.better} of ${w.periods}), so the account result rests on a few coins: switching this off is a fair choice.` : ''; })()}</span></label>
           <label class="row" style="gap:8px"><input type="radio" name="strategy" value="custom" ${cfg.strategy === 'custom' ? 'checked' : ''}><span>My own rules <span class="fine">(no published test)</span></span></label>
           <div class="stack" id="customBox" style="gap:8px;margin-left:24px">
             <div class="row" style="gap:8px;flex-wrap:wrap">
@@ -1048,15 +1053,15 @@ export async function render(el) {
         <fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0;min-width:0"><legend class="fine"><b>Coins</b> <span id="coinCount"></span></legend>
           <div class="row" style="gap:6px;flex-wrap:wrap"><input class="inp" id="coinFind" placeholder="Find a coin" aria-label="Find a coin" style="flex:1;min-width:140px">
             <button class="btn sm" type="button" data-pick="10">Top 10</button><button class="btn sm" type="button" data-pick="20">Top 20</button><button class="btn sm" type="button" data-pick="all">All</button><button class="btn sm" type="button" data-pick="tested" title="The ${TESTED_COINS.length} coins the published results were measured on">The ${TESTED_COINS.length} tested</button><button class="btn sm" type="button" data-pick="own">Coins with own rules</button><button class="btn sm" type="button" data-pick="0">Clear</button></div>
-          <div id="coinGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:4px;max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px">
-            ${coins.map((c) => `<label class="fine" style="display:flex;gap:6px;align-items:center" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : knownVenue(c) === null ? 'disabled' : ''} ${noDataNow.includes(c.symbol) || knownVenue(c) === null ? 'data-nodata="1"' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}<span data-venue>${venueTag(c)}</span></label>`).join('')}
+          <div id="coinGrid" class="pick-grid">
+            ${coins.map((c) => `<label class="fine pick" data-coin="${esc(c.symbol)}" data-name="${esc((c.name || '').toLowerCase())}"><input type="checkbox" value="${esc(c.symbol)}" ${chosen.has(c.symbol) ? 'checked' : knownVenue(c) === null ? 'disabled' : ''} ${noDataNow.includes(c.symbol) || knownVenue(c) === null ? 'data-nodata="1"' : ''}><b>${esc(c.symbol)}</b>${PER_COIN_RULES.rules[c.symbol] ? ' <small title="has its own daily rules">★</small>' : ''}${(cfg.excluded || []).includes(c.symbol) ? ' <small class="down" title="benched by the self-review">benched</small>' : ''}<span data-venue>${venueTag(c)}</span></label>`).join('')}
           </div>
           ${(cfg.excluded || []).length ? `<label class="row fine" style="gap:8px"><input type="checkbox" name="unbench"><span>Trade the coins the self-review benched again (${esc(cfg.excluded.join(', '))})</span></label>` : ''}
           <p class="fine" style="margin:0">Up to ${MAX_COINS} coins. ★ = has its own daily rules. Coins with no exchange candles are skipped at each check and named in the activity log.</p>
         </fieldset>
         <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" type="button" id="testCfg">${icon('chart', 16)} Test these settings</button><button class="btn primary">Save settings</button></div>
         <div id="testOut"></div>
-      </form>`);
+      </form>`, { wide: true });
     const f = $('#cf', m.el);
     // Coins Binance does not list are looked up on Gate.io, HTX and OKX (a few
     // small requests each, remembered for days); the grid says what was found.
@@ -1141,7 +1146,7 @@ export async function render(el) {
       const rules = rulesForChart({ ...next, excluded: [] }, next.interval, load(LESSONS_KEY, []));
       const res = backtestSettings({ ...rules, perCoin: next.strategy !== 'custom' && !next.ownRulesOff && next.interval === PER_COIN_RULES.interval ? PER_COIN_RULES.rules : null }, by);
       if (!res.coins) { out.innerHTML = '<p class="fine down">None of these coins had enough exchange candles on this chart to test.</p>'; return; }
-      const sign = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v)}%`;
+      const sign = (v) => pct(v, 2);
       out.innerHTML = `<div class="card" style="padding:12px"><b>How these settings did on recent candles</b>
         <p class="fine" style="margin:6px 0 0">${res.coins} coin${res.coins === 1 ? '' : 's'}, ${esc(new Date(res.from).toISOString().slice(0, 10))} → ${esc(new Date(res.to).toISOString().slice(0, 10))}, fees included: <b class="${res.ret >= 0 ? 'up' : 'down'}">${sign(res.ret)}</b> against <b>${sign(res.hold)}</b> for holding the same coins. ${res.trades} trade${res.trades === 1 ? '' : 's'} closed${res.trades ? `, ${res.winRate}% won` : ''}, worst drop ${res.dd}%, ${res.open} still open. ${Object.keys(by).length < syms.length ? `${syms.length - Object.keys(by).length} coin${syms.length - Object.keys(by).length === 1 ? '' : 's'} had no exchange candles and ${syms.length - Object.keys(by).length === 1 ? 'was' : 'were'} left out.` : ''}</p>
         <p class="fine" style="margin:6px 0 0">A look back, not a promise. ${next.strategy === 'custom' ? 'Rules tuned until they look good here usually do worse live.' : 'The tested rules were picked on history that includes these candles, so they look better here than they will live; the walk-forward result is the one to expect.'}</p></div>`;

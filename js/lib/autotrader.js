@@ -135,7 +135,7 @@ export const CHART_TESTED = {
 /** How a set of rules buys and sells, in words: the Trading page and the assistant both use it. */
 export function rulesInWords(c) {
   const extra = `${c.momentumConfirm ? ' while the short-term trend and momentum also point up' : ''}${c.marketFilter ? ', and only while Bitcoin itself is in an uptrend' : ''}`;
-  const buy = c.entryMode === 'pullback' ? `When a coin in an uptrend dips until the score falls to −${c.entryScore} or lower, it buys the dip${extra}.`
+  const buy = c.entryMode === 'pullback' ? `When a coin in an uptrend dips until RSI falls to ${PULLBACK_RSI} or lower, it buys the dip${extra}.`
     : c.entryMode === 'breakout' ? `When a coin closes above its highest price of the previous 20 candles${c.trendFilter ? ' in an uptrend' : ''}, it buys${extra}.`
       : `When the score clears +${c.entryScore}${c.trendFilter ? ' in an uptrend' : ''} it buys${extra}.`;
   return `${buy} It sells at ${c.trailAtr ? `a stop that trails ${c.trailAtr} ATR under the highest price since it bought` : `the target (${c.rMultiple}R)`}, the stop (${c.atrStop} ATR below entry)${c.signalExitBars ? ` or ${c.entryMode === 'pullback' ? 'once the bounce has come' : `after ${c.signalExitBars} candles of signal reversal`}` : ''}.${c.volScale ? ' It buys less while the coin is more volatile than usual (down to half).' : ''}`;
@@ -602,8 +602,16 @@ export function freeCash(state) {
 
 // "Pullback" buys a dip inside an uptrend and sells into strength; "trend"
 // buys strength and sells when the reading turns down.
+//
+// The dip is read from RSI(14), not the chart score. The score counts oversold
+// readings (RSI under 30, a close under the lower band) as reasons to buy, so a
+// real dip pushes it up: in an uptrend it never fell below −10 on 55,800 test
+// candles, and the −18 the rule used to wait for came only at overbought tops
+// (RSI over 80, a close over the upper band), the opposite of a dip. The rule
+// never bought anything; the tests that passed scripted the score.
+export const PULLBACK_RSI = 40;
 function wantsEntry(cfg, score, ind, i, c) {
-  if (cfg.entryMode === 'pullback') return score <= -cfg.entryScore;
+  if (cfg.entryMode === 'pullback') return Number.isFinite(ind.rsi[i]) && ind.rsi[i] <= PULLBACK_RSI;
   // a close above the highest high of the previous 20 candles
   if (cfg.entryMode === 'breakout') return ind.donchian.upper[i - 1] !== null && c.c > ind.donchian.upper[i - 1];
   return score >= cfg.entryScore;
@@ -633,10 +641,10 @@ export function entryBlocker(cfg, s, i, score) {
 }
 
 /** An entryBlocker code in words. */
-export function blockerText(code, cfg, score) {
+export function blockerText(code, cfg, score, { rsi = null } = {}) {
   return {
     signal: cfg.entryMode === 'breakout' ? 'it has not closed above its highest price of the previous 20 candles'
-      : cfg.entryMode === 'pullback' ? `there is no dip: the score is ${score}, the rule needs −${cfg.entryScore} or lower`
+      : cfg.entryMode === 'pullback' ? `there is no dip: RSI is ${Number.isFinite(rsi) ? Math.round(rsi) : `above ${PULLBACK_RSI}`}, the rule needs ${PULLBACK_RSI} or lower`
         : `the score is ${score > 0 ? '+' : ''}${score}, the rule needs +${cfg.entryScore} or more`,
     trend: 'it is not in an uptrend (price and the 50-candle average above the 200-candle average)',
     momentum: 'the short-term trend and momentum are not both pointing up',
@@ -686,7 +694,7 @@ export function aiSignal(candles, interval, symbol = 'COIN') {
   if (t && t.exitAt === last.t) return { ...base, action: 'sell', entry: t.entry, exit: t.exit, why: t.reason, openedAt: t.openedAt, pnlPct: t.pnlPct, netPct: net(t), r: t.riskCash > 0 ? round(t.pnl / t.riskCash, 2) : null };
   const score = out.lastScore ?? scoreAt(candles, s.ind, i).score;
   const code = entryBlocker(cfg, s, i, score);
-  return { ...base, action: 'wait', code, why: code ? blockerText(code, cfg, score) : 'the rule found no entry on it', last: t ? { exitAt: t.exitAt, pnlPct: t.pnlPct, why: t.reason } : null };
+  return { ...base, action: 'wait', code, why: code ? blockerText(code, cfg, score, { rsi: s.ind.rsi[i] }) : 'the rule found no entry on it', last: t ? { exitAt: t.exitAt, pnlPct: t.pnlPct, why: t.reason } : null };
 }
 
 /**
@@ -811,7 +819,7 @@ function stepBar(state, cfg, s, i, score) {
     entry: px(entry), initialStop: px(stop), stop: px(stop),
     tp: cfg.trailAtr ? null : px(entry + cfg.rMultiple * riskPerUnit),
     qty: round(qty, 10), notional: round(notional, 2),
-    openedAt: c.t, openScore: score, entryBar: cfg.entryMode === 'pullback' ? -cfg.entryScore : cfg.entryMode === 'breakout' ? null : cfg.entryScore, entryMode: cfg.entryMode || 'trend',
+    openedAt: c.t, openScore: score, entryBar: cfg.entryMode === 'trend' || !cfg.entryMode ? cfg.entryScore : null, entryMode: cfg.entryMode || 'trend',
     movedToBreakEven: false, feePaid: round(fee, 4),
     // What the market looked like at entry, so the self-review can learn from the log.
     riskCash: round(qty * riskPerUnit, 2),
