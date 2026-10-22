@@ -80,6 +80,14 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### The best tested setup is chosen after the cost of real fills (2026-10-22)
+`bestTestedChart` ranked charts by test periods with a gain before spread and slippage, so it
+recommended 15m (+3.21% per 11 days). After `fillCost` (fills 0.05% worse each way), 15m made
++1.11% per 11 days and its worst period lost money, and 4h lost on average. It now ranks by
+the result after that cost per 30 days (a tie goes to the smaller worst drop): 1h, +6.08% per
+6 weeks, about +4.4% a month, worst drop 18.3% (holding made +18.23% a period). The settings
+dialog's "What to do" says so.
+
 ### A held coin's missed candles are fetched on catch-up (2026-10-22)
 A user's AI account on 5m lost 5.2% on a QNT trade whose stop was 1.6% under the entry. The page
 had been closed for longer than the 500 candles a check fetches (42 hours of 5m), so the first

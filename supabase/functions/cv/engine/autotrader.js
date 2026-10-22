@@ -264,16 +264,26 @@ export const TESTED_COINS = [
 ];
 
 /**
- * The tested chart that did best, judged in this order: the most test
- * periods with a gain, then the most made above holding the same coins,
- * then the smaller worst drop.
+ * The tested chart that made the most after the cost of real fills, per month.
+ * Each chart's result a period loses `fillCost` points when every fill is
+ * 0.05% worse each way (spread and slippage, which the test itself leaves
+ * out), and periods differ in length (11 days on 15m, 18 months on 1d), so
+ * they are compared per 30 days; a tie goes to the smaller worst drop. It used
+ * to rank by the number of periods with a gain before those costs, which
+ * favoured the shortest chart: after them, 15m's worst period lost money and
+ * 4h lost on average.
  */
 export function bestTestedChart() {
   const rows = Object.entries(CHART_TESTED).filter(([, x]) => x && typeof x === 'object' && x.standard).map(([iv, x]) => {
     const r = x.adopt ? x.own : x.standard;
-    return { iv, up: x.up ?? 0, edge: r.ret - x.hold, dd: r.dd, ret: r.ret, hold: x.hold, block: x.block };
+    const days = (Date.parse(x.to) - Date.parse(x.from)) / 864e5 / (CHART_TESTED.blocks || 3);
+    const net = +(r.ret - (x.fillCost ?? 0)).toFixed(2);
+    const month = days > 0 ? +((net / days) * 30).toFixed(2) : null;
+    // periods with a gain after the fill cost, from the worst period up
+    const worstNet = +((x.range?.[0] ?? r.ret) - (x.fillCost ?? 0)).toFixed(2);
+    return { iv, up: x.up ?? 0, net, month, worstNet, fillCost: x.fillCost ?? 0, edge: r.ret - x.hold, dd: r.dd, ret: r.ret, hold: x.hold, block: x.block };
   });
-  rows.sort((a, b) => b.up - a.up || b.edge - a.edge || a.dd - b.dd);
+  rows.sort((a, b) => (b.month ?? -Infinity) - (a.month ?? -Infinity) || a.dd - b.dd);
   return rows[0];
 }
 

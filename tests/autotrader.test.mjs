@@ -226,7 +226,9 @@ test('your own rules are traded as you set them; the best tested chart and the w
   assert.equal(r.signalExitBars, CUSTOM_DEFAULT.signalExitBars, 'unset rules start at the defaults');
   const best = bestTestedChart();
   assert.ok(CHART_TESTED[best.iv]);
-  for (const iv of Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard)) assert.ok((CHART_TESTED[iv].up ?? 0) <= best.up);
+  // the most made per month after the cost of real fills
+  const perMonth = (x) => { const r = x.adopt ? x.own : x.standard; return (r.ret - (x.fillCost ?? 0)) / ((Date.parse(x.to) - Date.parse(x.from)) / 864e5 / CHART_TESTED.blocks) * 30; };
+  for (const iv of Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard)) assert.ok(perMonth(CHART_TESTED[iv]) <= perMonth(CHART_TESTED[best.iv]) + 1e-9, `${iv} made more a month than the chart called best`);
   const w = settingsWarnings({ ...DEFAULT_CONFIG, interval: '30m', strategy: 'custom', riskPct: 3, universe: ['BTC'] });
   assert.ok(w.some((x) => /never tested/.test(x)) && w.some((x) => /no published test/.test(x)) && w.some((x) => /ten losing trades/.test(x)) && w.some((x) => /fewer than three/.test(x)));
   assert.deepEqual(settingsWarnings({ ...DEFAULT_CONFIG, interval: '1d', universe: ['BTC', 'ETH', 'SOL'] }), []);

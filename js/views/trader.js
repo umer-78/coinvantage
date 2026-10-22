@@ -1053,7 +1053,7 @@ export async function render(el) {
     };
     const m = modal(`<h3>Trader settings</h3>
       <div class="card mt" style="padding:12px" id="todo"><b>What to do</b>
-        <p class="fine" style="margin:6px 0 0">Best tested setup: the <b>${esc(best.iv)}</b> chart with the tested rules — it made money in ${best.up} of 3 test periods, ${pct(best.ret, 2)} per ${esc(best.block)} on average against ${pct(best.hold, 2)} for holding the same coins. Keep risk at 1–2% a trade, pick at least five coins, and leave the self-review on. None of this is a promise: the tests looked back, the market goes forward.</p>
+        <p class="fine" style="margin:6px 0 0">Best tested setup: the <b>${esc(best.iv)}</b> chart with the tested rules. After the cost of real fills (0.05% worse each way) it made ${pct(best.net, 2)} per ${esc(best.block)} on average, about ${pct(best.month, 1)} a month, with a worst drop of ${best.dd}%; holding the same coins made ${pct(best.hold, 2)} a period, and its worst period ${best.worstNet >= 0 ? 'still made money' : `lost ${Math.abs(best.worstNet)}%`}. Keep risk at 1–2% a trade, pick at least five coins, and leave the self-review on. None of this is a promise: the tests looked back, the market goes forward.</p>
         <button class="btn sm mt" type="button" id="useBest">Use the best tested setup</button>
         <div id="todoLive"></div></div>
       <form class="stack mt" style="gap:12px" id="cf" novalidate>
