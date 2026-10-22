@@ -94,3 +94,17 @@ test('the summary the pages read is small and complete', () => {
   assert.equal(s.waiting.forecast, 0, 'no forecast, nothing waiting for it');
   assert.ok(JSON.stringify(s).length < 20000);
 });
+
+test('the page is told when a waiting call will really be graded: when its coin comes round again', async () => {
+  const { nextVisit } = await import('../supabase/functions/cv/learnjob.js');
+  const t0 = Date.UTC(2026, 9, 22, 15, 0);
+  const at = nextVisit('BTC', '1m', t0 + 20 * 60e3);
+  assert.ok(at >= t0 + 20 * 60e3);
+  const s = slotFor(at);
+  assert.equal(s.interval, '1m');
+  assert.ok(s.symbols.includes('BTC'));
+  // and nothing earlier would have taken it
+  for (let t = Math.ceil((t0 + 20 * 60e3) / 300e3) * 300e3; t < at; t += 300e3) { const x = slotFor(t); assert.ok(!(x.interval === '1m' && x.symbols.includes('BTC'))); }
+  const r = learnRun(null, '1m', [{ symbol: 'BTC', candles: series(500, t0 - 500 * 6e4).map((c, i) => ({ ...c, t: t0 - (500 - i) * 6e4 })) }], { forecast: () => ({ ok: true, probUp: 0.6 }), now: t0 });
+  assert.ok(r.summary.waiting.nextAt > t0 + 15 * 60e3, 'not when the 1m outcome closes, when the coin is taken again');
+});

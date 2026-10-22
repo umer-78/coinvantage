@@ -33,7 +33,7 @@ export async function learnPass(req: Request): Promise<Response> {
     }
   }
 
-  const r = learnRun(row?.ledger ?? null, interval, inputs, { forecast });
+  const r = learnRun(row?.ledger ?? null, interval, inputs, { forecast, coins, perBatch: cfg.per_batch });
   const { error: upErr } = await admin.from('ai_learn')
     .upsert({ interval, ledger: r.ledger, summary: r.summary, updated_at: new Date().toISOString() }, { onConflict: 'interval' });
   if (upErr) throw upErr;

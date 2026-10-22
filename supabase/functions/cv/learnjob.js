@@ -39,6 +39,22 @@ export function slotFor(now, { coins = LEARN_COINS, perBatch = 6, slotMs = 300e3
   return { interval, batch, batches, symbols: coins.slice(batch * perBatch, (batch + 1) * perBatch) };
 }
 
+/**
+ * When a call is graded: the first run after its outcome candle closes that
+ * takes its coin on its chart. (Before this the page said "first result in 15
+ * minutes" for a 1m call that waits for its coin to come round again.)
+ */
+export function nextVisit(symbol, interval, after, { coins = LEARN_COINS, perBatch = 6, slotMs = 300e3 } = {}) {
+  const cycle = LEARN_INTERVALS.length * Math.max(1, Math.ceil(coins.length / perBatch));
+  const first = Math.ceil(after / slotMs);
+  for (let k = 0; k <= cycle; k++) {
+    const t = (first + k) * slotMs;
+    const s = slotFor(t, { coins, perBatch, slotMs });
+    if (s.interval === interval && s.symbols.includes(symbol)) return t;
+  }
+  return null;
+}
+
 const tableOf = (m) => Object.fromEntries(Object.entries(m).map(([k, s]) => [k, [s.hits, s.n]]));
 const fromTable = (t) => Object.fromEntries(Object.entries(t).map(([k, [hits, n]]) => [k, { hits, n }]));
 
@@ -47,7 +63,7 @@ const fromTable = (t) => Object.fromEntries(Object.entries(t).map(([k, [hits, n]
  * oldest first. `forecast(candles, opts)` is the engine's forecast. Returns
  * the new ledger, what the pages read (`summary`) and what changed.
  */
-export function learnRun(ledger, interval, inputs, { forecast = null, now = Date.now() } = {}) {
+export function learnRun(ledger, interval, inputs, { forecast = null, now = Date.now(), coins = LEARN_COINS, perBatch = 6 } = {}) {
   const H = LEARN_HORIZON[interval];
   const step = LEARN_INTERVAL_MS[interval];
   if (!H || !step) throw new Error(`unknown chart ${interval}`);
@@ -90,19 +106,21 @@ export function learnRun(ledger, interval, inputs, { forecast = null, now = Date
     ...L, interval, measures, history, weights: { [interval]: weights }, champion: champ.champion, championReason: champ.reason,
     lastPass: now, changes: [...(L.changes || []), ...changes].slice(-80), expired: (L.expired || 0) + expired,
   };
-  return { ledger: L, summary: learnSummary(L, interval), changes, scored, expired, logged };
+  return { ledger: L, summary: learnSummary(L, interval, { now, coins, perBatch }), changes, scored, expired, logged };
 }
 
 /** What the pages read: the record's size, its scores and weights, who makes the call, what changed. */
-export function learnSummary(L, interval) {
+export function learnSummary(L, interval, { now = Date.now(), coins = LEARN_COINS, perBatch = 6 } = {}) {
   const waiting = (L.rows || []).filter((r) => !r.resolved);
+  // the earliest a waiting call is graded: its outcome closed and its coin taken again
+  const due = waiting.map((r) => nextVisit(r.symbol, interval, Math.max(now, r.horizonAt + (LEARN_INTERVAL_MS[interval] || 0)), { coins, perBatch })).filter(Number.isFinite);
   return {
     interval, lastPass: L.lastPass || null, since: L.createdAt || null,
     calls: (L.rows || []).length, scored: (L.rows || []).length - waiting.length, expired: L.expired || 0,
     waiting: {
       forecast: waiting.filter((r) => Number.isFinite(r.forecastProb)).length,
       blend: waiting.filter((r) => Number.isFinite(r.blendProb)).length,
-      nextAt: waiting.length ? Math.min(...waiting.map((r) => r.horizonAt)) : null,
+      nextAt: due.length ? Math.min(...due) : null,
     },
     coins: Object.keys(L.measures || {}).length,
     history: L.history || null, live: liveScores(L, interval), weights: L.weights?.[interval] || {},
