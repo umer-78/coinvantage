@@ -213,6 +213,35 @@ export function expectedYield(cfg) {
   };
 }
 
+/**
+ * What each tested chart made in its walk-forward test, after the cost of real
+ * fills, spread evenly over an hour, a day, a week and a month: the average of
+ * the test periods at this account's risk a trade (read between the measured
+ * levels, as expectedYield does), with the worst and best period and holding
+ * the same coins beside it. Simple averages, not compounded; an expectation
+ * from past periods, not a promise.
+ */
+export function earningsByChart(cfg) {
+  const rows = [];
+  for (const [chart, x] of Object.entries(CHART_TESTED)) {
+    if (!x?.standard) continue;
+    const y = expectedYield({ ...cfg, interval: chart, strategy: 'tested' });
+    if (!y) continue;
+    const days = (Date.parse(x.to) - Date.parse(x.from)) / 864e5 / (CHART_TESTED.blocks || 3);
+    if (!(days > 0)) continue;
+    const fill = x.fillCost ?? 0;
+    const per = (v) => ({ hour: v / days / 24, day: v / days, week: (v / days) * 7, month: (v / days) * 30 });
+    const net = y.ret - fill;
+    rows.push({
+      chart, rules: x.adopt ? 'its own pick' : 'the standard rules', risk: y.risk, block: x.block, days: +days.toFixed(1), periods: y.periods,
+      net: +net.toFixed(2), worst: +(y.lo - fill).toFixed(2), best: +(y.hi - fill).toFixed(2), fillCost: fill, dd: y.dd,
+      per: per(net), worstPer: per(y.lo - fill), hold: x.hold, holdPer: per(x.hold),
+      tradesPerMonth: Math.round((y.trades / days) * 30), coins: y.coins, from: x.from, to: x.to,
+    });
+  }
+  return rows;
+}
+
 /** Rules you can set yourself, and what they start at. */
 export const CUSTOM_DEFAULT = { entryMode: 'trend', momentumConfirm: false, trendFilter: true, marketFilter: false, atrStop: 3, rMultiple: 3, trailAtr: null, signalExitBars: 2 };
 const pickRules = (r) => Object.fromEntries(['entryMode', 'momentumConfirm', 'trendFilter', 'marketFilter', 'atrStop', 'rMultiple', 'trailAtr', 'signalExitBars'].filter((k) => k in r).map((k) => [k, r[k]]));
@@ -295,6 +324,12 @@ export function settingsWarnings(cfg) {
   const out = [];
   const tested = CHART_TESTED[cfg.interval];
   if (!tested) out.push(`The ${cfg.interval} chart was never tested with these rules, so there is no measured result to expect on it. ${Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard).join(', ')} were.`);
+  // a chart whose tested rules lost money once real fills are counted
+  const lost = tested && cfg.strategy !== 'custom' ? earningsByChart(cfg).find((r) => r.chart === cfg.interval && r.net < 0) : null;
+  if (lost) {
+    const top = bestTestedChart();
+    out.push(`On ${cfg.interval} the tested rules lost ${Math.abs(lost.net)}% a period (${lost.block}) on average once real fills are counted (spread and slippage, ${lost.fillCost} points a period). ${top ? `${top.iv} made the most of the tested charts: about +${top.month}% a month after that cost.` : ''}`);
+  }
   if (cfg.strategy === 'custom') out.push('Your own rules have no published test. Use "Test these settings" to see how they did on recent candles before you rely on them.');
   if (cfg.riskPct > 2) out.push(`Risking ${cfg.riskPct}% a trade means ten losing trades in a row, which happens, cost about ${Math.round((1 - (1 - cfg.riskPct / 100) ** 10) * 100)}% of the account.`);
   if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.${cfg.maxPositionPct > 50 ? ' One trade can then take all the cash, so the AI holds one coin at a time and passes up the other coins\' buy signals.' : ''}`);

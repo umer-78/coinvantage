@@ -680,6 +680,10 @@ body { background: transparent; }
 .tbl td.wrap { white-space: normal; }
 /* columns that only fit a wide screen */
 @media (max-width: 1439px) { .hide-l { display: none !important; } }
+/* phone-only: what a narrow screen drops (hide-p), and what it shows instead (show-p inline, show-pb block) */
+.show-p { display: none; }
+.show-pb { display: none; }
+@media (max-width: 520px) { .hide-p { display: none !important; } .show-p { display: inline; } .show-pb { display: block; } }
 @media (max-width: 1180px) {
   .hide-t { display: none !important; }
   .cmp-grid { grid-template-columns: minmax(0, 1fr); }

@@ -445,3 +445,24 @@ test('a coin priced below a millionth keeps its real prices, stops and results',
   replaySymbol(big, cfg, 'A', climb(320), prepared('A', climb(320), (i) => (i === 250 ? 40 : i === 270 || i === 271 ? -40 : 0)));
   assert.ok(Math.abs(big.closed[0].pnlPct - t.pnlPct) < 1e-3, `${big.closed[0].pnlPct} vs ${t.pnlPct}`);
 });
+
+test('what each chart can make is its tested result after real fills, spread evenly over time', async () => {
+  const { earningsByChart, CHART_TESTED, settingsWarnings, expectedYield } = await import('../js/lib/autotrader.js');
+  const cfg = { ...DEFAULT_CONFIG, riskPct: 1.5 };
+  const rows = earningsByChart(cfg);
+  assert.deepEqual(rows.map((r) => r.chart), Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard));
+  for (const r of rows) {
+    const x = CHART_TESTED[r.chart];
+    const y = expectedYield({ ...cfg, interval: r.chart });
+    assert.equal(r.net, +(y.ret - x.fillCost).toFixed(2), `${r.chart}: the average period after the fill cost`);
+    const days = (Date.parse(x.to) - Date.parse(x.from)) / 864e5 / CHART_TESTED.blocks;
+    assert.ok(Math.abs(r.per.month - (r.net / days) * 30) < 1e-9);
+    assert.ok(Math.abs(r.per.week * 30 - r.per.month * 7) < 1e-9 && Math.abs(r.per.hour * 24 - r.per.day) < 1e-9);
+    assert.ok(r.worst <= r.net && r.net <= r.best);
+  }
+  // a chart that lost once fills are counted says so, and names the one that made the most
+  const losing = rows.find((r) => r.net < 0);
+  if (losing) assert.ok(settingsWarnings({ ...cfg, interval: losing.chart }).some((w) => w.includes('real fills') && w.includes('a month')));
+  const winning = rows.find((r) => r.net > 0);
+  assert.ok(!settingsWarnings({ ...cfg, interval: winning.chart }).some((w) => w.includes('lost')));
+});

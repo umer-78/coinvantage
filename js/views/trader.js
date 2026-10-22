@@ -1,6 +1,6 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS, knownVenue, findVenue } from '../api/market.js';
-import { newState, rescaleAccount, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PULLBACK_RSI, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
+import { newState, rescaleAccount, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PULLBACK_RSI, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, earningsByChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
 import { reviewTrades, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
 import { configFrom, ownRulesOn as ownRulesFor, runConfig, heldOffList, backfillNeeds, checkAccount, reviewStep } from '../lib/traderrun.js';
 import { learningPass } from '../lib/learnpass.js';
@@ -166,6 +166,47 @@ export async function render(el) {
       ${ownRulesOn() ? coinRulesTable(e) : ''}
       <p class="fine">The ${w.coins ?? CHART_TESTED.coins} coins are today's large coins: coins that collapsed or were delisted along the way are not in the test, which flatters every result here, holding's included.</p>
       <p class="fine">So this account is a demonstration of a strategy, run honestly on live prices with fees counted, including the losing stretches. It is not a promise of profit. It places no real orders and holds no keys.</p>
+    </div>`;
+  }
+
+  // What each tested chart can make, per hour, day, week and month, at this
+  // account's risk and on its balance, after fees and the cost of real fills.
+  function earningsCard() {
+    const rows = earningsByChart(cfg);
+    if (!rows.length) return '';
+    const iv = state?.interval || cfg.interval;
+    const top = bestTestedChart();
+    const s = state ? stats(state, marks()) : null;
+    const bal = s ? s.equity : cfg.startingBalance;
+    const dp = (v) => (Math.abs(v) < 0.01 ? 4 : Math.abs(v) < 0.1 ? 3 : 2);
+    // cents for a dollar or more, a little finer below it
+    const signed = (v) => { const a = Math.abs(v); return `${v < 0 ? '−' : '+'}${money(a, { dp: a >= 0.1 ? 2 : a >= 0.01 ? 3 : 4 })}`; };
+    const cell = (v) => `<b class="${v >= 0 ? 'up' : 'down'}">${signed((bal * v) / 100)}</b><br><small>${pct(v, dp(v))}</small>`;
+    // the account's own record so far, the same way
+    const live = (() => {
+      if (!s || !Number.isFinite(s.returnPct)) return null;
+      const days = (Date.now() - (state.liveFrom || state.startedAt)) / 864e5;
+      if (!(days >= 1)) return { early: true, hours: Math.max(0, Math.round(days * 24)) };
+      const d = s.returnPct / days;
+      return { hour: d / 24, day: d, week: d * 7, month: d * 30, days };
+    })();
+    const when = rows.map((r) => `${r.chart} ${r.from.slice(0, 7)} → ${r.to.slice(0, 7)}`).join(', ');
+    return `<div class="card mt" id="earnCard">
+      <div class="card-h"><h3>${icon('chart', 16)} What it can make: per hour, day, week and month</h3><span class="fine">at ${rows[0].risk}% a trade, on ${money(bal)}</span></div>
+      <div class="tbl-wrap hide-p"><table class="tbl fine fit"><thead><tr><th class="l">Chart</th><th>Per hour</th><th>Per day</th><th>Per week</th><th>Per month</th><th class="hide-p">Worst test period</th><th class="hide-p">Holding the coins, a month</th><th class="hide-p">Trades a month</th></tr></thead><tbody>
+        ${rows.map((r) => { const tags = [r.chart === iv ? 'yours' : '', top && r.chart === top.iv ? 'recommended' : ''].filter(Boolean); return `<tr${r.chart === iv ? ' style="font-weight:600"' : ''}><td class="l"><b>${esc(r.chart)}</b>${tags.length ? `<small>${tags.join(' · ')}</small>` : ''}</td>
+          <td>${cell(r.per.hour)}</td><td>${cell(r.per.day)}</td><td>${cell(r.per.week)}</td><td>${cell(r.per.month)}</td>
+          <td class="hide-p ${r.worst >= 0 ? 'up' : 'down'}">${pct(r.worst, 2)}<small>in ${esc(r.block)}</small></td>
+          <td class="hide-p ${r.holdPer.month >= 0 ? 'up' : 'down'}">${pct(r.holdPer.month, 2)}</td><td class="hide-p">${r.tradesPerMonth}</td></tr>`; }).join('')}
+        ${live ? `<tr><td class="l"><b>Your account so far</b><br><small>${live.early ? `${live.hours} h of trading` : `${Math.round(live.days)} day${Math.round(live.days) === 1 ? '' : 's'}, live`}</small></td>${live.early ? '<td colspan="7" class="l muted">too early to say: a day of trading is the least this can be read on</td>' : `<td>${cell(live.hour)}</td><td>${cell(live.day)}</td><td>${cell(live.week)}</td><td>${cell(live.month)}</td><td colspan="3" class="l muted hide-p">its own record, open trades at today's prices</td>`}</tr>` : ''}
+      </tbody></table></div>
+      <div class="tbl-wrap show-pb"><table class="tbl fine fit"><thead><tr><th>Per hour</th><th>Per day</th><th>Per week</th><th>Per month</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><th colspan="4" class="l">${esc(r.chart)}${r.chart === iv ? ' · yours' : ''}${top && r.chart === top.iv ? ' · recommended' : ''} <span class="muted">· worst test period ${pct(r.worst, 2)} in ${esc(r.block)}</span></th></tr>
+          <tr><td>${cell(r.per.hour)}</td><td>${cell(r.per.day)}</td><td>${cell(r.per.week)}</td><td>${cell(r.per.month)}</td></tr>`).join('')}
+        ${live && !live.early ? `<tr><th colspan="4" class="l">Your account so far · ${Math.round(live.days)} days</th></tr><tr><td>${cell(live.hour)}</td><td>${cell(live.day)}</td><td>${cell(live.week)}</td><td>${cell(live.month)}</td></tr>` : ''}
+      </tbody></table></div>
+      <p class="fine mt">Each chart's average over its ${rows[0].periods} walk-forward test periods with ${esc(rows.every((r) => r.rules === rows[0].rules) ? rows[0].rules : 'its tested rules')}, after fees and the cost of real fills (0.05% worse each way), spread evenly over time.<span class="show-p"> Holding the coins and the number of trades are in the wider view.</span> Real results come in lumps: most hours and many days have no trade at all, and the worst test period is shown beside each. The charts were tested on different stretches of time (${esc(when)}), so read across rows with care.${top ? ` Recommended: ${esc(top.iv)}, which made the most a month at the tested 1.5% a trade.` : ''}</p>
+      <p class="fine">Holding the same coins made more than the AI on every chart in these periods, which were mostly rising markets. The AI's case is that it fell less on the way and sits in cash when nothing qualifies. An expectation from past periods, not a promise.</p>
     </div>`;
   }
 
@@ -855,7 +896,7 @@ export async function render(el) {
   }
 
   function draw() {
-    if (!state) { $('#body', el).innerHTML = `${backupCard()}${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${startCard()}`; wireBackup(); wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
+    if (!state) { $('#body', el).innerHTML = `${backupCard()}${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${earningsCard()}${startCard()}`; wireBackup(); wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
     const s = stats(state, marks());
     const open = Object.entries(state.open);
     const closed = [...state.closed].reverse();
@@ -868,6 +909,7 @@ export async function render(el) {
       ${settingsCard()}
       ${untradableCard()}
       ${verdictCard()}
+      ${earningsCard()}
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}${s.since < s.liveSince - 60e3 ? ` · replayed until ${dateTime(s.liveSince)}` : ''}</span></div></div>
