@@ -10,7 +10,7 @@ on:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, signals, timing, live, all]
+        options: [selection, trader-rules, trader-folds, exits, engine, bands, external, momentum, signals, timing, live, all]
         default: selection
   # Once a month the main tests re-run on fresh candles, so the figures the app
   # publishes can be checked against the latest data (each job's summary shows
@@ -137,6 +137,38 @@ jobs:
         with:
           name: trader-folds
           path: trader-folds.txt
+
+  # When should the AI trader sell? Only the exits change (stop distance,
+  # target or trailing stop, break-even stop, selling on weak candles), picked
+  # on the history before each block and run on the block, after real costs.
+  exits:
+    if: inputs.job == 'exits' || inputs.job == 'all'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download candles
+        env:
+          PLAN: '{"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+        run: node tools/fetch-klines.mjs klines.json
+
+      - name: Each chart's exits against the app's, walk-forward
+        run: node tools/evaluate-exits.mjs klines.json | tee exits.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### AI trader exits, walk-forward by chart'; echo '```'; grep -v '^JSON' exits.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exits
+          path: exits.txt
 
   # Do the price ranges hold as often as they say? 24 coins, five charts, every
   # non-overlapping horizon; a width factor is fitted on the older half of each
