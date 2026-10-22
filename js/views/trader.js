@@ -40,6 +40,8 @@ export async function render(el) {
   const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false, noExchange: [] };
   // each check after the first asks only for the candles that are new
   const candlesFor = candleCache(getCandles, { window: 500, stepOf: (iv) => INTERVAL_MS[iv] });
+  // How far back a held coin's missing candles are fetched (5m: 20 days).
+  const BACKFILL_MAX = 6000;
   // Coins that keep coming back with no price data (checks in a row they failed
   // while others loaded), so the page can say so once and offer to drop them.
   const NODATA_KEY = 'traderNoData';
@@ -367,6 +369,25 @@ export async function render(el) {
       save(NODATA_KEY, streak);
     }
     st.noExchange = noExchange;
+    // A coin held while the page was closed for longer than the window a check
+    // fetches (500 candles: 42 hours of 5m) had its stop and target checked
+    // only from the first candle in that window. A QNT trade with its stop
+    // 1.6% under the entry was closed 5.2% down: the price had gone through the
+    // stop out of sight. A held coin's missing candles are fetched now, back to
+    // the last one this account traded on (with the 200 before it that the
+    // indicators need), so its exit is where the rules would have taken it.
+    const step = INTERVAL_MS[runCfg.interval];
+    for (const sym of Object.keys(state.open)) {
+      const have = bySymbol[sym], cur = state.cursor[sym];
+      if (!have?.length || !cur || !(step > 0) || have[0].t <= cur + step) continue;
+      const coin = all.find((c) => c.symbol === sym);
+      const need = Math.min(BACKFILL_MAX, Math.ceil((Date.now() - cur) / step) + 240);
+      try {
+        const r = await getCandles(coin, runCfg.interval, need);
+        if (r && r.source !== 'demo' && !r.lowRes && r.candles.length > have.length) bySymbol[sym] = r.candles.slice(0, -1);
+      } catch { /* the window is used as before */ }
+      if (st.disposed) return;
+    }
     // Every coin advances together, candle by candle, as in the published test.
     const results = replayAll(state, { ...runCfg, excluded: [...(runCfg.excluded || []), ...held] }, bySymbol);
     for (const [sym, res] of Object.entries(results)) {
@@ -837,6 +858,19 @@ export async function render(el) {
     const sparse = cfg.universe.filter((s) => st.noExchange.includes(s) && !noData.includes(s));
     return { noData, sparse, all: [...noData, ...sparse] };
   }
+  // What the settings change about the tested result, on the page itself: the
+  // dialog warned once, and an untested chart at 5% risk with the whole account
+  // in one coin then lost money with no reminder of why it might.
+  function settingsCard() {
+    const w = settingsWarnings({ ...cfg, interval: state?.interval || cfg.interval });
+    if (!w.length) return '';
+    return `<div class="card" style="border-color:var(--warn);margin-bottom:14px" id="settingsWarn">
+      <p style="margin:0"><b>Your settings are not the tested ones, so the tested result does not apply to this account.</b></p>
+      <ul class="fine" style="margin:6px 0 0;padding-left:18px">${w.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <button class="btn sm mt" type="button" id="warnUseBest">Use the best tested setup</button>
+    </div>`;
+  }
+
   function untradableCard() {
     const u = untradable();
     if (!u.all.length) return '';
@@ -870,6 +904,7 @@ export async function render(el) {
       ${myDemoCard()}
       ${realCard()}
       <h3 class="mt" style="margin-bottom:8px">The AI's own account</h3>
+      ${settingsCard()}
       ${untradableCard()}
       ${verdictCard()}
       <div class="grid g4">
@@ -932,6 +967,8 @@ export async function render(el) {
     $$('tr[data-sym]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/coin/${tr.dataset.sym}`; }));
     wireBackup();
     wireUntradable();
+    // opens Settings with the best tested setup filled in, to look at before saving
+    $('#warnUseBest', el)?.addEventListener('click', () => { $('#cfgBtn', el).click(); document.querySelector('.modal #useBest')?.click(); });
     wireMyDemo();
     wireReal();
     wireExports();

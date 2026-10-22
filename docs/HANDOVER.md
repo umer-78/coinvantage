@@ -80,6 +80,20 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### A held coin's missed candles are fetched on catch-up (2026-10-22)
+A user's AI account on 5m lost 5.2% on a QNT trade whose stop was 1.6% under the entry. The page
+had been closed for longer than the 500 candles a check fetches (42 hours of 5m), so the first
+candle the account saw had opened far under the stop, and the trade was closed there. Now, for
+every coin with an open position whose last traded candle is older than the fetched window,
+`catchUp` in `js/views/trader.js` fetches its candles back to that candle plus 240 before it for
+the indicators (`BACKFILL_MAX` 6,000 candles, 20 days of 5m). Checked in a browser with the clock
+moved 25 days on (past the 1h window): with the fix off, five held positions were sold 12–22%
+under their stops at the first candle seen; with it on, each was stopped at its stop price or
+sold earlier on its own signal. Coins without a position are not back-filled: an account whose
+page is closed does not open trades it never saw. The Trading page now also lists, above the
+AI's account, how the settings differ from the tested ones (untested chart, risk over 2%, more
+than 25% in one coin…) with a button that opens Settings on the best tested setup.
+
 ### Trading page money and charts checked; labels fixed site-wide (2026-10-16)
 - **The AI trader's money, audited from first principles** (24 setups: four charts × standard,
   trailing stop + break-even, 5% risk, ten positions at a 0.5% fee, volatility sizing, the dip
