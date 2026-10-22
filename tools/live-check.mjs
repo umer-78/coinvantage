@@ -95,7 +95,8 @@ const pages = [
   ['markets list', '#/', '#mkSummary', /\d+ coins|Live prices/i, 30000, '#mkt tbody tr[data-sym]', 50],
   ['scanner', '#/scanner', '#view', /Scanned \d+ coins|coins scanned|scanned/i, 90000, 'tbody tr', 10],
   ['advice', '#/advice', '#view', /scanned|no edge|BUY|AVOID|leans/i, 120000],
-  ['learn', '#/learn', '#view', /calls logged|scored|release test/i, 30000],
+  // the learning page must read the cloud's record, not fall back to this browser
+  ['learn', '#/learn', '#status', /Learning in the cloud/i, 30000],
   ['track record', '#/track', '#view', /graded|resolved|signals|record/i, 30000],
   ['trader', '#/trader', '#view', /Start the trader|Catch up now|Balance now/i, 30000],
 ];
