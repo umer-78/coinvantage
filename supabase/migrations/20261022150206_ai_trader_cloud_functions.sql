@@ -31,6 +31,3 @@ end;
 $$;
 revoke all on function public.cv_save_trader(uuid, text, jsonb) from public, anon, authenticated;
 grant execute on function public.cv_save_trader(uuid, text, jsonb) to service_role;
-
--- a minute past each five, so the candle that just closed is on the exchanges
-select cron.schedule('cv-trader', '1-59/5 * * * *', $$ select private.call_cv('trader-run') $$);
