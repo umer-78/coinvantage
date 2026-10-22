@@ -297,7 +297,7 @@ export function settingsWarnings(cfg) {
   if (!tested) out.push(`The ${cfg.interval} chart was never tested with these rules, so there is no measured result to expect on it. ${Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard).join(', ')} were.`);
   if (cfg.strategy === 'custom') out.push('Your own rules have no published test. Use "Test these settings" to see how they did on recent candles before you rely on them.');
   if (cfg.riskPct > 2) out.push(`Risking ${cfg.riskPct}% a trade means ten losing trades in a row, which happens, cost about ${Math.round((1 - (1 - cfg.riskPct / 100) ** 10) * 100)}% of the account.`);
-  if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.`);
+  if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.${cfg.maxPositionPct > 50 ? ' One trade can then take all the cash, so the AI holds one coin at a time and passes up the other coins\' buy signals.' : ''}`);
   const untested = (cfg.universe || []).filter((sym) => !TESTED_COINS.includes(sym));
   if (untested.length) out.push(`${untested.length} of your ${(cfg.universe || []).length} coins ${untested.length === 1 ? 'was' : 'were'} not in the tests (${TESTED_COINS.length} of the largest coins), so the measured results say nothing about ${untested.length === 1 ? 'it' : 'them'}${untested.length <= 8 ? `: ${untested.join(', ')}` : ''}.`);
   if (cfg.maxPositions * (cfg.maxPositionPct ?? 25) < 50) out.push(`With at most ${cfg.maxPositions} open and ${cfg.maxPositionPct ?? 25}% in one coin, no more than ${cfg.maxPositions * (cfg.maxPositionPct ?? 25)}% of the account is ever invested.`);
@@ -585,7 +585,8 @@ function advance(state, cfg, s, i, out) {
   if (!state.firstBarAt || c.t < state.firstBarAt) state.firstBarAt = c.t;
   const score = s.scores ? s.scores[i] : scoreAt(s.candles, s.ind, i).score;
   out.lastScore = score;
-  stepBar(state, cfg, s, i, score);
+  const passed = stepBar(state, cfg, s, i, score);
+  if (passed) { out.passed = (out.passed || 0) + 1; out.passedWhy = passed; }
 }
 
 /**
@@ -795,8 +796,11 @@ function stepBar(state, cfg, s, i, score) {
   }
 
   // ---- look for an entry
-  if (Object.keys(state.open).length >= cfg.maxPositions) return;
+  // A buy the rules wanted but the account could not take is reported, not
+  // dropped in silence: with all the cash in one coin the others' signals were
+  // passed up and the page never said why it held one coin at a time.
   if (entryBlocker(cfg, s, i, score) !== null) return;
+  if (Object.keys(state.open).length >= cfg.maxPositions) return 'full';
   const a = atrArr[i];
   if (!a) return;
 
@@ -819,7 +823,7 @@ function stepBar(state, cfg, s, i, score) {
     const r = s.volr[i];
     if (r > 1) notional *= Math.max(0.5, 1 / r);
   }
-  if (notional < 1) return;
+  if (notional < 1) return freeCash(state) < 1 + (cfg.feePct ?? 0.1) / 100 ? 'nocash' : undefined;
 
   const qty = notional / entry;
   const fee = notional * (cfg.feePct / 100);

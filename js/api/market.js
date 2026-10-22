@@ -452,6 +452,9 @@ async function geckoCandles(coin, interval, total) {
  */
 export const isTestedSource = (r) => Boolean(r) && !r.lowRes && r.source !== 'demo';
 
+// Candles the forecast (200), the AI trader (220) and the indicators need.
+const MIN_HISTORY = 260;
+
 export async function getCandles(coin, interval = '1h', total = 500) {
   const pair = typeof coin === 'string' ? coin : coin?.binance;
 
@@ -493,6 +496,14 @@ export async function getCandles(coin, interval = '1h', total = 500) {
       }
       // a pair that stopped trading long ago is treated as unavailable
       if (out.length && now() - out[out.length - 1].t < INTERVAL_MS[interval] * 3 + 2 * 864e5) {
+        // A pair Binance listed recently has too little history for the
+        // indicators, the forecast and the AI (HYPE had 59 daily candles there:
+        // no signal, no forecast on 4h or 1d). An exchange that has listed the
+        // coin for longer gives the whole chart.
+        if (out.length < Math.min(total, MIN_HISTORY) && coin && typeof coin === 'object') {
+          const ex = await exchangeCandles(coin, interval, total).catch(() => null);
+          if (ex && ex.candles.length > out.length) return ex;
+        }
         markLive();
         return { candles: out, source: 'binance', pair };
       }

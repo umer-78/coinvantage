@@ -400,8 +400,11 @@ export async function render(el) {
     if (st.disposed) return;
     // One line per check in the activity feed, with the real time of the check.
     const best = scores.sort((a, b) => b.score - a.score)[0];
+    // buy signals the account could not take: no free slot, or all the cash in open trades
+    const passedUp = Object.entries(results).filter(([, r]) => r.passed).map(([sym, r]) => ({ sym, why: r.passedWhy }));
     logCheck(state, {
       kind: 'check', coins: cfg.universe.length - failed.length, candles: processed,
+      passed: passedUp.length ? { syms: passedUp.map((x) => x.sym).slice(0, 8), n: passedUp.length, why: passedUp.some((x) => x.why === 'nocash') ? 'nocash' : 'full' } : null,
       opened: [...Object.values(state.open), ...state.closed.slice(tradesBefore)].filter((p) => !openKeysBefore.has(`${p.symbol}:${p.openedAt}`)).length,
       closed: state.closed.length - tradesBefore,
       best: best ? { sym: best.sym, score: Math.round(best.score) } : null, bar: runCfg.entryScore,
@@ -472,7 +475,7 @@ export async function render(el) {
       if (e.kind === 'check') {
         const c = e.c;
         const did = c.opened || c.closed ? `${c.opened ? `opened ${c.opened}` : ''}${c.opened && c.closed ? ', ' : ''}${c.closed ? `closed ${c.closed}` : ''}` : 'no trade';
-        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles.toLocaleString('en-US')} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}`;
+        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles.toLocaleString('en-US')} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}${c.passed ? ` · <span class="warn">passed up a buy on ${esc(c.passed.syms.join(', '))}${c.passed.n > c.passed.syms.length ? ` and ${c.passed.n - c.passed.syms.length} more` : ''}: ${c.passed.why === 'nocash' ? 'all the cash was in open trades (Settings → Max in one coin)' : 'the most open trades allowed were already open'}</span>` : ''}`;
       }
       if (e.kind === 'review') return `<b>Self-review</b> — ${esc(e.c.text)}`;
       if (e.kind === 'settings') return `<b>Settings changed</b> — ${esc(e.c.text)}`;

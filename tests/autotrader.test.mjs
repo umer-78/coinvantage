@@ -74,6 +74,22 @@ test('coins advance together: the earlier signal gets the only slot', () => {
   assert.deepEqual(Object.keys(st.open), ['B']);
 });
 
+test('a buy the account cannot take is reported, not dropped in silence', () => {
+  const a = prepared('A', climb(300), (i) => (i === 250 ? 40 : 0));
+  const b = prepared('B', climb(300), (i) => (i === 255 ? 40 : 0));
+  // up to 100% in one coin: the first trade takes all the cash
+  const cfg = cfgWith({ maxPositions: 5, riskPct: 50, maxPositionPct: 100 });
+  const st = newState(cfg);
+  const out = replaySeries(st, cfg, [a, b]);
+  assert.deepEqual(Object.keys(st.open), ['A']);
+  assert.equal(out.B.passedWhy, 'nocash');
+  assert.equal(out.A.passed, undefined);
+  // one slot: the other coin's buy is passed up for a full book
+  const one = cfgWith({ maxPositions: 1 });
+  const r = replaySeries(newState(one), one, [a, b]);
+  assert.equal(r.B.passedWhy, 'full');
+});
+
 // A dip, as the pullback rule reads it: RSI scripted to 30 on one candle, 60 elsewhere.
 const dipAt = (s, k) => { s.ind = { ...s.ind, rsi: s.ind.rsi.map((v, i) => (v === null ? null : i === k ? 30 : 60)) }; return s; };
 
