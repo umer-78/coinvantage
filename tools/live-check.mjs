@@ -41,6 +41,18 @@ const ink = (sel) => page.evaluate((s) => {
   return n;
 }, sel).catch(() => 0);
 const short = (t) => t.replace(/\s+/g, ' ').trim().slice(0, 120);
+// The last price on Binance (or Gate.io, HTX, OKX for coins Binance does not list), in USD.
+async function exchangePrice(sym) {
+  const get = (u) => fetch(u, { signal: AbortSignal.timeout(8000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const b = await get(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${encodeURIComponent(sym)}USDT`);
+  if (b?.price) return +b.price;
+  const g = await get(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${sym}_USDT`);
+  if (Array.isArray(g) && g[0]?.last) return +g[0].last;
+  const h = await get(`https://api.huobi.pro/market/detail/merged?symbol=${sym.toLowerCase()}usdt`);
+  if (h?.tick?.close) return +h.tick.close;
+  const o = await get(`https://www.okx.com/api/v5/market/ticker?instId=${sym}-USDT`);
+  return o?.data?.[0]?.last ? +o.data[0].last : null;
+}
 
 const rows = [];
 for (const sym of COINS) {
@@ -50,12 +62,14 @@ for (const sym of COINS) {
     await page.waitForTimeout(1500);
     const btn = await page.$(`#ivSeg button[data-v="${iv}"]`);
     if (btn) await btn.click();
-    const src = await textOf('#srcChip', /\S/, 20000);
+    const src = await textOf('#srcChip', /Binance|Gate|HTX|OKX|CoinGecko|demo/i, 25000);
     const sig = await textOf('#signalCard', /score|Score|wait|BUY|SELL|HOLD|trend/i, 25000);
     const fc = await textOf('#fcCard', /range|Range|chance|%/, 40000);
     const chart = await ink('#chart canvas');
     const ai = await page.evaluate(() => document.querySelector('.ai-signal')?.innerText || '').catch(() => '');
-    const learn = await page.evaluate(() => [...document.querySelectorAll('#fcCard dt')].some((d) => /AI learning/.test(d.textContent))).catch(() => false);
+    const learn = await page.evaluate(() => [...document.querySelectorAll('dt')].some((d) => /AI learning/.test(d.textContent))).catch(() => false);
+    // the price shown against the exchange's own last price, read at the same moment
+    const shown = await page.evaluate(() => document.querySelector('#px')?.textContent || '').catch(() => '');
     const problems = [];
     if (!/Binance|Gate|HTX|OKX/i.test(src)) problems.push(`source: ${short(src) || 'none'}`);
     if (chart < 50) problems.push('chart not drawn');
@@ -65,6 +79,12 @@ for (const sym of COINS) {
     if (['15m', '1h', '4h', '1d'].includes(iv) && !ai) problems.push('no AI signal');
     if (!learn && /Binance|Gate|HTX|OKX/i.test(src)) problems.push('no learning check');
     if (errors.length) problems.push(`page error: ${errors[0]}`);
+    if (iv === CHARTS[0]) {
+      const ref = await exchangePrice(sym);
+      const px = parseFloat(shown.replace(/[^0-9.]/g, ''));
+      if (ref && Number.isFinite(px) && px > 0 && Math.abs(px / ref - 1) > 0.01) problems.push(`price ${shown} is ${((px / ref - 1) * 100).toFixed(2)}% off the exchange's ${ref}`);
+      if (!Number.isFinite(px) || px <= 0) problems.push(`price not shown (${short(shown) || 'empty'})`);
+    }
     rows.push({ sym, iv, src: short(src).slice(0, 40), ok: !problems.length, problems });
     console.log(`${sym.padEnd(6)} ${iv.padEnd(4)} ${problems.length ? '✗ ' + problems.join(' · ') : '✓'}  [${short(src).slice(0, 40)}]`);
   }
@@ -72,19 +92,26 @@ for (const sym of COINS) {
 
 // pages that read many coins at once
 const pages = [
-  ['scanner', '#/scanner', '#tbl', /Scanned \d+ coins|tbody/i, 90000],
+  ['markets list', '#/', '#mkSummary', /\d+ coins|Live prices/i, 30000, '#mkt tbody tr[data-sym]', 50],
+  ['scanner', '#/scanner', '#view', /Scanned \d+ coins|coins scanned|scanned/i, 90000, 'tbody tr', 10],
   ['advice', '#/advice', '#view', /scanned|no edge|BUY|AVOID|leans/i, 120000],
   ['learn', '#/learn', '#view', /calls logged|scored|release test/i, 30000],
   ['track record', '#/track', '#view', /graded|resolved|signals|record/i, 30000],
   ['trader', '#/trader', '#view', /Start the trader|Catch up now|Balance now/i, 30000],
 ];
-for (const [name, hash, sel, re, ms] of pages) {
+for (const [name, hash, sel, re, ms, rowSel, minRows] of pages) {
   errors.length = 0;
   await page.goto(`${BASE}${hash}`, { waitUntil: 'domcontentloaded' });
   const t = await textOf(sel, re, ms);
-  const ok = re.test(t) && !errors.length;
-  console.log(`page ${name.padEnd(13)} ${ok ? '✓' : `✗ ${errors[0] || short(t) || 'nothing read'}`}`);
-  rows.push({ sym: `page:${name}`, iv: '', ok, problems: ok ? [] : [errors[0] || short(t) || 'nothing read'] });
+  // a page that lists coins must list them: count its rows
+  let n = null;
+  if (rowSel) {
+    const end = Date.now() + ms;
+    while (Date.now() < end && (n = await page.evaluate((s) => document.querySelectorAll(s).length, rowSel).catch(() => 0)) < minRows) await page.waitForTimeout(1000);
+  }
+  const problem = errors[0] || (!re.test(t) ? short(t) || 'nothing read' : null) || (rowSel && n < minRows ? `${n} rows listed, expected ${minRows}+` : null);
+  console.log(`page ${name.padEnd(13)} ${problem ? `✗ ${problem}` : `✓${rowSel ? ` (${n} rows)` : ''}`}`);
+  rows.push({ sym: `page:${name}`, iv: '', ok: !problem, problems: problem ? [problem] : [] });
 }
 await browser.close();
 
