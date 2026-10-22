@@ -4,6 +4,8 @@
 //   /cv/alerts-check   cron (every minute)
 //   /cv/watchlist-digest  cron (daily watchlist summary)
 //   /cv/track-signals  cron (track record)
+//   /cv/learn-pass     cron (AI learning, every five minutes)
+//   /cv/trader-run     cron (the AI trader of every account that has it on, every five minutes)
 //   /cv/news-fetch     cron (RSS news)
 //   /cv/telegram       Telegram bot webhook
 //   /cv/stripe         Stripe webhook
@@ -13,6 +15,8 @@ import { account } from './account.ts';
 import { adminApi } from './admin.ts';
 import { alertsCheck, watchlistDigest } from './alerts.ts';
 import { trackSignals } from './track.ts';
+import { learnPass } from './learn.ts';
+import { traderRun } from './trader.ts';
 import { newsFetch } from './news.ts';
 import { telegramBot } from './telegram.ts';
 import { stripeWebhook } from './stripe.ts';
@@ -20,7 +24,7 @@ import { generateSignal } from './engine/signals.js';
 import { forecast } from './engine/predict.js';
 
 const routes: Record<string, (req: Request) => Promise<Response>> = {
-  account, admin: adminApi, 'alerts-check': alertsCheck, 'watchlist-digest': watchlistDigest, 'track-signals': trackSignals,
+  account, admin: adminApi, 'alerts-check': alertsCheck, 'watchlist-digest': watchlistDigest, 'track-signals': trackSignals, 'learn-pass': learnPass, 'trader-run': traderRun,
   'news-fetch': newsFetch, telegram: telegramBot, stripe: stripeWebhook,
   selftest: async () => {
     const candles = Array.from({ length: 400 }, (_, i) => {

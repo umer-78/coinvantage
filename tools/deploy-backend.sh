@@ -16,13 +16,13 @@ command -v supabase >/dev/null || { echo "Supabase CLI not found. Run: brew inst
 
 # Refuse to ship a server whose engine has drifted from the site's.
 fail=0
-for f in signals predict indicators barrier pooled planscore autotrader; do
+for f in signals predict indicators barrier pooled planscore autotrader learncenter tradelearn traderrun; do
   a=$(shasum -a 256 "js/lib/$f.js" | cut -d' ' -f1)
   b=$(shasum -a 256 "supabase/functions/cv/engine/$f.js" | cut -d' ' -f1)
   if [ "$a" != "$b" ]; then echo "MISMATCH: js/lib/$f.js differs from the copy the server would run"; fail=1; fi
 done
 [ "$fail" = 0 ] || { echo "Aborting: copy js/lib/<name>.js over supabase/functions/cv/engine/<name>.js first."; exit 1; }
-echo "Engine parity verified (7 files)."
+echo "Engine parity verified (10 files)."
 
 supabase functions deploy cv --project-ref cjpljmzustvgsmueqese --no-verify-jwt
 echo

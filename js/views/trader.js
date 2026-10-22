@@ -1,8 +1,10 @@
 // The automatic AI trader, running on simulated money.
 import { markets, getCandles, isStable, isTestedSource, findCoin, INTERVAL_MS, knownVenue, findVenue } from '../api/market.js';
-import { newState, rescaleAccount, replayAll, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PULLBACK_RSI, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
-import { reviewTrades, decideChanges, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
+import { newState, rescaleAccount, stats, equity, closeManual, recordRealTrade, DEFAULT_CONFIG, PULLBACK_RSI, CHART_TESTED, rulesForChart, rulesInWords, PER_COIN_RULES, CUSTOM_DEFAULT, TRADER_CHARTS, MAX_COINS, TESTED_COINS, bestTestedChart, settingsWarnings, backtestSettings, expectedYield, PAPER_NOTICE, DEMO_NOTICE, REAL_NOTICE, logCheck, VOL_SCALE } from '../lib/autotrader.js';
+import { reviewTrades, activeLessons, diagnose, MIN_TRADES } from '../lib/tradelearn.js';
+import { configFrom, ownRulesOn as ownRulesFor, runConfig, heldOffList, backfillNeeds, checkAccount, reviewStep } from '../lib/traderrun.js';
 import { learningPass } from '../lib/learnpass.js';
+import { cloudLearning } from '../lib/cloudlearn.js';
 import { candleCache } from '../lib/candlecache.js';
 import { parseTradeCsv, matchFills } from '../lib/importer.js';
 import { tradesCsv, downloadText, reportHtml } from '../lib/export.js';
@@ -55,26 +57,15 @@ export async function render(el) {
     save(SESSION_KEY, session);
   }
   let autoOn = session.status === 'running';
-  // Saved settings used to include the strategy's own numbers (stop, target…),
-  // so a strategy update never reached anyone who had once pressed Save. Only
-  // the user's own choices — and, from v2, what the self-review learned — carry over.
-  const savedCfg = load(CFG_KEY, {}) || {};
-  const USER_KEYS = ['startingBalance', 'riskPct', 'maxPositions', 'interval', 'universe', 'ownRulesOff', 'maxPositionPct', 'feePct', 'strategy', 'custom'];
-  // The trend filter is not carried over from a save: whether the self-review
-  // switched it is read from its lessons (rulesForChart), since a saved value
-  // cannot tell a learned setting from an old default.
-  const LEARNED_KEYS = ['minAdx', 'maxEntryRsi', 'excluded'];
-  const cfg = { ...DEFAULT_CONFIG, ...Object.fromEntries(Object.entries(savedCfg).filter(([k]) => USER_KEYS.includes(k) || (savedCfg.v === 2 && LEARNED_KEYS.includes(k)))), v: 2 };
-  // Risk per trade above 5% is a setting that wipes an account out in a short
-  // losing run; older saves allowed 10.
-  cfg.riskPct = Math.min(5, Math.max(0.1, +cfg.riskPct || DEFAULT_CONFIG.riskPct));
+  // the user's own choices and what the self-review learned (traderrun.js)
+  const cfg = configFrom(load(CFG_KEY, {}));
   let state = load(STATE_KEY, null);
   // Each coin's own rules: on for daily accounts unless switched off (see
   // PER_COIN_RULES for what they made and what they risked in testing). It
   // follows the chart the account RUNS on, which only changes on a Reset, not
   // the chart picked in Settings. Stored as an opt-out: for an hour they were
   // opt-in, and a Save then stored "off" for anyone who never touched the box.
-  const ownRulesOn = () => !cfg.ownRulesOff && cfg.strategy !== 'custom' && (state?.interval || cfg.interval) === PER_COIN_RULES.interval;
+  const ownRulesOn = () => ownRulesFor(cfg, state);
   // What the account actually trades: the settings, the chart's own measured
   // rules, the self-review's lessons. Everything that trades or describes the
   // rules reads this, so the page cannot describe one strategy and run another.
@@ -195,8 +186,8 @@ export async function render(el) {
     </details>`;
   }
 
-  // Self-improvement status: rolling hit-rate windows over forecasts this
-  // device recorded and later resolved. Purely local — nothing is invented.
+  // Self-improvement status: rolling hit-rate windows over the forecasts in
+  // your record, graded later. Kept with the account when signed in.
   function learningCard() {
     const ledger = loadLedger();
     const ls = learningStatus(ledger);
@@ -216,8 +207,8 @@ export async function render(el) {
       return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
     };
     return `<div class="card mt" id="learnCard">
-      <div class="card-h"><h3>${icon('ai', 16)} This device's forecast record</h3><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
-      <p class="fine">Every forecast this device shows is logged before the outcome is known, then scored when its horizon passes. Rolling windows below are hit rates over the last N resolved forecasts on <b>this device only</b> — not a claim about future performance. Keeping score does not make the forecasts better; a hit rate near 50% is a coin toss.</p>
+      <div class="card-h"><h3>${icon('ai', 16)} Your forecast record</h3><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
+      <p class="fine">Every forecast shown to you is logged before the outcome is known, then scored when its horizon passes. Signed in, the record is kept with your account in the cloud, so every device adds to the same one. Rolling windows below are hit rates over your last N resolved forecasts — not a claim about future performance. Keeping score does not make the forecasts better; a hit rate near 50% is a coin toss.</p>
       <div class="grid g4 mt">
         <div class="stat"><span class="k">Last 20</span><span class="v">${win(20)}</span></div>
         <div class="stat"><span class="k">Last 50</span><span class="v">${win(50)}</span></div>
@@ -227,15 +218,18 @@ export async function render(el) {
       ${spark.length > 1 ? `<div class="mt"><div class="fine" style="margin-bottom:4px">Hit rate over the last ${spark.length} resolved forecasts (rolling 20)</div>${sparklineSvg(spark, { width: 240, height: 36, color: 'var(--accent)' })}</div>` : ''}
       <p class="fine mt">Model v${ls.modelVersion} · ${ls.total} forecast${ls.total === 1 ? '' : 's'} recorded · ${ls.resolved} resolved · ${ls.pending} still waiting for their horizon.</p>
       <div class="mt">
-        <div class="fine">Once 15 forecasts have resolved, a hit rate below 55% over the last 50 (or the last 20, if fewer have resolved) pulls the displayed confidence a quarter of the way toward 50/50, and halfway if the hit rate is below 40%. This is purely local measurement; no external validation is performed.</div>
+        <div class="fine">Once 15 forecasts have resolved, a hit rate below 55% over the last 50 (or the last 20, if fewer have resolved) pulls the displayed confidence a quarter of the way toward 50/50, and halfway if the hit rate is below 40%. This is measured on your own record only.</div>
       </div>
     </div>`;
   }
 
   // Tells people where their trades are kept, on the page where they look for them.
   function syncNote() {
-    if (auth.user) return 'Saved to your account: every device you sign in on shows these same trades.';
-    if (backendEnabled()) return 'Saved in this browser only. <a href="#" id="syncSignIn">Sign in</a> to see the same trades on every device.';
+    if (auth.user) {
+      const cloud = [...(state?.log || [])].reverse().find((e) => e.kind === 'check' && e.by === 'cloud');
+      return `Saved to your account: every device you sign in on shows these same trades. While the AI is on, the cloud checks it every five minutes with this page closed${cloud ? ` (last cloud check ${ago(cloud.t)})` : ''}.`;
+    }
+    if (backendEnabled()) return 'Saved in this browser only, and it only trades while this page is open. <a href="#" id="syncSignIn">Sign in</a> to keep it trading in the cloud with the page closed, and to see the same trades on every device.';
     return 'Saved in this browser only.';
   }
 
@@ -306,18 +300,13 @@ export async function render(el) {
     // would mix two strategies in one balance, so the account keeps its own
     // timeframe. Older saved accounts adopt the current setting once.
     if (!state.interval) state.interval = cfg.interval;
-    const runCfg = { ...effective(state.interval), perCoin: ownRulesOn() ? PER_COIN_RULES.rules : null };
+    const runCfg = runConfig(cfg, state, load(LESSONS_KEY, []));
 
     let processed = 0;
     const failed = [], noExchange = [];
     const forecastInputs = [];
-    const scores = [];
-    const tradesBefore = state.closed.length;
-    const openKeysBefore = new Set(Object.values(state.open).map((p) => `${p.symbol}:${p.openedAt}`));
-    // A coin taken off the list while a position in it was open used to be
-    // skipped for good, leaving that position with no stop or target. It is
-    // still checked now, for its exits only.
-    const held = Object.keys(state.open).filter((sym) => !cfg.universe.includes(sym));
+    // coins taken off the list while held: still checked, for their exits only
+    const held = heldOffList(cfg, state);
     const bySymbol = {};
     // four coins at a time: a list of thirty used to be fetched one by one
     const syms = [...cfg.universe, ...held];
@@ -369,47 +358,24 @@ export async function render(el) {
       save(NODATA_KEY, streak);
     }
     st.noExchange = noExchange;
-    // A coin held while the page was closed for longer than the window a check
-    // fetches (500 candles: 42 hours of 5m) had its stop and target checked
-    // only from the first candle in that window. A QNT trade with its stop
-    // 1.6% under the entry was closed 5.2% down: the price had gone through the
-    // stop out of sight. A held coin's missing candles are fetched now, back to
-    // the last one this account traded on (with the 200 before it that the
-    // indicators need), so its exit is where the rules would have taken it.
-    const step = INTERVAL_MS[runCfg.interval];
-    for (const sym of Object.keys(state.open)) {
-      const have = bySymbol[sym], cur = state.cursor[sym];
-      if (!have?.length || !cur || !(step > 0) || have[0].t <= cur + step) continue;
+    // A held coin's candles missing since the last one traded on (traderrun.js)
+    for (const { sym, need } of backfillNeeds(state, bySymbol, INTERVAL_MS[runCfg.interval], { max: BACKFILL_MAX })) {
       const coin = all.find((c) => c.symbol === sym);
-      const need = Math.min(BACKFILL_MAX, Math.ceil((Date.now() - cur) / step) + 240);
       try {
         const r = await getCandles(coin, runCfg.interval, need);
-        if (r && r.source !== 'demo' && !r.lowRes && r.candles.length > have.length) bySymbol[sym] = r.candles.slice(0, -1);
+        if (r && r.source !== 'demo' && !r.lowRes && r.candles.length > bySymbol[sym].length) bySymbol[sym] = r.candles.slice(0, -1);
       } catch { /* the window is used as before */ }
       if (st.disposed) return;
-    }
-    // Every coin advances together, candle by candle, as in the published test.
-    const results = replayAll(state, { ...runCfg, excluded: [...(runCfg.excluded || []), ...held] }, bySymbol);
-    for (const [sym, res] of Object.entries(results)) {
-      processed += res.processed;
-      if (Number.isFinite(res.lastScore)) scores.push({ sym, score: res.lastScore });
     }
     // The page was closed or redrawn (a sync brought newer trades) while the last
     // coin loaded: saving now would put this older copy back over them. Nothing
     // is lost, since the next check replays the same candles.
     if (st.disposed) return;
-    // One line per check in the activity feed, with the real time of the check.
-    const best = scores.sort((a, b) => b.score - a.score)[0];
-    // buy signals the account could not take: no free slot, or all the cash in open trades
-    const passedUp = Object.entries(results).filter(([, r]) => r.passed).map(([sym, r]) => ({ sym, why: r.passedWhy }));
-    logCheck(state, {
-      kind: 'check', coins: cfg.universe.length - failed.length, candles: processed,
-      passed: passedUp.length ? { syms: passedUp.map((x) => x.sym).slice(0, 8), n: passedUp.length, why: passedUp.some((x) => x.why === 'nocash') ? 'nocash' : 'full' } : null,
-      opened: [...Object.values(state.open), ...state.closed.slice(tradesBefore)].filter((p) => !openKeysBefore.has(`${p.symbol}:${p.openedAt}`)).length,
-      closed: state.closed.length - tradesBefore,
-      best: best ? { sym: best.sym, score: Math.round(best.score) } : null, bar: runCfg.entryScore,
-    });
-    selfReview({ auto: true });
+    const lessons = load(LESSONS_KEY, []);
+    const autoLearn = load(AUTOLEARN_KEY, true) !== false;
+    const check = checkAccount(state, cfg, { bySymbol, failed, lessons, autoLearn, by: 'page' });
+    processed = check.processed;
+    if (check.changes.length) { save(CFG_KEY, cfg); save(LESSONS_KEY, lessons.slice(-50)); }
     save(STATE_KEY, state);
     st.lastRun = Date.now();
     st.running = false;
@@ -423,9 +389,10 @@ export async function render(el) {
     draw();
     if (processed) toast(`Checked ${processed.toLocaleString('en-US')} new candle${processed === 1 ? '' : 's'}.`, 'up');
     learnFrom(forecastInputs, runCfg.interval);
-    // The AI learning center grades every indicator and the forecast on the same
-    // candles, so the system keeps learning whenever the trader is open.
-    learningPass(runCfg.interval, { candlesBySymbol: Object.fromEntries(forecastInputs.map((x) => [x.sym, x.candles])) }).catch(() => {});
+    // The AI learning center grades every indicator and the forecast. The cloud's
+    // job does that around the clock; only when its record cannot be read does
+    // this browser run a pass on the same candles.
+    cloudLearning().then((c) => (c?.[runCfg.interval] ? null : learningPass(runCfg.interval, { candlesBySymbol: Object.fromEntries(forecastInputs.map((x) => [x.sym, x.candles])) }))).catch(() => {});
   }
 
   // Self-improvement: score the forecasts whose horizon has passed, then log a
@@ -475,7 +442,7 @@ export async function render(el) {
       if (e.kind === 'check') {
         const c = e.c;
         const did = c.opened || c.closed ? `${c.opened ? `opened ${c.opened}` : ''}${c.opened && c.closed ? ', ' : ''}${c.closed ? `closed ${c.closed}` : ''}` : 'no trade';
-        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}</b> — ${c.candles.toLocaleString('en-US')} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}${c.passed ? ` · <span class="warn">passed up a buy on ${esc(c.passed.syms.join(', '))}${c.passed.n > c.passed.syms.length ? ` and ${c.passed.n - c.passed.syms.length} more` : ''}: ${c.passed.why === 'nocash' ? 'all the cash was in open trades (Settings → Max in one coin)' : 'the most open trades allowed were already open'}</span>` : ''}`;
+        return `<b>Checked ${c.coins} coin${c.coins === 1 ? '' : 's'}${c.by === 'cloud' ? ' in the cloud' : ''}</b> — ${c.candles.toLocaleString('en-US')} new closed candle${c.candles === 1 ? '' : 's'}, ${did}${c.best ? ` · highest score ${esc(c.best.sym)} ${c.best.score > 0 ? '+' : ''}${c.best.score} (buys at +${c.bar})` : ''}${c.passed ? ` · <span class="warn">passed up a buy on ${esc(c.passed.syms.join(', '))}${c.passed.n > c.passed.syms.length ? ` and ${c.passed.n - c.passed.syms.length} more` : ''}: ${c.passed.why === 'nocash' ? 'all the cash was in open trades (Settings → Max in one coin)' : 'the most open trades allowed were already open'}</span>` : ''}`;
       }
       if (e.kind === 'review') return `<b>Self-review</b> — ${esc(e.c.text)}`;
       if (e.kind === 'settings') return `<b>Settings changed</b> — ${esc(e.c.text)}`;
@@ -498,24 +465,15 @@ export async function render(el) {
   // The trader reads its own trade log, finds conditions that keep losing and
   // switches on the filter that avoids them (or off, if a filter made things
   // worse). Runs by itself after every check; the button runs it on demand.
-  function selfReview({ auto = false } = {}) {
+  function selfReview() {
     if (!state) return null;
-    const review = reviewTrades(state.closed);
-    if (auto && load(AUTOLEARN_KEY, true) === false) return { review, changes: [] };
     const lessons = load(LESSONS_KEY, []);
-    const { cfgPatch, changes } = decideChanges(review, effective(), lessons, state.closed);
+    const { review, changes } = reviewStep(state, cfg, lessons);
     if (changes.length) {
-      Object.assign(cfg, cfgPatch);
       save(CFG_KEY, cfg);
-      const now = Date.now();
-      for (const c of changes) {
-        lessons.push({ at: now, lens: c.lens || null, undo: !!c.undo, text: c.text });
-        if (c.undo) for (const h of lessons) if (h.lens === c.lens && !h.undo && h.at < now) h.undone = true;
-        logCheck(state, { kind: 'review', text: c.text });
-      }
       save(LESSONS_KEY, lessons.slice(-50));
       save(STATE_KEY, state);
-      if (!auto) toast(`Self-review changed ${changes.length} rule${changes.length > 1 ? 's' : ''}.`, 'up');
+      toast(`Self-review changed ${changes.length} rule${changes.length > 1 ? 's' : ''}.`, 'up');
     }
     return { review, changes };
   }
@@ -547,7 +505,7 @@ export async function render(el) {
 
   function wireReview() {
     $('#reviewNow', el)?.addEventListener('click', () => {
-      const r = selfReview({ auto: false });
+      const r = selfReview();
       if (r && !r.changes.length) toast(r.review.overall.n < MIN_TRADES ? `Read ${r.review.overall.n} trades — needs ${MIN_TRADES} before it changes anything.` : 'Read the log — nothing clear enough to change yet.', 'info');
       draw();
     });

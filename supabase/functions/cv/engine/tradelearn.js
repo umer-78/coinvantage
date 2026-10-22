@@ -1,0 +1,221 @@
+// The AI trader's self-review: it reads its own trade log and changes its rules.
+//
+// Every trade the paper trader opens records what the market looked like at the
+// moment it bought (trend, ADX, RSI, volatility — see `ctx` in autotrader.js).
+// After enough trades have closed, this module groups them by those conditions,
+// finds the conditions that keep losing money, and switches on the filter that
+// avoids them. It also switches a filter back OFF if the trades taken since it
+// was switched on did worse than before — so a bad lesson gets unlearned.
+//
+// Honesty rules, same as the rest of the app:
+// - it never acts on a handful of trades: a group needs MIN_GROUP trades, the
+//   log needs MIN_TRADES, and a change needs a clear gap, not a rounding error;
+// - every change is written to a visible changelog with the numbers behind it;
+// - it only changes the paper trader's filters. It never places a real order.
+
+export const MIN_TRADES = 12;    // closed trades before the review may change anything
+export const MIN_GROUP = 10;     // trades a condition needs before it can be judged (6 was measured to be noise)
+const GAP_R = 0.25;              // how much worse (in R) a condition must be to act on it
+
+const r2 = (v) => Math.round(v * 100) / 100;
+
+/** Result of one trade in R: profit or loss as a multiple of the cash it risked. */
+export function tradeR(t) {
+  // The real risk is entry-to-stop times the amount bought. Older AI trades
+  // stored the INTENDED risk instead (balance x risk %), which the 25% position
+  // cap often cut: at 10% risk a trade that could lose $50 was filed as risking
+  // $860, so its R looked twenty times smaller than it was.
+  const actual = Number.isFinite(t.entry) && Number.isFinite(t.initialStop) && Number.isFinite(t.qty) ? Math.abs(t.entry - t.initialStop) * t.qty : null;
+  const risk = actual > 0 ? actual : t.riskCash;
+  // A trade recorded without a stop has no defined risk, so it has no R.
+  return risk > 0 && Number.isFinite(risk) ? t.pnl / risk : null;
+}
+
+function summarise(trades) {
+  const n = trades.length;
+  if (!n) return { n: 0, winRate: null, avgR: null, totalR: 0 };
+  const rs = trades.map(tradeR).filter((r) => r !== null);
+  const wins = trades.filter((t) => t.pnl > 0).length;
+  const totalR = rs.reduce((a, b) => a + b, 0);
+  return { n, winRate: Math.round((wins / n) * 100), avgR: rs.length ? r2(totalR / rs.length) : null, totalR: r2(totalR) };
+}
+
+// The conditions a trade can be sorted by. Each one maps to the filter that
+// would avoid its losing side.
+const LENSES = [
+  {
+    key: 'trend', title: 'Trend at entry',
+    side: (t) => (t.ctx?.trendUp === undefined ? null : t.ctx.trendUp ? 'with' : 'against'),
+    labels: { with: 'bought above the 200-bar average (with the trend)', against: 'bought below the 200-bar average (against the trend)' },
+    bad: 'against', fix: { trendFilter: true }, undo: { trendFilter: false },
+    fixText: 'only buy while price is above the 200-bar average',
+  },
+  {
+    key: 'adx', title: 'Trend strength at entry',
+    side: (t) => (t.ctx?.adx == null ? null : t.ctx.adx >= 20 ? 'trending' : 'ranging'),
+    labels: { trending: 'bought while the market was trending (ADX 20+)', ranging: 'bought in a ranging market (ADX under 20)' },
+    bad: 'ranging', fix: { minAdx: 20 }, undo: { minAdx: null },
+    fixText: 'skip entries while ADX is under 20',
+  },
+  {
+    key: 'rsi', title: 'RSI at entry',
+    side: (t) => (t.ctx?.rsi == null ? null : t.ctx.rsi > 70 ? 'hot' : 'normal'),
+    labels: { hot: 'bought with RSI above 70 (already stretched)', normal: 'bought with RSI at 70 or below' },
+    bad: 'hot', fix: { maxEntryRsi: 70 }, undo: { maxEntryRsi: null },
+    fixText: 'skip entries while RSI is above 70',
+  },
+];
+
+/**
+ * Read the trade log. Returns overall numbers, a per-condition breakdown, a
+ * per-coin breakdown and plain-language findings.
+ */
+export function reviewTrades(closed = [], { includeManual = false } = {}) {
+  const trades = closed.filter((t) => includeManual || !t.manual);
+  const overall = summarise(trades);
+  const lenses = LENSES.map((L) => {
+    const groups = {};
+    for (const t of trades) { const s = L.side(t); if (s) (groups[s] ||= []).push(t); }
+    const out = Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, summarise(v)]));
+    const bad = out[L.bad], good = Object.entries(out).find(([k]) => k !== L.bad)?.[1];
+    const judged = bad && good && bad.n >= MIN_GROUP && good.n >= MIN_GROUP && bad.avgR !== null && good.avgR !== null;
+    const losing = judged && bad.avgR < 0 && bad.avgR <= good.avgR - GAP_R;
+    return { key: L.key, title: L.title, groups: out, labels: L.labels, judged, losing, fixText: L.fixText };
+  });
+  const bySymbol = {};
+  for (const t of trades) (bySymbol[t.symbol] ||= []).push(t);
+  const coins = Object.entries(bySymbol).map(([symbol, v]) => ({ symbol, ...summarise(v) })).sort((a, b) => a.totalR - b.totalR);
+  const exits = {};
+  for (const t of trades) (exits[t.reason] ||= []).push(t);
+
+  const findings = [];
+  if (overall.n < MIN_TRADES) findings.push(`${overall.n ? `Only ${overall.n} closed trade${overall.n === 1 ? '' : 's'} so far` : 'No closed trades yet'} — the review needs ${MIN_TRADES} before it changes anything.`);
+  for (const l of lenses) {
+    if (!l.judged) continue;
+    const [bk, gk] = [LENSES.find((L) => L.key === l.key).bad, Object.keys(l.groups).find((k) => k !== LENSES.find((L) => L.key === l.key).bad)];
+    const b = l.groups[bk], g = l.groups[gk];
+    findings.push(`${l.labels[bk][0].toUpperCase()}${l.labels[bk].slice(1)}: ${b.n} trades, ${b.winRate}% won, average ${b.avgR >= 0 ? '+' : ''}${b.avgR}R — versus ${g.avgR >= 0 ? '+' : ''}${g.avgR}R when it ${l.labels[gk]} (${g.n} trades).${l.losing ? ' That gap is large enough to act on.' : ''}`);
+  }
+  const worst = coins.find((c) => c.n >= MIN_GROUP && c.avgR !== null && c.avgR <= -0.4);
+  if (worst) findings.push(`${worst.symbol} has lost on average ${worst.avgR}R over ${worst.n} trades.`);
+  return { overall, lenses, coins, exits: Object.fromEntries(Object.entries(exits).map(([k, v]) => [k, summarise(v)])), findings };
+}
+
+/**
+ * Decide what to change. Returns { cfgPatch, changes: [{ text, evidence }] }.
+ * `history` is the changelog so far (to check whether earlier lessons helped).
+ */
+// Dropping a coin after a losing run was measured (2026-09-26, 4 timeframes,
+// held-out data) to be noise: on 4h it benched six coins on 6-9 trades each and
+// cost 6 points of return. It stays available but is off by default.
+export function decideChanges(review, cfg, history = [], closed = [], { excludeCoins = false } = {}) {
+  const patch = {};
+  const changes = [];
+  if (review.overall.n < MIN_TRADES) return { cfgPatch: patch, changes };
+
+  // 1. Unlearn: a filter switched on earlier that made things worse is switched off.
+  for (const h of history) {
+    if (h.undone || !h.lens || !h.at) continue;
+    const L = LENSES.find((x) => x.key === h.lens);
+    if (!L || !isOn(cfg, L)) continue;
+    const before = summarise(closed.filter((t) => !t.manual && t.exitAt < h.at));
+    const after = summarise(closed.filter((t) => !t.manual && t.openedAt >= h.at));
+    if (after.n >= MIN_GROUP * 2 && before.n >= MIN_GROUP && after.avgR <= before.avgR - GAP_R) {
+      Object.assign(patch, L.undo);
+      changes.push({ lens: L.key, undo: true, text: `Switched OFF "${L.fixText}" — since it was switched on, trades averaged ${after.avgR}R against ${before.avgR}R before.`, evidence: { before, after } });
+    }
+  }
+
+  // 2. Learn: switch on the filter for a condition that keeps losing.
+  for (const l of review.lenses) {
+    const L = LENSES.find((x) => x.key === l.key);
+    // A lesson that was unlearned once is not relearned: flipping a filter on
+    // and off every few checks was measured to cost money.
+    if (!l.losing || isOn(cfg, L) || changes.some((c) => c.lens === L.key) || history.some((h) => h.lens === L.key && (h.undo || h.undone))) continue;
+    const b = l.groups[L.bad];
+    Object.assign(patch, L.fix);
+    changes.push({ lens: L.key, text: `Switched ON "${L.fixText}" — ${b.n} trades taken in that condition averaged ${b.avgR}R.`, evidence: l.groups });
+  }
+
+  // 3. Stop trading a coin that keeps losing (at most one per review).
+  const worst = excludeCoins && review.coins.find((c) => c.n >= MIN_GROUP && c.avgR <= -0.4 && !(cfg.excluded || []).includes(c.symbol));
+  const universeLeft = (cfg.universe || []).filter((s) => !(cfg.excluded || []).includes(s));
+  if (worst && universeLeft.length > 3) {
+    patch.excluded = [...(cfg.excluded || []), worst.symbol];
+    changes.push({ text: `Stopped trading ${worst.symbol} — ${worst.n} trades, ${worst.winRate}% won, average ${worst.avgR}R.`, evidence: worst });
+  }
+  return { cfgPatch: patch, changes };
+}
+
+function isOn(cfg, L) {
+  return Object.entries(L.fix).every(([k, v]) => cfg[k] === v);
+}
+
+/** The filters the review can control, in words — for the settings panel. */
+export function activeLessons(cfg) {
+  const on = LENSES.filter((L) => isOn(cfg, L)).map((L) => L.fixText);
+  if (cfg.excluded?.length) on.push(`not trading ${cfg.excluded.join(', ')}`);
+  return on;
+}
+
+const usd = (v) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+const EXIT_WORDS = {
+  target: 'hit the target', 'stop-loss': 'were stopped out', 'trailing stop': 'hit the trailing stop',
+  'break-even stop': 'came back to entry', 'signal reversal': 'were sold on a reversal', 'sold into strength': 'were sold into strength',
+  'closed by you': 'were closed by hand', 'no exchange price': 'were closed for lack of exchange prices', 'recorded by you': 'were recorded closed',
+};
+
+/**
+ * What drove an account's result, in plain words with the numbers behind each
+ * line: how trades ended, what the win rate had to be, what fees took, which
+ * coins cost most and whether positions ever added up to more than the account.
+ * Reads the log only; it changes nothing.
+ */
+export function diagnose(closed = [], { startingBalance = null } = {}) {
+  const trades = closed.filter((t) => Number.isFinite(t.pnl));
+  const out = [];
+  if (trades.length < 5) return out;
+  const total = trades.reduce((a, t) => a + t.pnl, 0);
+  const fees = trades.reduce((a, t) => a + (t.feePaid || 0), 0);
+
+  // 1. How the trades ended, biggest money first.
+  const byExit = {};
+  for (const t of trades) (byExit[t.reason] ||= { n: 0, pnl: 0 }).n++, byExit[t.reason].pnl += t.pnl;
+  const parts = Object.entries(byExit).sort((a, b) => Math.abs(b[1].pnl) - Math.abs(a[1].pnl))
+    .map(([k, v]) => `${v.n} ${EXIT_WORDS[k] || k} (${usd(v.pnl)})`);
+  out.push(`Of ${trades.length} trades, ${parts.join(', ')}.`);
+
+  // 2. The win rate it needed, given the size of wins and losses.
+  const rs = trades.map(tradeR).filter((r) => r !== null);
+  const wins = rs.filter((r) => r > 0), losses = rs.filter((r) => r <= 0);
+  if (wins.length && losses.length) {
+    const aw = wins.reduce((a, b) => a + b, 0) / wins.length;
+    const al = Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length);
+    const need = (al / (aw + al)) * 100;
+    const won = (wins.length / rs.length) * 100;
+    out.push(`Winners averaged +${aw.toFixed(2)}R and losers −${al.toFixed(2)}R, so breaking even needed ${need.toFixed(0)}% of trades to win; ${won.toFixed(0)}% did${won >= need ? ' — enough' : ''}.`);
+  }
+
+  // 3. Fees.
+  if (fees > 0) {
+    const ofStart = startingBalance ? ` (${((fees / startingBalance) * 100).toFixed(1)}% of the starting balance)` : '';
+    out.push(`Fees came to ${usd(fees)}${ofStart}${total < 0 && fees > 0 ? ` — ${Math.min(100, (fees / Math.abs(total)) * 100).toFixed(0)}% of the size of the overall loss` : ''}. Every trade pays about 0.2% round trip, so small, frequent trades lose most to fees.`);
+  }
+
+  // 4. The coins that cost most.
+  const bySym = {};
+  for (const t of trades) (bySym[t.symbol] ||= { n: 0, pnl: 0, wins: 0 }).n++, bySym[t.symbol].pnl += t.pnl, bySym[t.symbol].wins += t.pnl > 0 ? 1 : 0;
+  const worst = Object.entries(bySym).filter(([, v]) => v.pnl < 0).sort((a, b) => a[1].pnl - b[1].pnl).slice(0, 2);
+  if (worst.length && total < 0) out.push(`Most of the loss came from ${worst.map(([s, v]) => `${s} (${v.n} trades, ${v.wins} won, ${usd(v.pnl)})`).join(' and ')}.`);
+
+  // 5. Positions open at the same time, as a share of the account.
+  const ev = [];
+  for (const t of trades) if (!t.real && Number.isFinite(t.notional) && t.openedAt && t.exitAt) ev.push([t.openedAt, t.notional], [t.exitAt, -t.notional]);
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let now = 0, peak = 0;
+  for (const [, d] of ev) { now += d; peak = Math.max(peak, now); }
+  if (startingBalance && peak > startingBalance * 1.02) {
+    out.push(`At its peak, open positions added up to ${((peak / startingBalance) * 100).toFixed(0)}% of the starting balance — more money than the account had, which multiplies losses. Buys are now limited to the cash that is free.`);
+  }
+  return out;
+}

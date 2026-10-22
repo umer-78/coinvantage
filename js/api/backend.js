@@ -269,6 +269,18 @@ export async function getAiRecord({ limit = 5000, symbol = null, interval = null
   return data || [];
 }
 
+/**
+ * The AI's shared learning record (ai_learn), one summary per chart, kept up
+ * by the server's learning job. Null when it cannot be read.
+ */
+export async function getCloudLearning() {
+  const client = await sb();
+  if (!client) return null;
+  const { data, error } = await client.from('ai_learn').select('interval,summary,updated_at');
+  if (error) return null;
+  return Object.fromEntries((data || []).filter((r) => r.summary).map((r) => [r.interval, { ...r.summary, updatedAt: r.updated_at }]));
+}
+
 export async function getAppSettings() {
   const client = await sb();
   if (!client) return {};

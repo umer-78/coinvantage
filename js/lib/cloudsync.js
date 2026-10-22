@@ -18,13 +18,21 @@
 // portfolio, wallets and drawings a visitor had made before signing up.
 //
 // Storage and network are passed in, so all of this runs under Node in the tests.
+import { mergeLedgers } from './selfimprove.js';
 
 export const COLUMN_KEYS = ['watchlist', 'holdings', 'wallets', 'drawings', 'settings'];
 export const TRADING_KEYS = [
   'traderState', 'myDemoState', 'realTradeState',     // the three accounts
   'traderCfg', 'traderLessons', 'traderAutoLearn',    // the AI's rules and what it learned
   'traderRunning', 'aiSession', 'traderAutoStarted',  // whether the AI is running
+  'aiLedger',                                         // your graded forecasts, which tune how far each chart's direction is trusted
 ];
+/**
+ * Keys whose two copies are joined rather than one kept: a forecast record
+ * grows on every device it is used on, so keeping either side would lose the
+ * other's graded forecasts.
+ */
+export const JOINED_KEYS = { aiLedger: mergeLedgers };
 export const SYNCED_KEYS = [...COLUMN_KEYS, ...TRADING_KEYS];
 export const ACCOUNT_KEYS = ['traderState', 'myDemoState', 'realTradeState'];
 /** The accounts holding trades the user made; the AI's own account is not one. */
@@ -91,6 +99,7 @@ export function isBlank(v, key) {
   if (v === null || v === undefined) return true;
   if (key === 'traderState') return tradeIds(v).size === 0 && !Number.isFinite(v?.startedAt);
   if (ACCOUNT_KEYS.includes(key)) return tradeIds(v).size === 0;
+  if (key === 'aiLedger') return !v?.entries?.length;
   if (Array.isArray(v)) return v.length === 0;
   if (isObj(v)) return Object.keys(v).length === 0;
   return false;
@@ -136,6 +145,16 @@ export function mergeAll(local, remote, base = {}) {
   for (const k of SYNCED_KEYS) {
     const l = val(local?.[k]), r = val(remote?.[k]);
     const d = decide(l, r, base[k], k);
+    if (d === 'conflict' && JOINED_KEYS[k]) {
+      // both sides have their own: keep both, here and in the cloud
+      const j = JOINED_KEYS[k](l, r);
+      const fj = fingerprint(j);
+      keys[k] = j;
+      if (fj !== fingerprint(l)) download.push(k);
+      if (fj !== fingerprint(r)) upload.push(k);
+      else agreed[k] = fj;
+      continue;
+    }
     if (d === 'same') { keys[k] = l; if (r !== null) agreed[k] = fingerprint(r); }
     else if (d === 'local') { keys[k] = l; upload.push(k); }
     else if (d === 'keep') keys[k] = l;

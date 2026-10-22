@@ -20,8 +20,8 @@ export const MODEL_VERSION = 1;
 /** Rolling windows the UI publishes (last N resolved forecasts). */
 export const ACC_WINDOWS = [20, 50, 100];
 
-/** Max forecast rows kept on device. Oldest resolved rows are dropped first. */
-const LEDGER_CAP = 400;
+/** Max forecast rows kept. Oldest resolved rows are dropped first. */
+export const LEDGER_CAP = 400;
 
 // ---------------------------------------------------------------- ledger
 export function newLedger() {
@@ -491,6 +491,31 @@ export function sessionLabel(status) {
   return 'Idle';
 }
 
+/**
+ * Two copies of one account's record, from two devices, as one: every forecast
+ * either holds, the graded copy where one is graded. The same result whichever
+ * side is passed first, so devices settle on one record.
+ */
+export function mergeLedgers(a, b) {
+  const A = a?.entries ? a : newLedger(), B = b?.entries ? b : newLedger();
+  const byId = new Map();
+  const better = (x, y) => (x.resolved !== y.resolved ? x.resolved : x.t !== y.t ? x.t < y.t : JSON.stringify(x) < JSON.stringify(y));
+  for (const e of [...A.entries, ...B.entries]) {
+    const prev = byId.get(e.id);
+    if (!prev || better(e, prev)) byId.set(e.id, e);
+  }
+  const entries = [...byId.values()].sort((x, y) => x.t - y.t || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  while (entries.length > LEDGER_CAP) {
+    const i = entries.findIndex((e) => e.resolved);
+    entries.splice(i < 0 ? 0 : i, 1);
+  }
+  return {
+    modelVersion: MODEL_VERSION, entries,
+    createdAt: Math.min(A.createdAt || Infinity, B.createdAt || Infinity),
+    updatedAt: Math.max(A.updatedAt || 0, B.updatedAt || 0),
+  };
+}
+
 // ---------------------------------------------------------------- persistence helpers
 // The ledger itself is pure; these thin wrappers keep localStorage access in
 // the views' layer so the module stays Node-safe for tests.
@@ -515,6 +540,8 @@ export function saveLedger(ledger) {
   try {
     if (typeof localStorage === 'undefined') return false;
     localStorage.setItem(`cv:${LEDGER_KEY}`, JSON.stringify(ledger));
+    // signed in, the record goes up to the account like the other synced keys
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('cv:store', { detail: { key: LEDGER_KEY } }));
     return true;
   } catch {
     return false;

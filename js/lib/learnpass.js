@@ -79,13 +79,19 @@ export async function learningPass(interval, { symbols, onStep, candlesBySymbol 
 /**
  * Learn from a chart someone is looking at: score this coin's due calls on the
  * candles already loaded, then log the current indicator readings and the
- * forecast before the outcome is known. Every chart opened teaches the system
- * something, not only the trader page. Returns the blend for display.
+ * forecast before the outcome is known. Returns the blend for display.
+ * With the cloud's record for this chart (`cloud`, from cloudlearn.js) the
+ * blend uses the weights learned there and nothing is kept in this browser:
+ * the cloud's job logs and grades the calls itself.
  */
-export function learnFromChart({ symbol, interval, candles, forecastProb = null }) {
+export function learnFromChart({ symbol, interval, candles, forecastProb = null, cloud = null }) {
   try {
     const closed = candles.slice(0, -1);
     if (closed.length < 260) return null;
+    if (cloud?.weights) {
+      const votes = indicatorVotes(closed, computeAll(closed), closed.length - 1);
+      return { blendProb: blend(forecastProb, votes, cloud.weights), champion: cloud.champion || 'forecast', weights: cloud.weights, votes, cloud: true, coins: cloud.coins || 0 };
+    }
     const H = DEFAULT_HORIZON[interval] || 12;
     const step = INTERVAL_MS[interval] || 36e5;
     let L = loadLearn();

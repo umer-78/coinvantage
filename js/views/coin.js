@@ -5,6 +5,7 @@ import { streamCandles } from '../api/exstream.js';
 import { generateSignal, confluence, geometryFor, upRateFor, scoreAt } from '../lib/signals.js';
 import { runForecast, runBacktest, runHistory } from '../lib/compute.js';
 import { learnFromChart } from '../lib/learnpass.js';
+import { cloudLearning } from '../lib/cloudlearn.js';
 import { computeAll } from '../lib/indicators.js';
 import { TESTED_ACCURACY, shownProbUp, directionReliable, recheckOverall } from '../lib/predict.js';
 import { timingOutlook, TESTED_TIMING, timingTrust, condenseTiming, bestTimingChart } from '../lib/timing.js';
@@ -767,8 +768,11 @@ export async function render(el, [symParam]) {
       st.ledger = ledger;
       st.anomalies = anomalyFlags(st.candles);
     } catch { /* ledger is a convenience, never load-bearing */ }
-    // AI learning center: this chart's readings and forecast are logged for grading.
-    st.learned = st.tested && !stable ? learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null }) : null;
+    // AI learning center: the blend with the weights the cloud learned on this
+    // chart; without the cloud, this chart's readings are logged here for grading.
+    const cloudRec = st.tested && !stable ? (await cloudLearning().catch(() => null))?.[iv] || null : null;
+    if (st.disposed || iv !== st.interval || H !== st.horizon) return;
+    st.learned = st.tested && !stable ? learnFromChart({ symbol: coin.symbol, interval: iv, candles: st.candles, forecastProb: fc.ok ? fc.probUp : null, cloud: cloudRec }) : null;
 
     const trustNow = directionTrustFor(iv, st.ledger || loadLedger()).trust;
     if (fc.ok && st.tested && !stable) {
@@ -817,8 +821,8 @@ export async function render(el, [symParam]) {
   // Where the shrink on this chart comes from, so the self-adjustment is visible.
   function trustNote(t) {
     const base = `Chance shrunk toward 50% by its measured trust on ${esc(st.interval)}: ${t.prior.toFixed(2)} in the release test`;
-    if (t.local === null) return `${base}. After ${MIN_GRADED_FOR_TRUST} graded forecasts on this device it starts adjusting (${t.graded} so far).`;
-    return `${base}, ${t.trust.toFixed(2)} after ${t.graded} forecasts graded on this device (they alone fit ${t.local.toFixed(2)}).`;
+    if (t.local === null) return `${base}. After ${MIN_GRADED_FOR_TRUST} of your forecasts are graded it starts adjusting (${t.graded} so far).`;
+    return `${base}, ${t.trust.toFixed(2)} after ${t.graded} of your forecasts were graded (they alone fit ${t.local.toFixed(2)}).`;
   }
 
   function ring(prob) {
@@ -895,7 +899,7 @@ export async function render(el, [symParam]) {
         </div>
       </div>
       <div class="learning-box mt">
-        <div class="row spread"><b>This device's forecast record</b><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
+        <div class="row spread"><b>Your forecast record</b><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
         <div class="grid g2" style="margin-top:8px">
           <div class="stat"><span class="k">Last 20</span><span class="v" style="font-size:16px">${winHtml(20)}</span></div>
           <div class="stat"><span class="k">Last 50</span><span class="v" style="font-size:16px">${winHtml(50)}</span></div>
@@ -903,7 +907,7 @@ export async function render(el, [symParam]) {
           <div class="stat"><span class="k">Recorded</span><span class="v" style="font-size:16px">${ls.resolved}<span class="fine"> resolved</span></span><span class="s fine">${ls.pending} waiting</span></div>
         </div>
         ${spark.length > 1 ? `<div style="margin-top:8px">${sparklineSvg(spark, { width: 220, height: 32, color: 'var(--accent)' })}</div>` : ''}
-        <p class="fine" style="margin:6px 0 0">Hit rate over this device's own resolved forecasts (rolling windows). Keeping score does not make the forecast better: when the hit rate is under 55%, the confidence shown is pulled toward 50/50. Model v${ls.modelVersion}.</p>
+        <p class="fine" style="margin:6px 0 0">Hit rate over your own resolved forecasts (rolling windows; kept with your account when signed in). Keeping score does not make the forecast better: when the hit rate is under 55%, the confidence shown is pulled toward 50/50. Model v${ls.modelVersion}.</p>
       </div>
       ${ens3?.ok ? `
       <div class="ensemble3 mt">
@@ -911,7 +915,7 @@ export async function render(el, [symParam]) {
         <dl class="kv" style="margin-top:8px">
           ${ens3.models.map((m) => `<dt>${esc(m.name)}</dt><dd><span class="${m.probUp >= 0.5 ? 'up' : 'down'}">${(m.probUp * 100).toFixed(1)}% up</span> <span class="fine">· weight ${m.weightPct}%</span></dd>`).join('')}
         </dl>
-        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b>.${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} ${ens3.weights.source === 'default' ? `Its three models (momentum, mean-reversion and past patterns) count equally until each has ${MIN_FAMILY_CALLS} graded calls on this device (most so far: ${ens3.weights.graded}).` : `Each model's weight comes from its own record on this device: ${ens3.models.map((m) => { const r = ens3.weights.record[m.key]; return `${m.key === 'reversion' ? 'mean-reversion' : m.key === 'pattern' ? 'patterns' : 'momentum'} ${r.n ? `${Math.round(r.rate * 100)}% right over ${r.n} calls` : 'no graded calls yet'}`; }).join(', ')}.`} Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? `Its lean is shrunk toward 50% because the blend itself has been right only ${Math.round(ens3.blendAccuracy)}% of the time on this device.` : ''}</p>
+        <p class="fine" style="margin:6px 0 0">Blended → <b class="${ens3.probUp >= 0.5 ? 'up' : 'down'}">${(ens3.probUp * 100).toFixed(1)}% up</b>.${reliable && (ens3.probUp >= 0.5) !== (shown >= 0.5) ? ` <b>It disagrees with the main forecast above</b> (${(shown * 100).toFixed(1)}% up), which is what the page goes by.` : ''} ${ens3.weights.source === 'default' ? `Its three models (momentum, mean-reversion and past patterns) count equally until each has ${MIN_FAMILY_CALLS} graded calls in your record (most so far: ${ens3.weights.graded}).` : `Each model's weight comes from its own record in your forecasts: ${ens3.models.map((m) => { const r = ens3.weights.record[m.key]; return `${m.key === 'reversion' ? 'mean-reversion' : m.key === 'pattern' ? 'patterns' : 'momentum'} ${r.n ? `${Math.round(r.rate * 100)}% right over ${r.n} calls` : 'no graded calls yet'}`; }).join(', ')}.`} Experimental cross-check — not part of the published walk-forward accuracy${reliable ? '' : `, and on ${esc(st.interval)} the release test found no reliable direction, so read it for interest only`}. ${ens3.dampened ? `Its lean is shrunk toward 50% because the blend itself has been right only ${Math.round(ens3.blendAccuracy)}% of the time in your record.` : ''}</p>
       </div>` : ''}
       <dl class="kv mt">
         <dt>Brier score (lower is better)</dt><dd>${brier !== null ? brier.toFixed(3) : '—'}</dd>
@@ -1098,7 +1102,8 @@ export async function render(el, [symParam]) {
                 const earned = Object.values(st.learned.weights || {}).filter(Boolean).length;
                 const speaking = Object.entries(st.learned.votes || {}).filter(([k, v]) => v && st.learned.weights?.[k]).length;
                 const same = !speaking ? (earned ? `the same as the forecast: the ${earned} indicator${earned > 1 ? 's' : ''} with a vote on ${esc(st.interval)} ${earned > 1 ? 'are' : 'is'} not signalling right now · ` : `the same as the forecast: no indicator has earned a vote on ${esc(st.interval)} yet · `) : '';
-                return same + (st.learned.champion === 'blend' ? 'the blend makes the call on this device' : 'the forecast still makes the call — the blend has not beaten it here yet');
+                const where = st.learned.cloud ? `in the cloud's live record${st.learned.coins ? ` on ${st.learned.coins} coins` : ''}` : 'in this browser';
+                return same + (st.learned.champion === 'blend' ? `the blend makes the call: it beat the forecast ${where}` : `the forecast still makes the call: the blend has not beaten it ${where}`);
               })()}</span></dd>` : ''}
               <dt>Direction accuracy on unseen data</dt><dd>${e.accuracy !== null ? (e.accuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${e.samples} tests${e.accuracyRange ? ` · 95% range ${(e.accuracyRange[0] * 100).toFixed(0)}–${(e.accuracyRange[1] * 100).toFixed(0)}%` : ''})</span></dd>
               <dt>Accuracy when models strongly agree</dt><dd>${e.confidentAccuracy !== null ? (e.confidentAccuracy * 100).toFixed(1) + '%' : '—'} <span class="muted">(${Math.round(e.confidentCoverage * 100)}% of the time)</span></dd>

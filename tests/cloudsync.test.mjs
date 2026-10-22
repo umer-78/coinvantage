@@ -357,3 +357,28 @@ test('only trades this device alone had count as lost', () => {
   assert.deepEqual(missingTrades(mine, account([['BTC', 1]])), ['SOL:3', 'ETH:2']);
   assert.deepEqual(missingTrades(account([['BTC', 1]]), mine), []);
 });
+
+test('your forecast record follows the account: two devices\' graded forecasts are joined, not one kept', async () => {
+  const { newLedger, recordForecast, resolveDueLedger, mergeLedgers } = await import('../js/lib/selfimprove.js');
+  const H = 3600e3;
+  const rec = (L, symbol, at, p = 0.6) => recordForecast(L, { symbol, interval: '1h', price: 100, probUp: p, horizonBars: 12, horizonAt: at });
+  const cloud = makeCloud();
+  cloud.signUp('u1');
+  const a = makeDevice(cloud), b = makeDevice(cloud);
+  a.store.save('aiLedger', rec(rec(newLedger(), 'BTC', 10 * H), 'ETH', 11 * H));
+  b.store.save('aiLedger', rec(newLedger(), 'SOL', 12 * H));
+  a.session.id = 'u1'; b.session.id = 'u1';
+  await a.sync();
+  await b.sync();
+  await a.sync();
+  const ids = (d) => d.store.load('aiLedger', null).entries.map((e) => e.symbol).sort();
+  assert.deepEqual(ids(a), ['BTC', 'ETH', 'SOL']);
+  assert.deepEqual(ids(b), ['BTC', 'ETH', 'SOL']);
+  assert.deepEqual(cloud.rows.get('u1').trading.aiLedger.entries.map((e) => e.symbol).sort(), ['BTC', 'ETH', 'SOL']);
+  // a forecast graded on one device stays graded when the other's ungraded copy meets it
+  const graded = resolveDueLedger(a.store.load('aiLedger', null), [{ t: 10 * H, c: 120 }], { symbol: 'BTC', interval: '1h' });
+  const joined = mergeLedgers(b.store.load('aiLedger', null), graded);
+  assert.equal(joined.entries.find((e) => e.symbol === 'BTC').resolved, true);
+  assert.deepEqual(mergeLedgers(graded, b.store.load('aiLedger', null)), joined, 'the same whichever side comes first');
+  assert.equal(isBlank(newLedger(), 'aiLedger'), true, 'an empty record never replaces one with forecasts');
+});
