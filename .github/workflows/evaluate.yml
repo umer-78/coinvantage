@@ -10,7 +10,7 @@ on:
       job:
         description: Which evaluation to run
         type: choice
-        options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, signals, timing, all]
+        options: [selection, trader-rules, trader-folds, engine, bands, external, momentum, signals, timing, live, all]
         default: selection
   # Once a month the main tests re-run on fresh candles, so the figures the app
   # publishes can be checked against the latest data (each job's summary shows
@@ -32,6 +32,25 @@ env:
   UNIVERSE: tools/universe.json
 
 jobs:
+  # The deployed site with live market data, in a real browser: does every part
+  # of each coin page (chart, signal, forecast, timing, AI signal, learning)
+  # and the scanner, advice, learning, record and trading pages read its data?
+  live:
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'live' || inputs.job == 'all')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install a browser
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Every coin page and chart reads live data
+        run: node tools/live-check.mjs https://umer-78.github.io/coinvantage/
+
   trader-rules:
     if: inputs.job == 'trader-rules' || inputs.job == 'all'
     runs-on: ubuntu-latest
