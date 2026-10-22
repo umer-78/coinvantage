@@ -70,6 +70,8 @@ computers alike.
 
 ### Measured accuracy (honest numbers)
 
+**Latest (2026-10-22): the AI learns and trades in the cloud.** A scheduled job grades every indicator, the forecast and the learned blend on 78 coins on every chart around the clock, into one record every device reads; another checks every signed-in account whose AI trader is on every five minutes, with the page closed, through the same check routine the page runs. Your forecast record syncs with your account, and the site keeps little on the device. The Trading page shows what each tested chart made per hour, day, week and month after real costs, beside holding the coins.
+
 **Latest: every model re-measured on all 106 coins the app can trade (2026-10-15).** The coins are CoinGecko's top 150 less stablecoins, tokenised funds and coins no exchange the app reads lists (`tools/universe.json` names the eight left out). Each one comes from the exchange the app reads it on: Binance, Gate.io or HTX. The tests run in GitHub Actions (**Evaluate** workflow). A published decision changes only when two runs in a row agree. This time both runs used nearly the same candles, so the monthly re-run is the first on new data.
 
 - **Direction:** no edge on any chart in either run (hit rate below the hindsight baseline everywhere). The app shows no direction call on any chart. A chart's test forecasts share their moments across coins, and crypto moves together. So 1,060 forecasts are far fewer independent tests than they look: one run 90 minutes after another moved the 1m 80% range from 69.9% to 83.3%.

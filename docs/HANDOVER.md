@@ -80,6 +80,61 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### The AI learns and trades in the cloud (2026-10-22)
+Before this, the AI learning pass and the AI trader only ran while a page was open, and the
+learning record lived in that one browser. Now:
+- **Cloud learning** (`supabase/functions/cv/learn.ts`, pure logic in `learnjob.js`, cron
+  `cv-learn` at 3,8,13… past each hour): one chart and six coins a run, in turn, over the 78
+  coins of `tools/universe.json` that read from Binance, on 1m–1d. It grades calls whose outcome
+  candle has closed, measures every indicator on each coin's last 500 candles, logs this candle's
+  calls (indicators, forecast, blend) before the outcome is known, and works out each chart's
+  weights and champion (`engine/learncenter.js`, byte-identical to `js/lib/learncenter.js`). One
+  row per chart in `ai_learn` (public read of `summary` only; the `ledger` column stays with the
+  job). A call whose outcome candle can no longer be read is dropped and counted (`expired`).
+  The AI learning page, the coin page's blend and the Trading page read it (`js/lib/cloudlearn.js`);
+  a browser runs its own pass only when the record cannot be read.
+- **Cloud trader** (`trader.ts`, cron `cv-trader` at 1,6,11… past each hour): every signed-in
+  account whose AI is on (`aiSession.status = 'running'`) is checked with the page closed, by the
+  same routine the page runs (`js/lib/traderrun.js`: settings, chart rules, lessons, replay, log,
+  self-review), on candles from the exchange the browser reads each coin from (`candles.ts`:
+  Binance, else the Gate.io/HTX/OKX venue in `coins.js`; a short Binance history takes the longer
+  one). It skips an account whose last check came after the newest candle closed. It saves through
+  `cv_save_trader`, only if the account is unchanged since it was read (a page saved meanwhile:
+  the next run starts from that copy). Both database functions are service-role only. `trader-run`
+  takes `{"dry": true}` to report without saving. Check entries carry `by: 'cloud'` or `'page'`.
+- **Your forecast record** (`aiLedger`) now syncs with the account (`cloudsync.js` TRADING_KEYS),
+  joined across devices rather than one copy kept (`mergeLedgers`).
+- **Less kept on the device**: the persisted response cache is capped at 12 entries and about
+  600 KB (`js/api/http.js`; it used to keep one per coin page visited), keys of removed features
+  are cleared, and `aiLearn` is removed once the cloud record can be read.
+Verified after deploy (cv v16, pinned to 7a83d1d): selftest 200 and equal to the site's engine;
+a learning run on every chart (6 calls each); a trader run on the one running account read all 89
+of its coins (0 failed) and saved.
+
+The one running account (Oct 22) was on 4h, whose tested rules lost money once real fills are
+counted, with no trades yet; at the owner's request its settings were fixed in the cloud: the
+chart is now 1h (the best tested after costs) and the empty 4h account was restarted on 1h. The
+previous settings and account are kept in `trading.traderBackup`.
+
+### What each chart can make, per hour to per month (2026-10-22)
+`earningsByChart(cfg)` spreads each tested chart's walk-forward average (at the account's risk,
+read between the measured levels, less the fill cost) evenly over an hour, a day, a week and a
+month, with the worst test period and holding the coins beside it; the Trading page shows it on
+the account's balance with the account's own record so far. `settingsWarnings` now says when the
+chosen chart's tested rules lost money after fills (4h). Simple averages of past periods: the
+page says so, and that holding made more on every chart in those (mostly rising) periods.
+
+### When to sell: the exit test (2026-10-22)
+`tools/evaluate-exits.mjs` (Evaluate job `exits`, monthly) keeps each chart's entry rules and
+varies only the exits (stop 2/3/4 ATR, target 1.5–5R or a 2/3 ATR trailing stop, break-even at
+1R, selling after 1–3 weak candles or never), picked on the history before each block and run on
+the block, after 0.15% a side. First run (99–103 coins, to Oct 22): under the current exits the
+stop-loss ends ~45% of trades at −1.0 to −1.2R, the target ~20% at +2.6 to +3.0R, and selling
+on weak candles ~35% at −0.43 to −0.48R (only 8–12% of those win). Picked exits beat the current
+ones in 2 of 3 blocks on 15m and 4h (passing the bar once), 1 of 3 on 1h and 0 of 3 on 1d, so no
+exit changes until a second run agrees. The job also A/Bs the weak-candle rule on its own (off,
+after 1, after 3), with nothing fitted.
+
 ### Score levels are not a buy setup (2026-10-22)
 The server record (`signal_log`, last 30 days) graded the levels the chart score draws: on 1d,
 long plans after "strong rise" readings lost 2.5% a plan (8 of 80 reached a target) and after
