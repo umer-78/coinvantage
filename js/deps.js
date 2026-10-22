@@ -13,6 +13,7 @@ export const DEPS = {
     'format.js',
     'i18n.js',
     'lib/barrier.js',
+    'lib/cloudlearn.js',
     'lib/cloudsync.js',
     'lib/demo.js',
     'lib/indicators.js',

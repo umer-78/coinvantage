@@ -17,8 +17,41 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function lsGet(key) {
   try { const v = localStorage.getItem('cv:cache:' + key); return v ? JSON.parse(v) : null; } catch { return null; }
 }
+// What is kept on the device stays small: the dozen most recent responses, at
+// most about 600 KB in all, oldest out first. It used to keep every response
+// it was asked to (one per coin page visited) until the browser ran out of room.
+const LS_MAX_KEYS = 12, LS_MAX_BYTES = 600e3, LS_INDEX = 'cv:cacheIndex';
+function lsIndex() {
+  try { const v = JSON.parse(localStorage.getItem(LS_INDEX) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+}
 function lsSet(key, value) {
-  try { localStorage.setItem('cv:cache:' + key, JSON.stringify(value)); } catch { /* quota or private mode */ }
+  try {
+    const text = JSON.stringify(value);
+    if (text.length > LS_MAX_BYTES / 2) return;   // too big to be worth keeping
+    localStorage.setItem('cv:cache:' + key, text);
+    const idx = lsIndex().filter((e) => e.k !== key);
+    idx.push({ k: key, n: text.length });
+    let total = idx.reduce((a, e) => a + e.n, 0);
+    while (idx.length > LS_MAX_KEYS || total > LS_MAX_BYTES) {
+      const old = idx.shift();
+      total -= old.n;
+      localStorage.removeItem('cv:cache:' + old.k);
+    }
+    localStorage.setItem(LS_INDEX, JSON.stringify(idx));
+  } catch { /* quota or private mode */ }
+}
+/** Drop kept responses the index does not know (left by older versions, which kept everything). */
+export function tidyHttpCache() {
+  try {
+    const known = new Set(lsIndex().map((e) => 'cv:cache:' + e.k));
+    const stale = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('cv:cache:') && !known.has(k)) stale.push(k);
+    }
+    for (const k of stale) localStorage.removeItem(k);
+    return stale.length;
+  } catch { return 0; }
 }
 
 async function rawFetch(url, { timeout = 10000, method = 'GET', body, headers } = {}) {

@@ -3,7 +3,9 @@
 import { CONFIG } from './config.js';
 import { $, $$, icon, coinLogo, toast, modal } from './ui.js';
 import { esc, price, changeHtml, money, pct } from './format.js';
-import { settings, load, save, remove } from './store.js';
+import { settings, load, save, remove, tidyStorage } from './store.js';
+import { tidyHttpCache } from './api/http.js';
+import { cloudLearning } from './lib/cloudlearn.js';
 import { markets, searchCoins, dataStatus, syncExchangeClock, findCoin, getCandles } from './api/market.js';
 import { generateSignal } from './lib/signals.js';
 import { live } from './api/live.js';
@@ -477,6 +479,14 @@ initSelectors().then(route).catch(route);
 initTicker();
 initAccount();
 riskGate();
+// Keep as little as possible on this device: what removed features left, the
+// response cache beyond its limit, and this browser's own learning record once
+// the cloud's (which every device reads) can be read.
+setTimeout(() => {
+  tidyStorage();
+  tidyHttpCache();
+  cloudLearning().then((c) => { if (c) remove('aiLearn'); }).catch(() => {});
+}, 4000);
 
 // ---------------------------------------------------------------- updates
 //
@@ -487,7 +497,7 @@ riskGate();
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261022-151215";
+export const BUILD = "20261022-153546";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is

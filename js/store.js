@@ -60,3 +60,13 @@ export const settings = {
   get: () => ({ theme: 'dark', interval: '1h', horizon: 12, llmModel: '', llmAuto: false, customEndpoint: '', customModel: '', customKey: '', ...load('settings', {}) }),
   set(patch) { save('settings', { ...settings.get(), ...patch }); },
 };
+
+/**
+ * Keep as little as possible on this device: what removed features left
+ * behind, and kept responses beyond the cache's limit. Everything an account
+ * keeps is in the cloud; this device holds a working copy of it.
+ */
+const DEAD_KEYS = ['coinvantageAgents', 'coinvantageTaskLog', 'coinvantageOpenBBCache', 'coinvantageAnalystCache'];
+export function tidyStorage() {
+  try { for (const k of DEAD_KEYS) localStorage.removeItem(k); } catch { /* storage blocked */ }
+}

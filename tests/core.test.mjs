@@ -1566,3 +1566,21 @@ test('RSI of a price that never moved is a neutral 50, not overbought', () => {
   // one rise after a flat stretch is pure gain: 100
   assert.equal(rsi([...flat, 101], 14).at(-1), 100);
 });
+
+test('the response cache kept on the device stays small: a dozen entries, oldest out first', async () => {
+  const data = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (data.has(k) ? data.get(k) : null), setItem: (k, v) => data.set(k, String(v)), removeItem: (k) => data.delete(k),
+    key: (i) => [...data.keys()][i] ?? null, get length() { return data.size; },
+  };
+  data.set('cv:cache:old-coin-page', '{"x":1}');   // left by an older version, which kept everything
+  globalThis.fetch = async (url) => new Response(JSON.stringify({ url: String(url), pad: 'x'.repeat(1000) }), { status: 200 });
+  const { getJson, tidyHttpCache } = await import('../js/api/http.js');
+  for (let i = 0; i < 20; i++) await getJson(`https://example.test/r${i}`, { ttl: 1, persist: true, key: `k${i}` });
+  const kept = [...data.keys()].filter((k) => k.startsWith('cv:cache:k'));
+  assert.equal(kept.length, 12);
+  assert.ok(kept.includes('cv:cache:k19') && !kept.includes('cv:cache:k0'), 'the newest stay');
+  assert.equal(tidyHttpCache(), 1, 'what an older version left is cleared');
+  assert.ok(!data.has('cv:cache:old-coin-page'));
+  delete globalThis.localStorage;
+});
