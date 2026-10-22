@@ -84,8 +84,19 @@ for (const iv of IVS) {
     const test = withRegime(coins.map((s) => { const c = all[s]; const i0 = c.findIndex((x) => x.t >= tTrain); if (i0 < WARM) return null; const block = c.slice(i0 - WARM).filter((x) => x.t < tEnd); return block.length > WARM + 20 ? prep(s, block) : null; }).filter(Boolean));
     const pick = grid.map((g) => ({ g, m: account(base, g, train, 210) })).sort((a, b) => objective(b.m) - objective(a.m))[0].g;
     const cur = account(base, current, test, WARM), mine = account(base, pick, test, WARM);
-    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, pickExits: Object.fromEntries(EXIT_KEYS.map((k) => [k, pick[k]])), current: cur, own: mine, coins: test.length });
+    folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, pickExits: Object.fromEntries(EXIT_KEYS.map((k) => [k, pick[k]])), current: cur, own: mine, coins: test.length, test });
     console.error(`${iv} fold ${f} done`);
+  }
+  // The rule that sells after candles reading against the trade, on its own:
+  // the current exits with it off, after 1 candle and after 3, against after 2.
+  // No picking on the history, so nothing is fitted; the same bar decides.
+  const sellRule = {};
+  for (const bars of [null, 1, 3]) {
+    const runs = folds.map((x) => ({ cur: x.current, alt: account(base, { ...current, signalExitBars: bars }, x.test, WARM) }));
+    const wins = runs.filter((r) => r.alt.ret > r.cur.ret).length;
+    const gain = r2(runs.reduce((a, r) => a + r.alt.ret - r.cur.ret, 0) / runs.length);
+    const ddDiff = r2(runs.reduce((a, r) => a + r.alt.dd - r.cur.dd, 0) / runs.length);
+    sellRule[bars ?? 'off'] = { better: wins, gain, ddDiff, adopt: wins >= 2 && gain >= 1 && ddDiff <= 5, blocks: runs.map((r) => r2(r.alt.ret)) };
   }
   const mean = (k, m) => r2(folds.reduce((a, x) => a + x[k][m], 0) / folds.length);
   const better = folds.filter((x) => x.own.ret > x.current.ret).length;
@@ -99,12 +110,14 @@ for (const iv of IVS) {
   for (const x of folds) console.log(`  test ${x.from} → ${x.to}: current ${String(r2(x.current.ret)).padStart(7)}% (drop ${r2(x.current.dd)}%, ${x.current.trades} trades)  picked ${String(r2(x.own.ret)).padStart(7)}% (drop ${r2(x.own.dd)}%, ${x.own.trades} trades)   picked: ${x.pick}`);
   console.log(`  picked better in ${better} of 3; average current ${mean('current', 'ret')}% (drop ${mean('current', 'dd')}%) vs picked ${mean('own', 'ret')}% (drop ${mean('own', 'dd')}%) → ${adopt ? 'CHANGE (needs a second run that agrees)' : 'KEEP CURRENT'}`);
   console.log(`  how trades ended under the current exits: ${Object.entries(whyOut).map(([k, w]) => `${k} ${w.n} (avg ${w.avgR}R, total ${w.totalR}R, ${w.won}% won)`).join(' · ')}`);
+  console.log(`  selling on weak candles (current: after ${current.signalExitBars ?? 'never'}): ${Object.entries(sellRule).map(([k, v]) => `${k === 'off' ? 'never' : `after ${k}`} ${v.gain >= 0 ? '+' : ''}${v.gain} pts a block, better in ${v.better} of 3, drop ${v.ddDiff >= 0 ? '+' : ''}${v.ddDiff} → ${v.adopt ? 'CHANGE (needs a second run)' : 'keep'}`).join(' · ')}`);
   out.charts[iv] = {
     coins: folds[0].coins, from: folds[0].from, to: folds.at(-1).to, current, better, adopt,
     currentAvg: { ret: mean('current', 'ret'), dd: mean('current', 'dd') }, pickedAvg: { ret: mean('own', 'ret'), dd: mean('own', 'dd') },
     folds: folds.map((x) => ({ from: x.from, to: x.to, pick: x.pick, pickExits: x.pickExits, current: { ret: r2(x.current.ret), dd: r2(x.current.dd), trades: x.current.trades }, picked: { ret: r2(x.own.ret), dd: r2(x.own.dd), trades: x.own.trades } })),
-    exits: whyOut,
+    exits: whyOut, sellRule,
   };
+  for (const x of folds) delete x.test;
   // the exits an adopting chart would get: picked the same way on all its history
   if (adopt) {
     const full = withRegime(coins.map((s) => (all[s].length > WARM + 50 ? prep(s, all[s]) : null)).filter(Boolean));

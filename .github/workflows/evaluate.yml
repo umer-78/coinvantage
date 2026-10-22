@@ -142,7 +142,7 @@ jobs:
   # target or trailing stop, break-even stop, selling on weak candles), picked
   # on the history before each block and run on the block, after real costs.
   exits:
-    if: inputs.job == 'exits' || inputs.job == 'all'
+    if: github.event_name == 'schedule' || inputs.job == 'exits' || inputs.job == 'all'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
