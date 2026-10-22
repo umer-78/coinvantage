@@ -80,6 +80,19 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Score levels are not a buy setup (2026-10-22)
+The server record (`signal_log`, last 30 days) graded the levels the chart score draws: on 1d,
+long plans after "strong rise" readings lost 2.5% a plan (8 of 80 reached a target) and after
+"rising" 3.1% (16 of 134), while short plans after falling readings made money; on 4h the long
+plans lost slightly. That is the score test's finding (the strongest readings were followed by a
+rise least often), so `generateSignal` now titles them "Levels if you buy" / "Levels if you sell
+or short", and the coin page and the assistant say under them what trades at those distances did
+in testing (`TRADE_GEOMETRY.ev`). The summary already called them chart geometry, not a signal.
+The AI signal (the tested trader rule) is the thing to act on. The deployed `cv` function keeps
+the old titles in its rows until it is next deployed.
+`tools/live-check.mjs` (Evaluate job `live`) opens the deployed site with live data and reports
+which coin page parts, charts and data pages did not read.
+
 ### The best tested setup is chosen after the cost of real fills (2026-10-22)
 `bestTestedChart` ranked charts by test periods with a gain before spread and slippage, so it
 recommended 15m (+3.21% per 11 days). After `fillCost` (fills 0.05% worse each way), 15m made
