@@ -670,6 +670,13 @@ export async function render(el, [symParam]) {
       <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
       ${plan ? `
         <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
+        <p class="fine" style="margin:0 0 8px">${(() => {
+          // what trades with exactly these stop and target distances did in testing
+          const g = geometryFor(st.interval);
+          return g.tested && Number.isFinite(g.ev)
+            ? `Not a trade call. Entered at every candle with this stop and target distance, trades on ${esc(st.interval)} ${g.ev >= 0 ? `made ${g.ev.toFixed(3)}R` : `lost ${Math.abs(g.ev).toFixed(3)}R`} each in testing, fees included (R is the amount risked). The AI signal above is the tested rule.`
+            : `Not a trade call: levels sized from this chart's volatility, never tested on ${esc(st.interval)}. The AI signal above is the tested rule.`;
+        })()}</p>
         <div class="plan">
           <div><div class="k">Entry zone</div><div class="v">${money(plan.entryZone[0])} – ${money(plan.entryZone[1])}</div></div>
           <div><div class="k">Stop-loss</div><div class="v down">${money(plan.stopLoss)} <span class="fine">(${plan.riskPct}%)</span></div></div>

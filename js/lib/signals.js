@@ -335,7 +335,7 @@ export function generateSignal(candles, { interval = '' } = {}) {
     const tp3Candidate = sr.resistances.find((l) => l.price > price + geo.rr * risk)?.price;
     plan = {
       side: 'long',
-      title: 'Long / buy setup',
+      title: 'Levels if you buy',
       entry: round(price, price),
       entryZone: [round(Math.max(price - 0.5 * atrV, s1 ?? -Infinity), price), round(price, price)],
       stopLoss: round(stop, price),
@@ -357,7 +357,7 @@ export function generateSignal(candles, { interval = '' } = {}) {
     const tp3Candidate = sr.supports.find((l) => l.price < price - geo.rr * risk)?.price;
     plan = {
       side: 'short',
-      title: 'Exit longs / short setup',
+      title: 'Levels if you sell or short',
       entry: round(price, price),
       entryZone: [round(price, price), round(Math.min(price + 0.5 * atrV, r1 ?? Infinity), price)],
       stopLoss: round(stop, price),

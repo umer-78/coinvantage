@@ -122,7 +122,7 @@ function mtfBlock(ctx) {
 
 function planBlock(plan) {
   if (!plan) return '';
-  return `\n**${plan.title}**\n- Entry zone: ${fmtNum(plan.entryZone[0])} – ${fmtNum(plan.entryZone[1])}\n- Stop-loss: ${fmtNum(plan.stopLoss)} (${plan.riskPct}% risk)\n- Take-profit 1 / 2 / 3: ${plan.takeProfits.map(fmtNum).join(' / ')}\n- Reward-to-risk at TP2: ${plan.rewardRisk}:1\n`;
+  return `\n**${plan.title}**\n- Entry zone: ${fmtNum(plan.entryZone[0])} – ${fmtNum(plan.entryZone[1])}\n- Stop-loss: ${fmtNum(plan.stopLoss)} (${plan.riskPct}% risk)\n- Take-profit 1 / 2 / 3: ${plan.takeProfits.map(fmtNum).join(' / ')}\n- Reward-to-risk at TP2: ${plan.rewardRisk}:1\n${plan.geometryTested && Number.isFinite(plan.expectancyR) ? `- Not a trade call: in testing, trades with these distances ${plan.expectancyR >= 0 ? 'made' : 'lost'} ${Math.abs(plan.expectancyR).toFixed(3)}R each, fees included\n` : ''}`;
 }
 
 function forecastBlock(f, ctx) {
