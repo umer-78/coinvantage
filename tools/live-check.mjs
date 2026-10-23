@@ -14,7 +14,8 @@ const BASE = (process.argv[2] || 'https://umer-78.github.io/coinvantage/').repla
 const COINS = (process.argv[3] || 'BTC,ETH,SOL,XRP,DOGE,BNB,SHIB,PEPE,QNT,ZEC,HYPE,XMR,LEO,GT,BTT').split(',');
 const CHARTS = (process.argv[4] || '1m,5m,15m,1h,4h,1d').split(',');
 
-const browser = await chromium.launch();
+// PW_CHANNEL=chrome uses the machine's own Chrome (the Actions runner has one)
+const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' });
 await ctx.addInitScript(() => { try { localStorage.setItem('cv:riskAck', 'true'); } catch { /* private mode */ } });
 const page = await ctx.newPage();

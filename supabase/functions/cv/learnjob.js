@@ -26,12 +26,16 @@ export const LEARN_COINS = Object.keys(COIN_VENUE).filter((s) => COIN_VENUE[s] =
 /** Candles read per coin: the last 500 are measured; 1m reads more so a call made a round ago can still be graded. */
 export const candlesToRead = (interval) => (interval === '1m' ? 1000 : 500);
 
+/** How often the job runs (cron every minute). */
+export const LEARN_SLOT_MS = 60e3;
+
 /**
  * The chart and coins a run at `now` takes. The chart changes every run and
- * the coins every round of charts, so with a run every five minutes and six
- * coins a run, each coin is back on each chart about every 6.5 hours.
+ * the coins every round of charts, so with a run every minute and six coins a
+ * run, each coin is back on each chart about every 78 minutes (it was every
+ * 6.5 hours with a run every five minutes).
  */
-export function slotFor(now, { coins = LEARN_COINS, perBatch = 6, slotMs = 300e3 } = {}) {
+export function slotFor(now, { coins = LEARN_COINS, perBatch = 6, slotMs = LEARN_SLOT_MS } = {}) {
   const slot = Math.floor(now / slotMs);
   const interval = LEARN_INTERVALS[slot % LEARN_INTERVALS.length];
   const batches = Math.max(1, Math.ceil(coins.length / perBatch));
@@ -44,7 +48,7 @@ export function slotFor(now, { coins = LEARN_COINS, perBatch = 6, slotMs = 300e3
  * takes its coin on its chart. (Before this the page said "first result in 15
  * minutes" for a 1m call that waits for its coin to come round again.)
  */
-export function nextVisit(symbol, interval, after, { coins = LEARN_COINS, perBatch = 6, slotMs = 300e3 } = {}) {
+export function nextVisit(symbol, interval, after, { coins = LEARN_COINS, perBatch = 6, slotMs = LEARN_SLOT_MS } = {}) {
   const cycle = LEARN_INTERVALS.length * Math.max(1, Math.ceil(coins.length / perBatch));
   const first = Math.ceil(after / slotMs);
   for (let k = 0; k <= cycle; k++) {
@@ -112,8 +116,15 @@ export function learnRun(ledger, interval, inputs, { forecast = null, now = Date
 /** What the pages read: the record's size, its scores and weights, who makes the call, what changed. */
 export function learnSummary(L, interval, { now = Date.now(), coins = LEARN_COINS, perBatch = 6 } = {}) {
   const waiting = (L.rows || []).filter((r) => !r.resolved);
-  // the earliest a waiting call is graded: its outcome closed and its coin taken again
-  const due = waiting.map((r) => nextVisit(r.symbol, interval, Math.max(now, r.horizonAt + (LEARN_INTERVAL_MS[interval] || 0)), { coins, perBatch })).filter(Number.isFinite);
+  // the earliest a waiting call is graded: its outcome closed and its coin taken
+  // again. Worked out once per coin, from its earliest-due call, since a later
+  // call of the same coin can only be graded later.
+  const firstDue = {};
+  for (const r of waiting) {
+    const at = Math.max(now, r.horizonAt + (LEARN_INTERVAL_MS[interval] || 0));
+    if (!(r.symbol in firstDue) || at < firstDue[r.symbol]) firstDue[r.symbol] = at;
+  }
+  const due = Object.entries(firstDue).map(([sym, at]) => nextVisit(sym, interval, at, { coins, perBatch })).filter(Number.isFinite);
   return {
     interval, lastPass: L.lastPass || null, since: L.createdAt || null,
     calls: (L.rows || []).length, scored: (L.rows || []).length - waiting.length, expired: L.expired || 0,

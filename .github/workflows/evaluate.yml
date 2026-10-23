@@ -44,11 +44,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install a browser
-        run: |
-          npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps chromium
+      # The runner's own Google Chrome: installing Playwright's browser with its
+      # system packages once hung for the job's whole hour on an apt mirror.
+      - name: Install Playwright (no browser download)
+        timeout-minutes: 5
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm install --no-save playwright@1.56.1
       - name: Every coin page and chart reads live data
+        timeout-minutes: 45
+        env:
+          PW_CHANNEL: chrome
         run: node tools/live-check.mjs https://umer-78.github.io/coinvantage/
 
   trader-rules:

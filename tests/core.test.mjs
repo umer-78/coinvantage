@@ -1584,3 +1584,17 @@ test('the response cache kept on the device stays small: a dozen entries, oldest
   assert.ok(!data.has('cv:cache:old-coin-page'));
   delete globalThis.localStorage;
 });
+
+test('the coin list with its 7-day lines (about a megabyte) is still kept for the next visit', async () => {
+  const data = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (data.has(k) ? data.get(k) : null), setItem: (k, v) => data.set(k, String(v)), removeItem: (k) => data.delete(k),
+    key: (i) => [...data.keys()][i] ?? null, get length() { return data.size; },
+  };
+  const big = Array.from({ length: 250 }, (_, i) => ({ id: `c${i}`, sparkline_in_7d: { price: Array.from({ length: 168 }, (_, k) => 1000 + k + i / 7) } }));
+  globalThis.fetch = async () => new Response(JSON.stringify(big), { status: 200 });
+  const { getJson } = await import('../js/api/http.js?big');
+  await getJson('https://example.test/markets', { ttl: 1, persist: true, key: 'cg:markets' });
+  assert.ok(data.has('cv:cache:cg:markets'), `${(JSON.stringify(big).length / 1e6).toFixed(2)} MB kept`);
+  delete globalThis.localStorage;
+});

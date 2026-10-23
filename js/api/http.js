@@ -17,17 +17,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function lsGet(key) {
   try { const v = localStorage.getItem('cv:cache:' + key); return v ? JSON.parse(v) : null; } catch { return null; }
 }
-// What is kept on the device stays small: the dozen most recent responses, at
-// most about 600 KB in all, oldest out first. It used to keep every response
-// it was asked to (one per coin page visited) until the browser ran out of room.
-const LS_MAX_KEYS = 12, LS_MAX_BYTES = 600e3, LS_INDEX = 'cv:cacheIndex';
+// What is kept on the device stays bounded: the dozen most recent responses, at
+// most about 1.6 MB in all, oldest out first. It used to keep every response
+// it was asked to (one per coin page visited) until the browser ran out of room,
+// and then the account's own saves failed. The coin list with its 7-day lines
+// (about 1 MB) fits, so the home page still opens from it straight away.
+const LS_MAX_KEYS = 12, LS_MAX_BYTES = 1.6e6, LS_ONE_MAX = 1.2e6, LS_INDEX = 'cv:cacheIndex';
 function lsIndex() {
   try { const v = JSON.parse(localStorage.getItem(LS_INDEX) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 function lsSet(key, value) {
   try {
     const text = JSON.stringify(value);
-    if (text.length > LS_MAX_BYTES / 2) return;   // too big to be worth keeping
+    if (text.length > LS_ONE_MAX) return;   // too big to be worth keeping
     localStorage.setItem('cv:cache:' + key, text);
     const idx = lsIndex().filter((e) => e.k !== key);
     idx.push({ k: key, n: text.length });

@@ -18,14 +18,14 @@ test('it learns on the coins the evaluation reads from Binance, at the forecast\
   }
 });
 
-test('every coin comes round on every chart, and on 1m it is back before its last call falls out of reach', () => {
+test('every coin comes round on every chart about every 78 minutes, and on 1m before its last call falls out of reach', () => {
   const seen = new Set();
   const start = Date.UTC(2026, 9, 22);
   const cycle = LEARN_INTERVALS.length * Math.ceil(LEARN_COINS.length / 6);
   const last = {};
   let worstGap = 0;
   for (let k = 0; k < cycle * 2; k++) {
-    const now = start + k * 300e3;
+    const now = start + k * 60e3;
     const s = slotFor(now);
     assert.ok(s.symbols.length > 0 && s.symbols.length <= 6);
     for (const sym of s.symbols) {
@@ -37,6 +37,7 @@ test('every coin comes round on every chart, and on 1m it is back before its las
   }
   assert.equal(seen.size, LEARN_COINS.length * LEARN_INTERVALS.length);
   assert.ok(worstGap + LEARN_HORIZON['1m'] * 6e4 < candlesToRead('1m') * 6e4, `a 1m call is graded within the candles read (${worstGap / 36e5} h between visits)`);
+  assert.ok(worstGap <= 80 * 60e3, `back on each chart within 80 minutes (${worstGap / 60e3} min)`);
 });
 
 const H = 3600e3;
@@ -104,7 +105,7 @@ test('the page is told when a waiting call will really be graded: when its coin 
   assert.equal(s.interval, '1m');
   assert.ok(s.symbols.includes('BTC'));
   // and nothing earlier would have taken it
-  for (let t = Math.ceil((t0 + 20 * 60e3) / 300e3) * 300e3; t < at; t += 300e3) { const x = slotFor(t); assert.ok(!(x.interval === '1m' && x.symbols.includes('BTC'))); }
+  for (let t = Math.ceil((t0 + 20 * 60e3) / 60e3) * 60e3; t < at; t += 60e3) { const x = slotFor(t); assert.ok(!(x.interval === '1m' && x.symbols.includes('BTC'))); }
   const r = learnRun(null, '1m', [{ symbol: 'BTC', candles: series(500, t0 - 500 * 6e4).map((c, i) => ({ ...c, t: t0 - (500 - i) * 6e4 })) }], { forecast: () => ({ ok: true, probUp: 0.6 }), now: t0 });
   assert.ok(r.summary.waiting.nextAt > t0 + 15 * 60e3, 'not when the 1m outcome closes, when the coin is taken again');
 });

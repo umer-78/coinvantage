@@ -84,7 +84,8 @@ Umer picked these four, plus the Binance import which is DONE and live.
 Before this, the AI learning pass and the AI trader only ran while a page was open, and the
 learning record lived in that one browser. Now:
 - **Cloud learning** (`supabase/functions/cv/learn.ts`, pure logic in `learnjob.js`, cron
-  `cv-learn` at 3,8,13… past each hour): one chart and six coins a run, in turn, over the 78
+  `cv-learn` every minute since Oct 23, so each coin is back on each chart about every 78
+  minutes; it ran every five, 6.5 hours a round): one chart and six coins a run, in turn, over the 78
   coins of `tools/universe.json` that read from Binance, on 1m–1d. It grades calls whose outcome
   candle has closed, measures every indicator on each coin's last 500 candles, logs this candle's
   calls (indicators, forecast, blend) before the outcome is known, and works out each chart's
