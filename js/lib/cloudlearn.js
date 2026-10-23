@@ -7,13 +7,17 @@
 import { getCloudLearning } from '../api/backend.js';
 
 const FRESH = 60e3;
+// A page waits at most this long for the record: a slow link to the cloud must
+// not hold up the coin page's forecast or the learning page.
+const WAIT_MS = 4000;
 let cache = null, inflight = null;
 
 /** Every chart's summary ({ '1h': {...}, ... }), or null. Read at most once a minute. */
-export function cloudLearning({ force = false } = {}) {
+export function cloudLearning({ force = false, read = getCloudLearning } = {}) {
   if (!force && cache && Date.now() - cache.at < FRESH) return Promise.resolve(cache.data);
   if (inflight) return inflight;
-  inflight = getCloudLearning().catch(() => null).then((data) => {
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), WAIT_MS));
+  inflight = Promise.race([Promise.resolve().then(read).catch(() => null), timeout]).then((data) => {
     inflight = null;
     // a failed read keeps the last good copy
     if (data && Object.keys(data).length) cache = { at: Date.now(), data };

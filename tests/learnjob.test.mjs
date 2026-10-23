@@ -109,3 +109,15 @@ test('the page is told when a waiting call will really be graded: when its coin 
   const r = learnRun(null, '1m', [{ symbol: 'BTC', candles: series(500, t0 - 500 * 6e4).map((c, i) => ({ ...c, t: t0 - (500 - i) * 6e4 })) }], { forecast: () => ({ ok: true, probUp: 0.6 }), now: t0 });
   assert.ok(r.summary.waiting.nextAt > t0 + 15 * 60e3, 'not when the 1m outcome closes, when the coin is taken again');
 });
+
+test('a page never waits more than a few seconds for the cloud record, and keeps the last good copy', async () => {
+  globalThis.window ??= new EventTarget();
+  const { cloudLearning, cloudLearningNow } = await import('../js/lib/cloudlearn.js');
+  const good = { '1h': { calls: 5, weights: {} } };
+  assert.deepEqual(await cloudLearning({ force: true, read: async () => good }), good);
+  const t = Date.now();
+  const r = await cloudLearning({ force: true, read: () => new Promise(() => {}) });   // a cloud that never answers
+  assert.ok(Date.now() - t < 6000, `gave up after ${Date.now() - t} ms`);
+  assert.deepEqual(r, good, 'the last good copy, not nothing');
+  assert.deepEqual(cloudLearningNow(), good);
+});

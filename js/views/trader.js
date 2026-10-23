@@ -271,7 +271,7 @@ export async function render(el) {
   function syncNote() {
     if (auth.user) {
       const cloud = [...(state?.log || [])].reverse().find((e) => e.kind === 'check' && e.by === 'cloud');
-      return `Saved to your account: every device you sign in on shows these same trades. While the AI is on, the cloud checks it every five minutes with this page closed${cloud ? ` (last cloud check ${ago(cloud.t)})` : ''}.`;
+      return `Saved to your account: every device you sign in on shows these same trades. While the AI is on, the cloud trades each new ${esc(state?.interval || cfg.interval)} candle as it closes, with this page closed${cloud ? ` (last cloud check ${ago(cloud.t)})` : ''}.`;
     }
     if (backendEnabled()) return 'Saved in this browser only, and it only trades while this page is open. <a href="#" id="syncSignIn">Sign in</a> to keep it trading in the cloud with the page closed, and to see the same trades on every device.';
     return 'Saved in this browser only.';
@@ -859,7 +859,13 @@ export async function render(el) {
   const unlisted = (sym) => knownVenue(all.find((c) => c.symbol === sym)) === null;
   function untradable() {
     const streak = load(NODATA_KEY, {});
-    const noData = cfg.universe.filter((s) => (streak[s] || 0) >= 2 || unlisted(s));
+    // A coin this browser cannot read but the cloud did on its last check is
+    // still traded there: a browser can be refused by an exchange the server is
+    // not (ten coins were once removed that way while the cloud read all of them).
+    const step = INTERVAL_MS[state?.interval || cfg.interval] || 36e5;
+    const cloud = [...(state?.log || [])].reverse().find((e) => e.kind === 'check' && e.by === 'cloud' && Array.isArray(e.failed));
+    const cloudReads = (sym) => !!cloud && Date.now() - cloud.t < 2 * step + 36e5 && !cloud.failed.includes(sym);
+    const noData = cfg.universe.filter((s) => ((streak[s] || 0) >= 2 || unlisted(s)) && !cloudReads(s));
     const sparse = cfg.universe.filter((s) => st.noExchange.includes(s) && !noData.includes(s));
     return { noData, sparse, all: [...noData, ...sparse] };
   }

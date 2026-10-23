@@ -106,7 +106,8 @@ export function checkAccount(state, cfg, { bySymbol, failed = [], lessons = [], 
   const opened = [...Object.values(state.open), ...state.closed.slice(tradesBefore)].filter((p) => !openBefore.has(`${p.symbol}:${p.openedAt}`)).length;
   const closed = state.closed.length - tradesBefore;
   logCheck(state, {
-    kind: 'check', by, coins: cfg.universe.length - failed.length, candles: processed,
+    // which coins could not be read: a coin the cloud reads is tradable, whatever one browser managed
+    kind: 'check', by, coins: cfg.universe.length - failed.length, failed: failed.slice(0, 40), candles: processed,
     passed: passedUp.length ? { syms: passedUp.map((x) => x.sym).slice(0, 8), n: passedUp.length, why: passedUp.some((x) => x.why === 'nocash') ? 'nocash' : 'full' } : null,
     opened, closed, best: best ? { sym: best.sym, score: Math.round(best.score) } : null, bar: runCfg.entryScore,
   });
