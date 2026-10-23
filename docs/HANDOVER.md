@@ -129,12 +129,17 @@ page says so, and that holding made more on every chart in those (mostly rising)
 `tools/evaluate-exits.mjs` (Evaluate job `exits`, monthly) keeps each chart's entry rules and
 varies only the exits (stop 2/3/4 ATR, target 1.5–5R or a 2/3 ATR trailing stop, break-even at
 1R, selling after 1–3 weak candles or never), picked on the history before each block and run on
-the block, after 0.15% a side. First run (99–103 coins, to Oct 22): under the current exits the
-stop-loss ends ~45% of trades at −1.0 to −1.2R, the target ~20% at +2.6 to +3.0R, and selling
-on weak candles ~35% at −0.43 to −0.48R (only 8–12% of those win). Picked exits beat the current
-ones in 2 of 3 blocks on 15m and 4h (passing the bar once), 1 of 3 on 1h and 0 of 3 on 1d, so no
-exit changes until a second run agrees. The job also A/Bs the weak-candle rule on its own (off,
-after 1, after 3), with nothing fitted.
+the block, after 0.15% a side. Under the standard exits the stop-loss ends ~45% of trades at
+−1.0 to −1.2R, the target ~20% at +2.8 to +3.0R, and the sale after two weak candles ~35% at
+−0.43 to −0.52R (only 6–11% of those win). Picked exit sets beat the standard ones on 15m and 4h
+but not 1h or 1d. The weak-candle rule was also A/B tested on its own (off, after 1, after 3;
+nothing fitted). Off cleared the bar in both runs (Oct 22 and Oct 23) on 15m (+11.3 then +3.6
+points a block) and 4h (+9.1 then +3.9), so `CHART_EXITS` switches it off there (rulesForChart,
+so the trader, the AI signal and the cloud all follow; the server's 4h AI-signal record changes
+rules from Oct 23). On 1h it gave +17.3 points (3 of 3) and then, one day of data later, −10.4
+(0 of 3): exactly the swing the two-run rule exists for, so 1h keeps it; 1d too (+3.7, then
++0.9 with 1 of 3). `EXITS_TESTED` holds both runs. `tools/evaluate-trader-folds.mjs` now measures
+each chart's shipped rules (`rulesForChart`), so the published figures match what trades.
 
 ### Score levels are not a buy setup (2026-10-22)
 The server record (`signal_log`, last 30 days) graded the levels the chart score draws: on 1d,

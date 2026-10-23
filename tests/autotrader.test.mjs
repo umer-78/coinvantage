@@ -187,10 +187,10 @@ test('a chart trades its own rules only where the published test clears the bar 
 });
 
 test('the rules an account trades: its chart\'s own, then the self-review\'s latest trend lesson', async () => {
-  const { rulesForChart, CHART_RULES, RULE_KEYS } = await import('../js/lib/autotrader.js');
+  const { rulesForChart, CHART_RULES, CHART_EXITS, RULE_KEYS } = await import('../js/lib/autotrader.js');
   for (const iv of ['15m', '1h', '4h', '1d']) {
     const d = rulesForChart(DEFAULT_CONFIG, iv);
-    const want = { ...Object.fromEntries(RULE_KEYS.map((k) => [k, DEFAULT_CONFIG[k]])), ...(CHART_RULES[iv] || {}) };
+    const want = { ...Object.fromEntries(RULE_KEYS.map((k) => [k, DEFAULT_CONFIG[k]])), ...(CHART_EXITS[iv] || {}), ...(CHART_RULES[iv] || {}) };
     for (const k of RULE_KEYS) assert.equal(d[k], want[k], `${iv} ${k}`);
     assert.equal(d.interval, iv);
   }
@@ -465,4 +465,17 @@ test('what each chart can make is its tested result after real fills, spread eve
   if (losing) assert.ok(settingsWarnings({ ...cfg, interval: losing.chart }).some((w) => w.includes('real fills') && w.includes('a month')));
   const winning = rows.find((r) => r.net > 0);
   assert.ok(!settingsWarnings({ ...cfg, interval: winning.chart }).some((w) => w.includes('lost')));
+});
+
+test('a chart changes when it sells only where two exit tests in a row cleared the bar set before them', async () => {
+  const { CHART_EXITS, EXITS_TESTED, rulesForChart } = await import('../js/lib/autotrader.js');
+  const clears = (r) => r.better >= 2 && r.gain >= 1 && r.ddDiff <= 5;
+  for (const [iv, runs] of Object.entries(EXITS_TESTED.sellOnWeakOff)) {
+    assert.equal(runs.length, 2, `${iv}: two runs`);
+    const both = runs.every(clears);
+    assert.equal(CHART_EXITS[iv]?.signalExitBars === null, both, `${iv}: the weak-candle sale is off exactly where both runs cleared the bar`);
+    assert.equal(rulesForChart(DEFAULT_CONFIG, iv).signalExitBars, both ? null : DEFAULT_CONFIG.signalExitBars);
+  }
+  // your own rules stay yours
+  assert.equal(rulesForChart({ ...DEFAULT_CONFIG, strategy: 'custom', custom: { signalExitBars: 2 } }, '15m').signalExitBars, 2);
 });

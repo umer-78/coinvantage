@@ -74,6 +74,40 @@ export const AUTOTRADER_TESTED = {
 export const CHART_RULES = {};
 
 /**
+ * When to sell, tested on its own (tools/evaluate-exits.mjs, all coins with
+ * enough history in one account per chart, after 0.15% a side for fees and
+ * worse fills). Under the standard exits about a third of trades end by the
+ * rule that sells after two candles reading against the trade, and only about
+ * one in ten of those sales wins (−0.43 to −0.52R each, against −1.0 to −1.2R
+ * for the stop-loss and +2.8 to +3.0R for the target). That rule alone was
+ * switched off, nothing fitted, on each chart's three walk-forward blocks, with
+ * the bar set before the first run: better in at least two of three blocks, by
+ * at least a point a block, worst drop no more than five points deeper — and,
+ * as for every published rule, two runs in a row agreeing. 15m and 4h cleared
+ * it in both runs, so they no longer sell on weak candles. 1h did not: one run
+ * gave +17.3 points a block (3 of 3), the next, one day of data later, −10.4
+ * (0 of 3). 1d did not either. Gains and drop changes are points a block.
+ */
+export const EXITS_TESTED = {
+  runs: ['2026-10-22', '2026-10-23'], cost: 0.15,
+  sellOnWeakOff: {
+    '15m': [{ better: 3, gain: 11.31, ddDiff: -4.88 }, { better: 2, gain: 3.63, ddDiff: -4.01 }],
+    '1h': [{ better: 3, gain: 17.28, ddDiff: -6.12 }, { better: 0, gain: -10.38, ddDiff: -1.27 }],
+    '4h': [{ better: 2, gain: 9.13, ddDiff: -2.21 }, { better: 2, gain: 3.88, ddDiff: -7.61 }],
+    '1d': [{ better: 2, gain: 3.72, ddDiff: -1.46 }, { better: 1, gain: 0.91, ddDiff: 0 }],
+  },
+  // how trades ended under the standard exits (second run): count, average R, share that won
+  exits: {
+    '15m': { stop: [155, -1.23, 0], weak: [127, -0.52, 11], target: [46, 2.82, 100] },
+    '1h': { stop: [138, -1.1, 0], weak: [107, -0.45, 10.3], target: [66, 2.9, 100] },
+    '4h': { stop: [129, -1.05, 0], weak: [105, -0.49, 7.6], target: [60, 2.95, 100] },
+    '1d': { stop: [61, -1.02, 0], weak: [62, -0.43, 6.5], target: [46, 2.97, 100] },
+  },
+};
+/** The exit changes that cleared that bar twice: an entry here overrides the standard exits on its chart. */
+export const CHART_EXITS = { '15m': { signalExitBars: null }, '4h': { signalExitBars: null } };
+
+/**
  * That test's results (run 2026-10-16 on all 106 coins, the standard rules
  * traded on every chart), averaged over its three blocks: `standard` is the
  * standard rules, `own` the chart's own pick, `hold` equal amounts of every
@@ -149,7 +183,7 @@ export function rulesForChart(cfg, interval, lessons = []) {
   // standard set, then the chart's own where it has them.
   const standard = Object.fromEntries([...RULE_KEYS, 'marketFilter'].map((k) => [k, DEFAULT_CONFIG[k]]));
   const trend = [...(lessons || [])].reverse().find((h) => h.lens === 'trend');
-  return { ...cfg, ...standard, ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), volScale: VOL_SCALE.charts.includes(interval), interval };
+  return { ...cfg, ...standard, ...(CHART_EXITS[interval] || {}), ...(CHART_RULES[interval] || {}), ...(trend ? { trendFilter: !trend.undo } : {}), volScale: VOL_SCALE.charts.includes(interval), interval };
 }
 
 /**

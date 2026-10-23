@@ -13,7 +13,7 @@
 // on average, with an average worst drop no more than five points deeper.
 // The rules it would then get are picked the same way on the full history.
 import { readFileSync } from 'node:fs';
-import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity, dropTracker } from '../js/lib/autotrader.js';
+import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity, dropTracker, rulesForChart, RULE_KEYS } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 import { holdDrop } from './hold-drop.mjs';
@@ -36,6 +36,9 @@ for (const entryMode of ['trend', 'breakout', 'pullback'])
               grid.push({ entryMode, momentumConfirm, trendFilter, marketFilter, atrStop, rMultiple: exit[0] === 'r' ? +exit[1] : 3, trailAtr: exit[0] === 't' ? +exit[1] : null, signalExitBars, tag });
             }
 const CURRENT = { tag: 'current app rules' };
+// The rules each chart ships: the standard ones with that chart's tested exit
+// changes (CHART_EXITS) and adopted rules (CHART_RULES), as an account trades them.
+const shipped = (iv) => { const r = rulesForChart({ ...DEFAULT_CONFIG }, iv, []); return Object.fromEntries([...RULE_KEYS, 'marketFilter'].map((k) => [k, r[k]])); };
 
 const prep = (sym, c) => { const ind = computeAll(c); return { symbol: sym, candles: c, ind, atr: atr(c, 14), scores: c.map((_, i) => (i >= 210 ? scoreAt(c, ind, i).score : 0)) }; };
 
@@ -112,6 +115,7 @@ const r2 = (v) => +v.toFixed(2);
 
 const out = { measuredOn: new Date().toISOString().slice(0, 10), configs: grid.length, timeframes: {} };
 for (const iv of IVS) {
+  const STD = shipped(iv);
   const coins = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length >= 1600).map((k) => k.split(':')[0]);
   if (!coins.includes('BTC')) continue;
   const all = Object.fromEntries(coins.map((s) => [s, candlesOf(`${s}:${iv}`)]));
@@ -128,21 +132,21 @@ for (const iv of IVS) {
     const test = withRegime(coins.map((s) => { const c = all[s]; const i0 = c.findIndex((x) => x.t >= tTrain); if (i0 < WARM) return null; const block = c.slice(i0 - WARM).filter((x) => x.t < tEnd); return block.length > WARM + 20 ? prep(s, block) : null; }).filter(Boolean));
     const scored = grid.map((g) => ({ g, m: account(g, train, 210) }));
     const pick = scored.sort((a, b) => objective(b.m) - objective(a.m))[0].g;
-    const cur = account({}, test, WARM), mine = account(pick, test, WARM);
+    const cur = account(STD, test, WARM), mine = account(pick, test, WARM);
     const hold = test.reduce((a, x) => a + (x.candles.at(-1).c / x.candles[WARM].c - 1), 0) / test.length * 100;
     const pack = (m) => ({ ret: r2(m.ret), dd: r2(m.dd), ddMarked: r2(m.ddMarked), trades: m.trades, win: r2(m.win), fees: r2(m.fees) });
     // the same block at other risk levels, for the expected-yield estimate:
     // both the chart's own pick and the standard rules, so whichever ships has one
     const byRisk = {};
-    for (const risk of RISKS) byRisk[risk] = { own: pack(account(pick, test, WARM, { riskPct: risk })), standard: pack(account({}, test, WARM, { riskPct: risk })) };
-    const sig = { own: signalRecord(pick, test, WARM, HZ[iv]), standard: signalRecord({}, test, WARM, HZ[iv]) };
+    for (const risk of RISKS) byRisk[risk] = { own: pack(account(pick, test, WARM, { riskPct: risk })), standard: pack(account(STD, test, WARM, { riskPct: risk })) };
+    const sig = { own: signalRecord(pick, test, WARM, HZ[iv]), standard: signalRecord(STD, test, WARM, HZ[iv]) };
     // the same block with volatility-scaled risk (DEFAULT_CONFIG.volScale)
-    const vol = { own: pack(account(pick, test, WARM, { volScale: true })), standard: pack(account({}, test, WARM, { volScale: true })) };
+    const vol = { own: pack(account(pick, test, WARM, { volScale: true })), standard: pack(account(STD, test, WARM, { volScale: true })) };
     // The same block with fills 0.05% worse each way (spread and slippage) on
     // top of the 0.1% fee: the tests otherwise fill at the candle's own price.
-    const slip = { own: pack(account(pick, test, WARM, { feePct: 0.15 })), standard: pack(account({}, test, WARM, { feePct: 0.15 })) };
+    const slip = { own: pack(account(pick, test, WARM, { feePct: 0.15 })), standard: pack(account(STD, test, WARM, { feePct: 0.15 })) };
     // the same block skipping entries whose fees are over a fifth of the stop distance
-    const fee = { own: pack(account(pick, test, WARM, { maxFeeShare: 0.2 })), standard: pack(account({}, test, WARM, { maxFeeShare: 0.2 })) };
+    const fee = { own: pack(account(pick, test, WARM, { maxFeeShare: 0.2 })), standard: pack(account(STD, test, WARM, { maxFeeShare: 0.2 })) };
     folds.push({ from: iso(tTrain), to: iso(Math.min(tEnd, times.at(-1))), pick: pick.tag, current: pack(cur), own: pack(mine), hold: r2(hold), holdDrop: r2(holdDrop(test, WARM)), coins: test.length, byRisk, sig, vol, slip, fee });
     console.error(`${iv} fold ${f} done`);
   }
