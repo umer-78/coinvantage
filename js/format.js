@@ -21,7 +21,11 @@ export function money(v, { showCode = false, dp } = {}) {
   const converted = +v * fx.rate;
   // `dp` is the exchange's own tick size for this pair, so the number shown is
   // the number the exchange quotes — no rounding of your own on top of it.
-  const text = dp === undefined
+  // An exchange's decimals are used only where they keep the price readable:
+  // BTT (about 0.00000065) once showed as 0.000000 with the six decimals of an
+  // old Binance pair while its price came from Gate.io.
+  const digits = dp === undefined || converted === 0 ? Infinity : Math.floor(Math.log10(Math.abs(converted))) + dp + 1;
+  const text = dp === undefined || digits < 3
     ? price(converted)
     : converted.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
   return `${fx.symbol}${text}${showCode && fx.code !== 'USD' ? ` ${fx.code}` : ''}`;

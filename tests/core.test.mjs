@@ -1598,3 +1598,12 @@ test('the coin list with its 7-day lines (about a megabyte) is still kept for th
   assert.ok(data.has('cv:cache:cg:markets'), `${(JSON.stringify(big).length / 1e6).toFixed(2)} MB kept`);
   delete globalThis.localStorage;
 });
+
+test('an exchange\'s decimals never turn a tiny price into zeros', async () => {
+  globalThis.window ??= new EventTarget();
+  const { money } = await import('../js/format.js');
+  assert.notEqual(money(0.00000065, { dp: 6 }), '$0.000000', 'BTT with an old pair\'s six decimals');
+  assert.match(money(0.00000065, { dp: 6 }), /65/);
+  assert.equal(money(67250.12, { dp: 2 }), '$67,250.12', 'a normal price keeps the exchange\'s own decimals');
+  assert.equal(money(0.000008512, { dp: 8 }), '$0.00000851', 'PEPE keeps its eight');
+});

@@ -8,7 +8,7 @@
 // Nothing is mocked: what fails here fails for a visitor. It reports and does
 // not fail the job, because an exchange being down for a minute is not a bug.
 import { chromium } from 'playwright';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 
 const BASE = (process.argv[2] || 'https://umer-78.github.io/coinvantage/').replace(/\/?$/, '/');
 const COINS = (process.argv[3] || 'BTC,ETH,SOL,XRP,DOGE,BNB,SHIB,PEPE,QNT,ZEC,HYPE,XMR,LEO,GT,BTT').split(',');
@@ -42,15 +42,17 @@ const ink = (sel) => page.evaluate((s) => {
   return n;
 }, sel).catch(() => 0);
 const short = (t) => t.replace(/\s+/g, ' ').trim().slice(0, 120);
-// The last price on Binance (or Gate.io, HTX, OKX for coins Binance does not list), in USD.
+// The last price on the exchange the site reads the coin from (tools/universe.json),
+// in USD. Binance was asked first for every coin, and still answers for pairs it
+// delisted long ago (XMR at 118.7 against 610 on HTX), so a coin is asked only
+// where it trades.
+const VENUE = Object.fromEntries(JSON.parse(readFileSync(new URL('./universe.json', import.meta.url), 'utf8')).coins.map((c) => [c.symbol, c.venue]));
 async function exchangePrice(sym) {
   const get = (u) => fetch(u, { signal: AbortSignal.timeout(8000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const b = await get(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${encodeURIComponent(sym)}USDT`);
-  if (b?.price) return +b.price;
-  const g = await get(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${sym}_USDT`);
-  if (Array.isArray(g) && g[0]?.last) return +g[0].last;
-  const h = await get(`https://api.huobi.pro/market/detail/merged?symbol=${sym.toLowerCase()}usdt`);
-  if (h?.tick?.close) return +h.tick.close;
+  const venue = VENUE[sym] || 'binance';
+  if (venue === 'binance') { const b = await get(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${encodeURIComponent(sym)}USDT`); return b?.price ? +b.price : null; }
+  if (venue === 'gate') { const g = await get(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${sym}_USDT`); return Array.isArray(g) && g[0]?.last ? +g[0].last : null; }
+  if (venue === 'htx') { const h = await get(`https://api.huobi.pro/market/detail/merged?symbol=${sym.toLowerCase()}usdt`); return h?.tick?.close ? +h.tick.close : null; }
   const o = await get(`https://www.okx.com/api/v5/market/ticker?instId=${sym}-USDT`);
   return o?.data?.[0]?.last ? +o.data[0].last : null;
 }
