@@ -215,7 +215,9 @@ for (const iv of IVS) {
   // what the shipped rules made with worse fills (no decision rides on it)
   const sOf = (x) => (sw === 'own' ? x.slip.own : x.slip.standard);
   entry.slippage = { rules: sw, extraPct: 0.05, ret: vMean((x) => sOf(x).ret), dd: vMean((x) => sOf(x).ddMarked), retLost: vMean((x) => baseOf(x).ret - sOf(x).ret) };
-  console.log(`  fills 0.05% worse each way (${sw} rules): ${entry.slippage.ret}% a block (${entry.slippage.retLost} points less), worst drop ${entry.slippage.dd}%`);
+  // and for the other rule set, so a chart that adopts its own pick has the cost of its own fills
+  entry.slippageBoth = Object.fromEntries(['own', 'standard'].map((k) => [k, { ret: vMean((x) => x.slip[k].ret), retLost: vMean((x) => (k === 'own' ? x.own : x.current).ret - x.slip[k].ret) }]));
+  console.log(`  fills 0.05% worse each way (${sw} rules): ${entry.slippage.ret}% a block (${entry.slippage.retLost} points less), worst drop ${entry.slippage.dd}%; own pick ${entry.slippageBoth.own.ret}% (${entry.slippageBoth.own.retLost} less)`);
   for (const x of folds) delete x.slip;
   if (adopt) {
     // what this chart would get: the same pick on the full history

@@ -683,6 +683,8 @@ body { background: transparent; }
 /* phone-only: what a narrow screen drops (hide-p), and what it shows instead (show-p inline, show-pb block) */
 .show-p { display: none; }
 .show-pb { display: none; }
+.tbl td small.show-p-block { display: none; }
+@media (max-width: 520px) { .tbl td small.show-p-block { display: block; font-weight: 400; white-space: normal; } .tbl.fit .chip { white-space: normal; } }
 .show-pb .tbl.fit { font-size: 11px; }
 .show-pb .tbl.fit td, .show-pb .tbl.fit th { padding: 6px 2px; }
 @media (max-width: 520px) { .hide-p { display: none !important; } .show-p { display: inline; } .show-pb { display: block; } }

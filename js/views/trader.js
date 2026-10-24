@@ -159,8 +159,8 @@ export async function render(el) {
     return `<div class="card" style="border-color:var(--warn)">
       <div class="card-h"><h3>${icon('info', 16)} What this strategy actually did when it was tested</h3><span class="fine">measured ${esc(CHART_TESTED.measuredOn)}, not estimated</span></div>
       <p>Run candle by candle over ${w.coins ?? CHART_TESTED.coins} coins in one account, fees included, in ${CHART_TESTED.blocks} back-to-back periods of about ${esc(w.block)} (${esc(w.from)} → ${esc(w.to)}). ${w.adopt ? `Before each period the rules were picked from ${CHART_TESTED.configs} rule sets on the history before it, then run on a period they had never seen.` : `The standard rules ran through all three; next to them, a pick from ${CHART_TESTED.configs} rule sets made on the history before each period ran too, and did not beat them clearly enough.`} ${cfg.strategy === 'custom' ? `<b>You are trading your own rules, which were not part of this test</b>, so it says nothing about them; use "Test these settings" in Settings for a look back. For comparison, the tested rules for ${esc(iv)} averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period against <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b> for holding the same coins.` : `On ${esc(iv)} the rules it trades averaged <b class="${r.ret >= 0 ? 'up' : 'down'}">${sign(r.ret)}</b> a period with an average worst drop of ${r.dd}%, while holding the same coins averaged <b class="${w.hold >= 0 ? 'up' : 'down'}">${sign(w.hold)}</b> with a worst drop of ${w.holdDrop}%. ${r.ret > w.hold ? 'On this chart it did better than holding, over three periods; that is evidence, not a promise.' : 'On this chart holding made more.'}${w.previous && Math.abs(w.previous.ret - r.ret) >= 2 ? ` A run a few hours earlier, on nearly the same candles, gave ${sign(w.previous.ret)} a period: read any one run's average as rough.` : ''}${r.dd < w.holdDrop - 5 ? (r.ret > w.hold ? ' It also fell much less.' : ' But it fell much less.') : ''} Worst drops count open trades at every candle close, as the account itself would have shown them.${w.fillCost ? ` The test fills every order at the candle's price; with fills 0.05% worse each way (spread and slippage) it made about ${w.fillCost} points less a period.` : ''}`}</p>
-      <div class="tbl-wrap mt"><table class="tbl"><thead><tr><th class="l">Chart</th><th>Tested</th><th>Rules</th><th>Result a period</th><th>Worst drop</th><th>Standard rules</th><th>Holding</th><th>Holding's worst drop</th><th>Trades</th></tr></thead><tbody>
-        ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine wrap" style="min-width:96px">${esc(x.from)} → ${esc(x.to)}</td><td class="fine">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td class="down">−${x.holdDrop}%</td><td>${t.trades}</td></tr>`; }).join('')}
+      <div class="tbl-wrap mt"><table class="tbl fit"><thead><tr><th class="l">Chart</th><th class="hide-p">Tested</th><th class="hide-p">Rules</th><th>Result a period</th><th>Worst drop</th><th class="hide-p">Standard rules</th><th>Holding</th><th class="hide-p">Holding's worst drop</th><th class="hide-p">Trades</th></tr></thead><tbody>
+        ${TFS.map((k) => { const x = CHART_TESTED[k], t = traded(x); return `<tr${k === iv ? ' style="font-weight:600"' : ''}><td class="l">${k}</td><td class="fine wrap hide-p" style="min-width:96px">${esc(x.from)} → ${esc(x.to)}</td><td class="fine hide-p">${x.adopt ? 'its own' : 'standard'}</td><td class="${t.ret >= 0 ? 'up' : 'down'}">${sign(t.ret)}</td><td class="down">−${t.dd}%</td><td class="hide-p ${x.standard.ret >= 0 ? 'up' : 'down'}">${sign(x.standard.ret)}</td><td class="${x.hold >= 0 ? 'up' : 'down'}">${sign(x.hold)}</td><td class="down hide-p">−${x.holdDrop}%</td><td class="hide-p">${t.trades}</td></tr>`; }).join('')}
       </tbody></table></div>
       <p class="fine mt">Rules in force on ${esc(iv)}: ${esc(rulesText(e))} ${cfg.strategy === 'custom' ? 'These are your own rules, set in Settings.' : w.adopt ? `They are this chart's own pick: in the test, picking rules for the chart beat the standard rules in ${w.better} of ${CHART_TESTED.blocks} periods (${sign(w.own.ret)} against ${sign(w.standard.ret)} a period, worst drop ${w.own.dd}% against ${w.standard.dd}%), so they are re-picked the same way on all the history.` : `The chart's own pick did not beat the standard rules clearly enough (better in ${w.better} of ${CHART_TESTED.blocks} periods), so it keeps them.`} Fees came to ${r.fees}% of the balance a period, and ${r.win}% of trades won.${iv === '15m' ? ' A 15m period is only ten days, so these numbers swing a lot between runs.' : ''}${ownRulesText()}${ownRulesOn() ? ` Tested on ${PER_COIN_RULES.coins} coins over ${esc(PER_COIN_RULES.tested.from)} → ${esc(PER_COIN_RULES.tested.to)}, with every rule chosen on the years before: ${sign(PER_COIN_RULES.tested.own.ret)} with a worst drop of ${PER_COIN_RULES.tested.own.dd}%, against ${sign(PER_COIN_RULES.tested.standard.ret)} and ${PER_COIN_RULES.tested.standard.dd}% for the daily rules alone, and ${sign(PER_COIN_RULES.tested.hold)} for holding the coins (worst drop ${PER_COIN_RULES.tested.holdDrop}%).${PER_COIN_RULES.tested.previousRun ? ` The run before, on ${PER_COIN_RULES.tested.previousRun.coins} coins, made ${sign(PER_COIN_RULES.tested.previousRun.own)} against ${sign(PER_COIN_RULES.tested.previousRun.standard)}: one long test swings with its coins and start date, so read the size of the gain as rough.` : ''} You can switch them off in Settings.` : ''}</p>
       ${ownRulesOn() ? coinRulesTable(e) : ''}
@@ -928,26 +928,26 @@ export async function render(el) {
 
       <div class="card mt">
         <div class="card-h"><h3>Open positions</h3><span class="fine">marked against the live price (or the latest candle until a live price arrives)</span></div>
-        ${open.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Entry</th><th>Now</th><th>Stop</th><th>Target</th><th>Size</th><th>Open P&amp;L</th><th class="l">Opened</th></tr></thead><tbody>
+        ${open.length ? `<div class="tbl-wrap"><table class="tbl fit"><thead><tr><th class="l">Coin</th><th class="hide-p">Entry</th><th>Now</th><th>Stop</th><th class="hide-p">Target</th><th class="hide-p">Size</th><th>Open P&amp;L</th><th class="l hide-p">Opened</th></tr></thead><tbody>
           ${open.map(([sym, p]) => {
             const px = st.prices[sym];
             if (!Number.isFinite(px)) {
               const coin = all.find((c) => c.symbol === sym);
               return `<tr data-sym="${esc(sym)}"><td class="l"><div class="coin-cell">${coinLogo(coin || { symbol: sym }, 22)}<b>${esc(sym)}</b></div></td>
-                <td>${money(p.entry)}</td><td class="muted">loading…</td>
-                <td class="down">${money(p.stop)}</td><td class="up">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
-                <td>${money(p.notional)}</td><td class="muted fine">waiting for a price</td><td class="l fine">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</td></tr>`;
+                <td class="hide-p">${money(p.entry)}</td><td class="muted">loading…</td>
+                <td class="down">${money(p.stop)}</td><td class="up hide-p">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
+                <td class="hide-p">${money(p.notional)}</td><td class="muted fine">waiting for a price</td><td class="l fine hide-p">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</td></tr>`;
             }
             const pnl = (px - p.entry) * p.qty;
             const coin = all.find((c) => c.symbol === sym);
             return `<tr data-sym="${esc(sym)}">
               <td class="l"><div class="coin-cell">${coinLogo(coin || { symbol: sym }, 22)}<b>${esc(sym)}</b></div></td>
-              <td>${money(p.entry)}</td><td>${money(px)}${st.priceFrom[sym] === 'candle' ? '<br><small class="fine">last candle</small>' : ''}</td>
+              <td class="hide-p">${money(p.entry)}</td><td>${money(px)}${st.priceFrom[sym] === 'candle' ? '<br><small class="fine">last candle</small>' : ''}</td>
               <td class="down">${money(p.stop)}${p.movedToBreakEven ? ' <span class="fine">(BE)</span>' : ''}</td>
-              <td class="up">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
-              <td>${money(p.notional)}</td>
+              <td class="up hide-p">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
+              <td class="hide-p">${money(p.notional)}</td>
               <td class="${pnl >= 0 ? 'up' : 'down'}"><b>${pnl >= 0 ? '+' : '−'}${money(Math.abs(pnl))}</b><br><small>${pct((px / p.entry - 1) * 100)}</small></td>
-              <td class="l fine">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}<br><small>${ago(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</small></td></tr>`;
+              <td class="l fine hide-p">${dateTime(p.openedAt + (INTERVAL_MS[state.interval] || 0))}<br><small>${ago(p.openedAt + (INTERVAL_MS[state.interval] || 0))}</small></td></tr>`;
           }).join('')}
         </tbody></table></div>` : `<p class="muted">${autoOn ? 'No position open right now — the AI is waiting for a setup that meets its rules.' : 'No position open. The AI is not running, so none will open until you start it.'}</p>`}
       </div>
@@ -959,11 +959,11 @@ export async function render(el) {
 
       <div class="card mt">
         <div class="card-h"><h3>Trade log</h3><div class="row" style="gap:8px"><span class="fine">${s.trades} closed · ${money(s.feesPaid)} paid in fees</span><button class="btn sm ghost" data-export="ai-csv">CSV</button><button class="btn sm ghost" data-report="ai">Report</button></div></div>
-        ${closed.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th class="l">Opened</th><th class="l">Closed</th><th>Entry</th><th>Exit</th><th>Result</th><th class="l">Why it closed</th></tr></thead><tbody>
+        ${closed.length ? `<div class="tbl-wrap"><table class="tbl fit"><thead><tr><th class="l">Coin</th><th class="l hide-p">Opened</th><th class="l">Closed</th><th class="hide-p">Entry</th><th class="hide-p">Exit</th><th>Result</th><th class="l">Why it closed</th></tr></thead><tbody>
           ${closed.slice(0, 60).map((t) => `<tr data-sym="${esc(t.symbol)}">
             <td class="l"><b>${esc(t.symbol)}</b></td>
-            <td class="l fine">${dateTime(t.openedAt + (INTERVAL_MS[state.interval] || 0))}</td><td class="l fine">${dateTime(t.exitAt + (INTERVAL_MS[state.interval] || 0))}</td>
-            <td>${money(t.entry)}</td><td>${money(t.exit)}</td>
+            <td class="l fine hide-p">${dateTime(t.openedAt + (INTERVAL_MS[state.interval] || 0))}</td><td class="l fine wrap">${dateTime(t.exitAt + (INTERVAL_MS[state.interval] || 0))}</td>
+            <td class="hide-p">${money(t.entry)}</td><td class="hide-p">${money(t.exit)}</td>
             <td class="${t.pnl >= 0 ? 'up' : 'down'}"><b>${t.pnl >= 0 ? '+' : '−'}${money(Math.abs(t.pnl))}</b> <small>${pct(t.pnlPct)}</small></td>
             <td class="l"><span class="chip ${t.reason === 'target' ? 'up' : t.reason === 'stop-loss' ? 'down' : ''}">${esc(t.reason)}</span></td></tr>`).join('')}
         </tbody></table></div>` : '<p class="muted">No closed trades yet.</p>'}
