@@ -280,10 +280,32 @@ const GECKO_STEP = { hourly: 36e5, daily: 864e5 };
 // or HYPE gets real OHLCV candles on every timeframe instead of CoinGecko's
 // hourly line (which cannot draw a 1m, 5m or 15m chart at all).
 export const EX_BAR = {
-  gate: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' },
-  htx: { '1m': '1min', '5m': '5min', '15m': '15min', '1h': '60min', '4h': '4hour', '1d': '1day', '1w': '1week' },
-  okx: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1Dutc', '1w': '1Wutc' },
+  gate: { '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' },
+  htx: { '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '60min', '4h': '4hour', '1d': '1day', '1w': '1week' },
+  okx: { '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H', '6h': '6Hutc', '12h': '12Hutc', '1d': '1Dutc', '1w': '1Wutc' },
 };
+// A chart an exchange does not publish is built from its 1h candles, on the
+// UTC boundaries Binance uses (a 6h candle opens at 00:00, 06:00, 12:00 and
+// 18:00 UTC). Gate.io and HTX have no 2h, 6h or 12h candles, so a coin only
+// they list had no candles at all on those trader charts.
+export const EX_AGG = { '2h': { base: '1h', n: 2 }, '6h': { base: '1h', n: 6 }, '12h': { base: '1h', n: 12 } };
+/** Candles merged into `step`-long ones on UTC boundaries; a first bucket the rows start inside is dropped. */
+export function aggregateCandles(rows, step) {
+  const out = [];
+  for (const r of rows) {
+    const t = Math.floor(r.t / step) * step;
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, r.h);
+      last.l = Math.min(last.l, r.l);
+      last.c = r.c;
+      last.v += r.v;
+    } else out.push({ t, o: r.o, h: r.h, l: r.l, c: r.c, v: r.v, first: r.t });
+  }
+  return out.filter((b) => b.first === b.t).map(({ first, ...b }) => b);
+}
+const exBar = (ex, interval) => EX_BAR[ex]?.[interval] || null;
+const exCan = (interval) => Boolean(EX_BAR.gate[interval] || EX_AGG[interval]);
 const EX_NAME = { gate: 'Gate.io', htx: 'HTX', okx: 'OKX' };
 const num = (v) => +v;
 
@@ -374,7 +396,7 @@ export async function findVenue(coin) {
 export async function exchangeCandles(coin, interval, total = 500, only = null) {
   const sym = String(coin?.symbol || '').toUpperCase();
   const step = INTERVAL_MS[interval];
-  if (!sym || !/^[A-Z0-9]{2,12}$/.test(sym) || !EX_BAR.gate[interval]) return null;
+  if (!sym || !/^[A-Z0-9]{2,12}$/.test(sym) || !exCan(interval)) return null;
   const ttl = interval.endsWith('m') ? 15e3 : 60e3;
   const known = only ? null : venueMemo()[sym];
   if (known && known.ex === null && Date.now() - known.at < VENUE_MISS_MS) return null;
@@ -383,8 +405,12 @@ export async function exchangeCandles(coin, interval, total = 500, only = null) 
   const answered = [], silent = [];
   for (const ex of order) {
     try {
-      const rows = (await EX_FETCH[ex](sym, EX_BAR[ex][interval], total, ttl, step))
+      const agg = !exBar(ex, interval) && EX_AGG[interval];
+      let rows = (agg
+        ? await EX_FETCH[ex](sym, EX_BAR[ex][agg.base], total * agg.n + agg.n, ttl, INTERVAL_MS[agg.base])
+        : await EX_FETCH[ex](sym, EX_BAR[ex][interval], total, ttl, step))
         .filter((c) => [c.o, c.h, c.l, c.c].every((x) => Number.isFinite(x) && x > 0));
+      if (agg) rows = aggregateCandles(rows, step);
       answered.push(ex);
       // A listing with little history is not trusted when a coin is first looked
       // for; the exchange already found for it only has to send what was asked
@@ -563,10 +589,15 @@ export async function closeAtTime(coin, interval, atMs) {
       const ok = r && r.c > 0 && (second ? r.t >= atMs && r.t <= end : inside(r.t));
       return ok ? { close: r.c } : { missing: true };
     }
-    if (!coin || typeof coin !== 'object' || !EX_BAR.gate[interval]) return { missing: true };
+    if (!coin || typeof coin !== 'object' || !exCan(interval)) return { missing: true };
     const venue = await findVenue(coin);
     if (venue === null) return { missing: true };
     if (!EX_FETCH[venue]) return { retry: true };
+    // a chart built from 1h candles closes with the last 1h candle inside it
+    if (!exBar(venue, interval) && EX_AGG[interval]) {
+      const base = EX_AGG[interval].base;
+      return closeAtTime(coin, base, Math.floor(atMs / step) * step + step - INTERVAL_MS[base]);
+    }
     const sym = String(coin.symbol).toUpperCase(), bar = EX_BAR[venue][interval];
     let rows;
     if (venue === 'gate') {

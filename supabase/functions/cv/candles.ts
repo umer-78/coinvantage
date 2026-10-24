@@ -8,12 +8,39 @@ import { COIN_VENUE } from './coins.js';
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number };
 
-export const STEP_MS: Record<string, number> = { '1m': 6e4, '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
-const BAR: Record<string, Record<string, string>> = {
-  gate: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d' },
-  htx: { '1m': '1min', '5m': '5min', '15m': '15min', '1h': '60min', '4h': '4hour', '1d': '1day' },
-  okx: { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1H', '4h': '4H', '1d': '1Dutc' },
+// Every chart the trader offers (js/lib/autotrader.js TRADER_CHARTS). The cloud
+// trader knew only six, so an account on 30m, 2h, 6h, 12h or 1w was never checked.
+export const STEP_MS: Record<string, number> = {
+  '1m': 6e4, '5m': 3e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5, '6h': 216e5, '12h': 432e5, '1d': 864e5, '1w': 6048e5,
 };
+const BAR: Record<string, Record<string, string>> = {
+  gate: { '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d', '1w': '7d' },
+  htx: { '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min', '1h': '60min', '4h': '4hour', '1d': '1day', '1w': '1week' },
+  okx: { '1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H', '6h': '6Hutc', '12h': '12Hutc', '1d': '1Dutc', '1w': '1Wutc' },
+};
+// A chart an exchange does not publish (Gate.io and HTX have no 2h, 6h or 12h)
+// is built from its 1h candles on Binance's UTC boundaries, as the browser does
+// (js/api/market.js EX_AGG).
+const AGG: Record<string, { base: string; n: number }> = { '2h': { base: '1h', n: 2 }, '6h': { base: '1h', n: 6 }, '12h': { base: '1h', n: 12 } };
+export function aggregateCandles(rows: Candle[], step: number): Candle[] {
+  const out: (Candle & { first: number })[] = [];
+  for (const r of rows) {
+    const t = Math.floor(r.t / step) * step;
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, r.h);
+      last.l = Math.min(last.l, r.l);
+      last.c = r.c;
+      last.v += r.v;
+    } else out.push({ t, o: r.o, h: r.h, l: r.l, c: r.c, v: r.v, first: r.t });
+  }
+  return out.filter((b) => b.first === b.t).map(({ first: _first, ...b }) => b);
+}
+const viaHour = (fetch: (sym: string, iv: string, total: number) => Promise<Candle[]>, venue: string) =>
+  async (sym: string, iv: string, total: number): Promise<Candle[]> => {
+    const agg = !BAR[venue][iv] && AGG[iv];
+    return agg ? aggregateCandles(await fetch(sym, agg.base, total * agg.n + agg.n), STEP_MS[iv]) : fetch(sym, iv, total);
+  };
 // what the browser asks Binance for before it looks elsewhere (market.js MIN_HISTORY)
 const MIN_HISTORY = 260;
 
@@ -62,7 +89,7 @@ async function fromOkx(sym: string, iv: string, total: number): Promise<Candle[]
   return out;
 }
 
-const FETCH: Record<string, (sym: string, iv: string, total: number) => Promise<Candle[]>> = { binance: fromBinance, gate: fromGate, htx: fromHtx, okx: fromOkx };
+const FETCH: Record<string, (sym: string, iv: string, total: number) => Promise<Candle[]>> = { binance: fromBinance, gate: viaHour(fromGate, 'gate'), htx: viaHour(fromHtx, 'htx'), okx: fromOkx };
 const usable = (c: Candle) => [c.o, c.h, c.l, c.c].every((x) => Number.isFinite(x) && x > 0);
 
 /**

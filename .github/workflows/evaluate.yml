@@ -128,7 +128,8 @@ jobs:
 
       - name: Download candles
         env:
-          PLAN: '{"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+          # every chart the trader offers (js/lib/autotrader.js TRADER_CHARTS)
+          PLAN: '{"5m":8000,"15m":4000,"30m":4000,"1h":4000,"2h":4000,"4h":3500,"6h":3000,"12h":2400,"1d":2200}'
         run: node tools/fetch-klines.mjs klines.json
 
       - name: Each chart's own rules against the app's, walk-forward

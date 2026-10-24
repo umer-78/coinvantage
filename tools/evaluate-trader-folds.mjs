@@ -13,14 +13,15 @@
 // on average, with an average worst drop no more than five points deeper.
 // The rules it would then get are picked the same way on the full history.
 import { readFileSync } from 'node:fs';
-import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity, dropTracker, rulesForChart, RULE_KEYS } from '../js/lib/autotrader.js';
+import { replaySeries, newState, DEFAULT_CONFIG, marketRegime, equity, dropTracker, rulesForChart, RULE_KEYS, TRADER_CHARTS } from '../js/lib/autotrader.js';
 import { computeAll, atr } from '../js/lib/indicators.js';
 import { scoreAt } from '../js/lib/signals.js';
 import { holdDrop } from './hold-drop.mjs';
 
 const raw = JSON.parse(readFileSync(process.argv[2] || 'klines.json', 'utf8'));
 const WARM = 260;
-const IVS = ['15m', '1h', '4h', '1d'].filter((iv) => Object.keys(raw).some((k) => k.endsWith(`:${iv}`)));
+// every chart the trader offers that the download has candles for
+const IVS = TRADER_CHARTS.filter((iv) => Object.keys(raw).some((k) => k.endsWith(`:${iv}`)));
 const iso = (t) => new Date(t).toISOString().slice(0, 10);
 const candlesOf = (k) => raw[k].map((r) => ({ t: r[0], o: r[1], h: r[2], l: r[3], c: r[4], v: r[5] }));
 
@@ -70,7 +71,8 @@ const objective = (m) => (m.trades < 10 ? -Infinity : m.ret - 0.5 * m.dd);
 // result over the risk taken at entry (fees included); `fwd` asks whether the
 // price was higher H candles after the buy, `base` the same from every candle
 // of the block; `rand` is a buy at a random candle of the block held as long.
-const HZ = { '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+// the forecast's horizons where it has one (js/ai/context.js), and about a day, a few days or a month elsewhere
+const HZ = { '5m': 12, '15m': 8, '30m': 8, '1h': 12, '2h': 12, '4h': 6, '6h': 6, '12h': 7, '1d': 7, '1w': 4 };
 function signalRecord(rules, series, from, H) {
   const o = { n: 0, wins: 0, sumR: 0, winR: 0, lossR: 0, holds: [], sumPct: 0, sumRand: 0, fwdUp: 0, fwdN: 0, baseUp: 0, baseN: 0 };
   for (const x of series) {
@@ -185,7 +187,7 @@ for (const iv of IVS) {
   // drop (the objective the rules were picked by) in at least 2 of 3 blocks, by
   // at least 1 point on average, with an average return no more than 1 point
   // below the same rules without it.
-  const SHIPPED = { '15m': 'standard', '1h': 'standard', '4h': 'standard', '1d': 'standard' }; // every chart since 2026-10-15 (106 coins)
+  const SHIPPED = Object.fromEntries(TRADER_CHARTS.map((c) => [c, 'standard'])); // every chart since 2026-10-15 (106 coins)
   const sw = SHIPPED[iv] || which;
   const baseOf = (x) => (sw === 'own' ? x.own : x.current);
   const obj = (m) => m.ret - 0.5 * m.dd;

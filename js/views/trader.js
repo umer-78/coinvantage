@@ -944,7 +944,7 @@ export async function render(el) {
             const coin = all.find((c) => c.symbol === sym);
             return `<tr data-sym="${esc(sym)}">
               <td class="l"><div class="coin-cell">${coinLogo(coin || { symbol: sym }, 22)}<b>${esc(sym)}</b></div></td>
-              <td class="hide-p">${money(p.entry)}</td><td>${money(px)}${st.priceFrom[sym] === 'candle' ? '<br><small class="fine">last candle</small>' : ''}</td>
+              <td class="hide-p">${money(p.entry)}</td><td>${money(px)}${st.priceFrom[sym] === 'candle' ? '<br><small class="fine" title="not on the Binance stream: read from its own exchange every 20 seconds">every 20 s</small>' : ''}</td>
               <td class="down hide-p">${money(p.stop)}${p.movedToBreakEven ? ' <span class="fine">(BE)</span>' : ''}</td>
               <td class="up hide-p">${p.tp === null || p.tp === undefined ? 'trailing' : money(p.tp)}</td>
               <td class="hide-t">${money(p.notional)}</td>
@@ -1329,6 +1329,23 @@ export async function render(el) {
   auth.addEventListener('change', onAuth);
   wireSyncNote();
   const timer = setInterval(() => { if (!st.disposed && state && autoOn) catchUp(); }, 5 * 60e3);
+  // Coins Binance does not stream (XMR on HTX, STABLE on Gate.io…) were marked
+  // only at each check, an hour apart on a 1h account, so an open trade in one
+  // sat on an old price. They are read from their own exchange every 20 seconds
+  // while the page is in view, as the coin page does.
+  const venueTimer = setInterval(async () => {
+    if (st.disposed || document.hidden) return;
+    const held = [...new Set([...Object.keys(state?.open || {}), ...Object.keys(myState()?.open || {}), ...Object.keys(realState()?.open || {})])]
+      .filter((sym) => st.priceFrom[sym] !== 'live');
+    let moved = 0;
+    for (const sym of held) {
+      if (st.disposed) return;
+      const before = st.prices[sym];
+      const px = await fetchPrice(sym);
+      if (px !== null && px !== before) moved++;
+    }
+    if (moved && !st.disposed) draw();
+  }, 20e3);
 
   // draw() renders the demo and real accounts too, so it has to run whether or
   // not the AI has ever been started — otherwise a user who placed a demo trade
@@ -1376,6 +1393,7 @@ export async function render(el) {
   return () => {
     st.disposed = true;
     clearInterval(timer);
+    clearInterval(venueTimer);
     window.removeEventListener('cv:tickers', onTick);
     window.removeEventListener('storage', onStorage);
     auth.removeEventListener('change', onAuth);

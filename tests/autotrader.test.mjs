@@ -90,6 +90,28 @@ test('a buy the account cannot take is reported, not dropped in silence', () => 
   assert.equal(r.B.passedWhy, 'full');
 });
 
+test('leftover cash is not a position: a buy too small to matter is passed up, not placed', async () => {
+  const { MIN_ORDER } = await import('../js/lib/autotrader.js');
+  const a = prepared('A', climb(300), (i) => (i === 250 ? 40 : 0));
+  const b = prepared('B', climb(300), (i) => (i === 255 ? 40 : 0));
+  // 90% in the first coin leaves a tenth of the cash: under a quarter of the 90% the rules want in the next
+  const cfg = cfgWith({ maxPositions: 5, riskPct: 50, maxPositionPct: 90 });
+  const st = newState(cfg);
+  const out = replaySeries(st, cfg, [a, b]);
+  assert.deepEqual(Object.keys(st.open), ['A'], 'no sliver of B bought with what was left');
+  assert.equal(out.B.passedWhy, 'nocash');
+  // an account too small for the exchange's minimum order places nothing
+  const tiny = cfgWith({ startingBalance: MIN_ORDER * 2, maxPositionPct: 25 });
+  const t = newState(tiny);
+  replaySeries(t, tiny, [a]);
+  assert.equal(Object.keys(t.open).length + t.closed.length, 0, `a ${MIN_ORDER * 0.5} buy is under the ${MIN_ORDER} minimum`);
+  // every position any account opens is at least the minimum
+  const big = cfgWith({ maxPositions: 5 });
+  const g = newState(big);
+  replaySeries(g, big, [a, b]);
+  for (const p of [...Object.values(g.open), ...g.closed]) assert.ok(p.notional >= MIN_ORDER, `${p.symbol} ${p.notional}`);
+});
+
 // A dip, as the pullback rule reads it: RSI scripted to 30 on one candle, 60 elsewhere.
 const dipAt = (s, k) => { s.ind = { ...s.ind, rsi: s.ind.rsi.map((v, i) => (v === null ? null : i === k ? 30 : 60)) }; return s; };
 

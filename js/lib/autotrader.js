@@ -314,8 +314,18 @@ export function backtestSettings(cfg, candlesBySymbol) {
   };
 }
 
-/** Charts the trader can run on; only some were tested (CHART_TESTED). */
-export const TRADER_CHARTS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'];
+/**
+ * The smallest buy the trader places, in US dollars: Binance refuses spot
+ * orders under 5 USDT, and a buy this small only pays fees.
+ */
+export const MIN_ORDER = 10;
+
+/**
+ * Charts the trader can run on, each tested walk-forward (CHART_TESTED). The
+ * weekly chart is not offered: the indicators need 260 candles before the first
+ * trade, five years of weekly history, which leaves nothing to test it on.
+ */
+export const TRADER_CHARTS = ['5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'];
 // The whole top-100 list the coin picker shows. Every check fetches each coin's
 // candles (four at a time), so a long list only makes a check take longer.
 export const MAX_COINS = 100;
@@ -379,6 +389,9 @@ export function settingsWarnings(cfg) {
   if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.${cfg.maxPositionPct > 50 ? ' One trade can then take all the cash, so the AI holds one coin at a time and passes up the other coins\' buy signals.' : ''}`);
   const untested = (cfg.universe || []).filter((sym) => !TESTED_COINS.includes(sym));
   if (untested.length) out.push(`${untested.length} of your ${(cfg.universe || []).length} coins ${untested.length === 1 ? 'was' : 'were'} not in the tests (${TESTED_COINS.length} of the largest coins), so the measured results say nothing about ${untested.length === 1 ? 'it' : 'them'}${untested.length <= 8 ? `: ${untested.join(', ')}` : ''}.`);
+  // more open trades allowed than the cash can fund: the later buys are passed up
+  const funded = Math.floor(100 / (cfg.maxPositionPct ?? 25));
+  if (cfg.maxPositions > funded + 1) out.push(`Up to ${cfg.maxPositions} open trades, but with ${cfg.maxPositionPct ?? 25}% in each coin the cash funds about ${funded} at a time. Once it is all in open trades, further buy signals are passed up (the activity list says when); the tests allowed 5 open at most.`);
   if (cfg.maxPositions * (cfg.maxPositionPct ?? 25) < 50) out.push(`With at most ${cfg.maxPositions} open and ${cfg.maxPositionPct ?? 25}% in one coin, no more than ${cfg.maxPositions * (cfg.maxPositionPct ?? 25)}% of the account is ever invested.`);
   if ((cfg.universe || []).length < 3) out.push('With fewer than three coins the trader will often have nothing to do.');
   if ((cfg.feePct ?? 0.1) > 0.25) out.push(`A ${cfg.feePct}% fee each way is high: on short charts fees can take most of the gains.`);
@@ -528,7 +541,9 @@ export const DEFAULT_CONFIG = {
   perCoin: null,          // { SYMBOL: { ...RULE_KEYS } }: a coin's own rules over these (see PER_COIN_RULES)
   momentumConfirm: false, // also require price > 20 EMA > 50 EMA and a rising MACD
   marketFilter: false,    // no new buys while Bitcoin is below its 200 EMA
-  interval: '1h',
+  // a new account starts on the chart that made the most in the published test,
+  // after the cost of real fills (it was 1h, which lost money there)
+  interval: bestTestedChart()?.iv || '1d',
   universe: ['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'AVAX', 'LINK'],
 };
 
@@ -893,16 +908,22 @@ function stepBar(state, cfg, s, i, score) {
   if (cfg.maxFeeShare > 0 && (2 * (cfg.feePct ?? 0.1)) / ((riskPerUnit / entry) * 100) > cfg.maxFeeShare) return;
 
   const riskCash = state.balance * (cfg.riskPct / 100);
-  let notional = (riskCash / riskPerUnit) * entry;
-  // the fee is paid from the same cash
-  notional = Math.min(notional, state.balance * (cfg.maxPositionPct / 100), freeCash(state) / (1 + cfg.feePct / 100));
+  // what the rules want in this coin, then what the cash on hand allows (the fee is paid from the same cash)
+  const wanted = Math.min((riskCash / riskPerUnit) * entry, state.balance * (cfg.maxPositionPct / 100));
+  const affordable = freeCash(state) / (1 + cfg.feePct / 100);
+  // Leftover cash is not a position. A buy smaller than an exchange takes
+  // (MIN_ORDER) or than a quarter of what the rules wanted is passed up and
+  // reported: an account with its cash in three coins bought $4 of BTT with
+  // what was left, and paid fees on a trade that could not matter.
+  const least = Math.max(MIN_ORDER, wanted * 0.25);
+  if (Math.min(wanted, affordable) < least) return affordable < least ? 'nocash' : undefined;
+  let notional = Math.min(wanted, affordable);
   // after the caps, which on short charts bind before the risk setting does
   if (cfg.volScale) {
     s.volr ||= volRatio(candles);
     const r = s.volr[i];
     if (r > 1) notional *= Math.max(0.5, 1 / r);
   }
-  if (notional < 1) return freeCash(state) < 1 + (cfg.feePct ?? 0.1) / 100 ? 'nocash' : undefined;
 
   const qty = notional / entry;
   const fee = notional * (cfg.feePct / 100);
