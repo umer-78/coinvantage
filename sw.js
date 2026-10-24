@@ -1,10 +1,11 @@
 // Offline shell for CoinVantage.
 // Market data is never cached — only the app's own files, so the site opens
 // instantly and still loads on a flaky connection. Bump VERSION on each release.
-const VERSION = "cv-20261024-142653";
+const VERSION = "cv-20261024-185240";
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './icon.svg', './icon-192.png', './icon-512.png',
+  './fonts/cormorant-garamond.woff2', './fonts/cormorant-garamond-italic.woff2', './fonts/manrope.woff2',
 ];
 
 self.addEventListener('install', (e) => {

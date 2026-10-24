@@ -80,6 +80,27 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### The portfolio's design and a 3D market world (2026-10-24)
+The site now wears the portfolio's design (umer-78.github.io): one dark theme of obsidian,
+ivory and champagne gold (`css/app.css` tokens; the light theme and its switch are gone,
+an old saved `theme` is ignored), Cormorant Garamond for display type and figures,
+Manrope for text (`fonts/`, SIL OFL), glass panels with gold hairlines, pill controls, and
+the portfolio's film grain. Behind every page is a three.js world built from the
+portfolio's own gallery code (`js/world/ring.js`): obsidian monoliths in a ring on black
+stone around liquid gold in an armillary. It is the market (`js/world/mapping.js`, tested
+in `tests/world.test.mjs`): the largest non-stable coins (28 on a desktop, 18 on a phone),
+height = market cap on a log scale, seam light = 24-hour move (jade up, coral down, gold
+under 0.25%, brighter the bigger the move, live from the Binance stream), and the gold's
+ripple = the ring's average absolute 24-hour move. The Markets page opens on a hero with
+the ring above its headline; pointing at a monolith names its coin (price, 24h) and a click
+opens it. Each page has its own view (`VIEWS`), glided to in 1.6 s; a coin's page looks at
+its monolith. Content pages show the world at 72% behind their panels. Cost: three.js is
+fetched after the first page is drawn (`startWorld` in `js/app.js`); frames are drawn only
+while something moves (measured: 0 draw calls a second on a settled page, scrolled past
+the hero, or with reduced motion); quality steps down (no glow, lower resolution) if frames
+run slow; a phone draws without the glow pass. The import map is the one inline script, and
+the CSP names it by hash (README, Known notes).
+
 ### Trader re-measured on 2026-10-24; tables fit narrow screens (2026-10-24)
 - **No rule change.** `CHART_TESTED` and `VOL_SCALE` now hold the Evaluate run of 2026-10-24
   (trader-folds, with the shipped exits in `CHART_EXITS`) and the run of 2026-10-23 as

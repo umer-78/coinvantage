@@ -8,15 +8,18 @@ export const title = 'Markets';
 
 export async function render(el) {
   el.innerHTML = `
-    <div class="page-head">
-      <div><h1>Crypto prices today</h1><p id="mkSummary">Live prices, market caps and 7-day trends for the top 250 coins.</p></div>
-    </div>
+    <header class="hero">
+      <p class="eyebrow">Live markets <span class="rule" aria-hidden="true"></span> ${esc(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }))}</p>
+      <h1>Crypto prices <em>today</em></h1>
+      <p class="lede" id="mkSummary">Live prices, market caps and 7-day trends for the top 250 coins.</p>
+      <p class="key-hint">Each monolith is one of the largest coins: its height is its market cap, its light the last 24 hours, jade for a rise and coral for a fall. Point at one to name it; click to open its chart.</p>
+    </header>
     <div class="global-strip" id="globalStrip">${Array.from({ length: 5 }, () => `<div class="card">${skeleton(2, 16)}</div>`).join('')}</div>
     <div class="grid g4" style="margin-bottom:14px">
       <div class="card"><div class="card-h"><h3>Fear &amp; Greed</h3><span class="fine" id="fngDate"></span></div><div id="fng">${skeleton(3)}</div></div>
-      <div class="card"><div class="card-h"><h3>🔥 Trending</h3></div><div class="hl-list" id="trending">${skeleton(5)}</div></div>
-      <div class="card"><div class="card-h"><h3>🚀 Top gainers 24h</h3></div><div class="hl-list" id="gainers">${skeleton(5)}</div></div>
-      <div class="card"><div class="card-h"><h3>📉 Top losers 24h</h3></div><div class="hl-list" id="losers">${skeleton(5)}</div></div>
+      <div class="card"><div class="card-h"><h3>Trending</h3></div><div class="hl-list" id="trending">${skeleton(5)}</div></div>
+      <div class="card"><div class="card-h"><h3>Top gainers <span class="fine">24h</span></h3></div><div class="hl-list" id="gainers">${skeleton(5)}</div></div>
+      <div class="card"><div class="card-h"><h3>Top losers <span class="fine">24h</span></h3></div><div class="hl-list" id="losers">${skeleton(5)}</div></div>
     </div>
     <div class="card">
       <div class="card-h">

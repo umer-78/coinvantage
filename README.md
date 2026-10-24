@@ -12,6 +12,15 @@ computers alike.
 > Signals, forecasts and AI answers are educational tools, not financial advice.
 > The site never places trades and never asks for exchange API keys, private keys or seed phrases.
 
+It wears the same design as the [portfolio](https://umer-78.github.io/): obsidian,
+ivory and champagne gold, Cormorant Garamond over Manrope, glass panels on a live
+3D world. The world is the market: one obsidian monolith per large coin in a ring
+around a sculpture of liquid gold. A monolith's height is its coin's market cap,
+the light in its seam the last 24 hours (jade for a rise, coral for a fall), and
+the gold ripples harder the more the market moved. Point at one on the Markets
+page to name it; click to open its chart. Each page looks at the ring from its
+own place, and a coin's page looks at that coin's monolith.
+
 ## Features
 
 | Area | What it does |
@@ -196,7 +205,7 @@ granted by hand from the admin panel, and news/track record keep working.
 
 Edit `APP_NAME` / `TAGLINE` in `js/config.js`, the `<title>` and meta tags in `index.html`,
 the icons (`icon.svg`, `icon-192.png`, `icon-512.png`, `manifest.webmanifest`), the link-preview image `og-image.png` and the site address in the `og:` and canonical tags and the
-colours in `css/app.css` (`--accent`).
+colours in `css/app.css` (`--gold`, `--gold-grad` and the tokens beside them).
 
 ## Project layout
 
@@ -204,7 +213,9 @@ colours in `css/app.css` (`--accent`).
 index.html              app shell
 sw.js                   service worker (offline shell)
 manifest.webmanifest    PWA manifest, icons, shortcuts
-css/app.css             design system (dark/light), responsive layout
+css/app.css             design system (the portfolio's: obsidian, ivory, gold; glass panels), responsive layout
+fonts/                  Cormorant Garamond and Manrope (SIL Open Font Licence, texts beside them)
+js/world/               the 3D world behind every page (three.js): the market ring, what it shows (mapping.js)
 js/app.js               router, navigation, search, live ticker, currency/language, sync, alerts
 js/config.js            app name, API endpoints, AI models, currencies, backend keys
 js/i18n.js              English/Urdu strings and RTL switching
@@ -233,6 +244,15 @@ tests/                  unit tests (node --test)
 If every source is unreachable, clearly-labelled demo data is shown instead.
 
 ## Known notes
+
+- The page's Content-Security-Policy allows exactly one inline script, the import map
+  that points `three` at its pinned jsDelivr build, by its SHA-256 hash. Change the map
+  and update the hash in the same meta tag; `tests/world.test.mjs` fails until they match.
+- Without WebGL, or when three.js cannot load, `html` gets `no-webgl` and every page
+  keeps a still gold-on-obsidian background; nothing else depends on the world. It
+  draws only while something moves (the Markets page's orbit while its headline is on
+  screen, a glide to a new page's view, a coin's light changing), pauses in a hidden
+  tab, and with reduced motion never moves on its own.
 
 - `pg_net` sits in the `public` schema because that is where Supabase installs it; the
   scheduled jobs call it through `private.call_cv()`.

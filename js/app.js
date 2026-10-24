@@ -111,6 +111,9 @@ async function route(opts) {
   const keep = opts?.keepScroll === true ? window.scrollY : null;
   const [name = '', ...params] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
   const file = `views/${VIEWS[name] || VIEWS['']}.js`;
+  // the 3D world behind the page turns to each page's own view of the ring
+  document.documentElement.dataset.page = VIEWS[name] ? name || 'markets' : 'markets';
+  window.dispatchEvent(new CustomEvent('cv:route', { detail: { name: document.documentElement.dataset.page, params } }));
   preloadDeps(file);
   renderNav();
   if (typeof cleanup === 'function') { try { cleanup(); } catch (e) { console.error(e); } }
@@ -155,17 +158,11 @@ async function route(opts) {
 document.querySelector('.skip-link')?.addEventListener('click', (e) => { e.preventDefault(); $('#view').focus(); });
 
 // ---------------------------------------------------------------- theme
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  $('#themeBtn').innerHTML = icon(theme === 'dark' ? 'sun' : 'moon');
-  document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#0b0e14' : '#f5f6f8';
+// One theme, the portfolio's: obsidian, ivory and champagne gold (css/app.css).
+// A theme saved by an older version is ignored.
+function applyTheme() {
+  document.documentElement.dataset.theme = 'dark';
 }
-$('#themeBtn').addEventListener('click', () => {
-  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  settings.set({ theme: next });
-  applyTheme(next);
-  window.dispatchEvent(new Event('cv:theme'));
-});
 
 // ---------------------------------------------------------------- search
 function initSearch() {
@@ -426,10 +423,21 @@ getAppSettings().then((s) => {
   $('#noticeX')?.addEventListener('click', () => { save('dismissedNotice', text); siteBanner = ''; paintBanners(); });
 }).catch(() => { /* backend optional */ });
 
+// ---------------------------------------------------------------- 3D world
+// The world behind every page (js/world/), as on the portfolio. It is fetched
+// once the first page is drawn, so it never holds the prices up; without WebGL,
+// or if three.js cannot load, the page keeps its still gold-on-obsidian background.
+function startWorld() {
+  const go = () => import('./world/world.js').then((m) => m.startWorld()).catch((e) => {
+    console.warn('3D world', e);
+    document.documentElement.classList.add('no-webgl');
+  });
+  if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 2500 });
+  else setTimeout(go, 800);
+}
+
 // ---------------------------------------------------------------- boot
-// The font loads after the first paint instead of holding it up (a stylesheet
-// link in the page head blocks rendering until Google answers).
-{ const f = document.createElement('link'); f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'; document.head.append(f); }
+// The fonts are the site's own files (fonts/, css/app.css), as on the portfolio.
 // The pages search engines index (coin/btc/, trader/ …, tools/build-pages.mjs)
 // carry the route they stand for. Opening it moves the address to the app's
 // own (/#/coin/BTC), so every link after this stays in the page.
@@ -475,7 +483,7 @@ syncExchangeClock();
 setInterval(syncExchangeClock, 6e5);
 window.addEventListener('hashchange', route);
 initSearch();
-initSelectors().then(route).catch(route);
+initSelectors().then(route).catch(route).finally(startWorld);
 initTicker();
 initAccount();
 riskGate();
@@ -497,7 +505,7 @@ setTimeout(() => {
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261024-142653";
+export const BUILD = "20261024-185240";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
