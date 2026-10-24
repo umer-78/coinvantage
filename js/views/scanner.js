@@ -114,8 +114,8 @@ export async function render(el) {
         : skeleton(10, 26);
       return;
     }
-    const th = (k, label) => `<th data-sort="${k}" aria-sort="${st.sort === k ? 'descending' : 'none'}">${label}${st.sort === k ? '\u00a0↓' : ''}</th>`;
-    $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Price</th>${th('chg', '24h')}<th class="l">Signal</th>${th('aisig', 'AI signal')}${th('score', 'Score')}${th('ai', 'AI up')}${th('move', '80% range')}<th class="l">Move timing</th>${th('rsi', 'RSI')}<th class="hide-l">Trend</th></tr></thead><tbody>
+    const th = (k, label, cls = '') => `<th${cls ? ` class="${cls}"` : ''} data-sort="${k}" aria-sort="${st.sort === k ? 'descending' : 'none'}">${label}${st.sort === k ? '\u00a0↓' : ''}</th>`;
+    $('#tbl', el).innerHTML = `<div class="tbl-wrap"><table class="tbl fit"><thead><tr><th class="l">Coin</th><th class="hide-p">Price</th>${th('chg', '24h', 'hide-p')}<th class="l">Signal</th>${th('aisig', 'AI signal')}${th('score', 'Score')}${th('ai', 'AI up', 'hide-p')}${th('move', '80% range', 'hide-p')}<th class="l hide-t">Move timing</th>${th('rsi', 'RSI', 'hide-t')}<th class="hide-l">Trend</th></tr></thead><tbody>
       ${rows.map((r) => {
         const s = r.signal;
         const trend = s.indicators.ema200 ? (s.price > s.indicators.ema200 ? '<span class="up">Above 200 EMA</span>' : '<span class="down">Below 200 EMA</span>') : '—';
@@ -124,13 +124,13 @@ export async function render(el) {
         const ai = !r.fc?.ok ? (r.fc === undefined ? '<span class="spinner" style="width:12px;height:12px"></span>' : '—')
           : reliable ? `<b class="${p >= 0.54 ? 'up' : p <= 0.46 ? 'down' : 'flat'}">${Math.round(p * 100)}%</b>`
           : `<span class="muted" title="No reliable direction on this chart (raw lean ${Math.round(r.fc.probUp * 100)}% up)">—</span>`;
-        return `<tr data-sym="${esc(r.coin.symbol)}"><td class="l"><div class="coin-cell">${coinLogo(r.coin, 24)}<b>${esc(r.coin.symbol)}</b><small class="hide-l">${esc(r.coin.name)}</small></div></td>
-          <td>${money(s.price)}</td><td>${changeHtml(r.coin.change24h)}</td>
+        return `<tr data-sym="${esc(r.coin.symbol)}"><td class="l"><div class="coin-cell">${coinLogo(r.coin, 24)}<b>${esc(r.coin.symbol)}</b><small class="hide-l">${esc(r.coin.name)}</small></div><small class="show-p-block">${money(s.price)}</small><small class="show-p-block">${changeHtml(r.coin.change24h)}</small></td>
+          <td class="hide-p">${money(s.price)}</td><td class="hide-p">${changeHtml(r.coin.change24h)}</td>
           <td class="l"><span class="chip ${s.tone === 'flat' ? '' : s.tone}"${reason ? ` title="${esc(reason)}"` : ''}>${s.text}</span></td>
           <td>${aiCell(r)}</td>
-          <td class="${s.tone}"><b>${s.score > 0 ? '+' : ''}${s.score}</b></td><td>${ai}</td><td class="fine wrap" style="min-width:84px">${rangeCell(r)}</td>
-          <td class="l fine wrap" style="min-width:96px">${timingCell(r)}</td>
-          <td class="${s.indicators.rsi < 30 ? 'up' : s.indicators.rsi > 70 ? 'down' : ''}">${s.indicators.rsi?.toFixed(0) ?? '—'}</td>
+          <td class="${s.tone}"><b>${s.score > 0 ? '+' : ''}${s.score}</b></td><td class="hide-p">${ai}</td><td class="fine wrap hide-p" style="min-width:84px">${rangeCell(r)}</td>
+          <td class="l fine wrap hide-t" style="min-width:96px">${timingCell(r)}</td>
+          <td class="hide-t ${s.indicators.rsi < 30 ? 'up' : s.indicators.rsi > 70 ? 'down' : ''}">${s.indicators.rsi?.toFixed(0) ?? '—'}</td>
           <td class="hide-l">${trend}</td></tr>`;
       }).join('')}</tbody></table></div>`;
     wireSortHeaders($('#tbl', el), (k) => { st.sort = k; draw(); });

@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { FORECAST_TESTED } from '../js/lib/forecastview.js';
 import { TESTED_ACCURACY } from '../js/lib/predict.js';
 import { CHART_TESTED, TESTED_COINS } from '../js/lib/autotrader.js';
+const TESTED_CHARTS = Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard);
+const holdBeat = TESTED_CHARTS.filter((k) => { const x = CHART_TESTED[k]; return x.hold > (x.adopt ? x.own : x.standard).ret; }).length;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // the site's address; a copy deployed elsewhere passes its own (--site=https://…/)
@@ -69,10 +71,10 @@ const SECTIONS = [
   { route: '#/trader', path: 'trader/', title: 'AI Crypto Trading Simulator — Paper Trading with Tested Rules | CoinVantage',
     desc: `An AI trader that runs tested rules on live prices with simulated money, plus a demo account and a record of your real trades. Walk-forward results on ${facts.coins} coins are shown next to it. No orders are ever placed.`,
     h1: 'AI trading simulator',
-    body: ['An AI trader that buys and sells with simulated money on live prices, using rules tested walk-forward on every coin it can trade, fees included. It places no orders on any exchange.', `On each chart the page shows what the same rules made in the test, the worst drop, and what simply holding the coins made. In the latest test (${CHART_TESTED.measuredOn}) holding made more on some charts: the page says which.`] },
+    body: ['An AI trader that buys and sells with simulated money on live prices, using rules tested walk-forward on every coin it can trade, fees included. It places no orders on any exchange.', `On each chart the page shows what the same rules made in the test, the worst drop, and what simply holding the coins made. In the latest test (${CHART_TESTED.measuredOn}) holding the same coins made more on ${holdBeat === TESTED_CHARTS.length ? 'every chart' : holdBeat ? `${holdBeat} of ${TESTED_CHARTS.length} charts` : 'no chart'}: the page shows both, each with its worst drop.`] },
   { route: '#/learn', path: 'learn/', title: 'How the AI Learns and How It Is Tested | CoinVantage',
-    desc: 'Every indicator, the forecast and the AI trader are graded against what the market did. See the walk-forward tests, the live record on this device, and what was tried and rejected.',
-    h1: 'How the AI learns and how it is tested', body: ['Every call the app makes is graded against what price did next, on this device and on the server. A method only takes over when it beats the current one on that record.', directionLine, rangeLine] },
+    desc: 'Every indicator, the forecast and the AI trader are graded against what the market did. See the walk-forward tests, the live record kept in the cloud, and what was tried and rejected.',
+    h1: 'How the AI learns and how it is tested', body: ['Every call is graded against what price did next, in the cloud, whether or not a page is open. A method only takes over when it beats the current one on that record.', directionLine, rangeLine] },
   { route: '#/track', path: 'track/', title: 'Public Track Record of Every Logged Signal | CoinVantage',
     desc: 'Every signal the server logged before the outcome was known, scored against the hit rate of always calling the more common outcome.',
     h1: 'Public track record', body: ['Each signal is logged before its outcome is known and scored when the horizon passes, against the hit rate of always calling the more common outcome.'] },

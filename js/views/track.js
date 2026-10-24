@@ -56,13 +56,13 @@ export async function render(el) {
         if (!ours) continue;
         const diff = Math.abs((ours.price - +row.price) / +row.price) * 100;
         worst = Math.max(worst, diff);
-        rows.push(`<tr><td class="l"><b>${esc(sym)}</b></td><td>${money(+row.price)}</td><td>${money(ours.price)}</td><td class="${diff < 0.1 ? 'up' : 'warn'}">${diff.toFixed(3)}%</td></tr>`);
+        rows.push(`<tr><td class="l"><b>${esc(sym)}</b></td><td>${money(+row.price)}<small class="show-p-block">here ${money(ours.price)}</small></td><td class="hide-p">${money(ours.price)}</td><td class="${diff < 0.1 ? 'up' : 'warn'}">${diff.toFixed(3)}%</td></tr>`);
       }
     } catch { /* offline — say so rather than claiming a pass */ }
     const skew = clockOffsetMs();
     card.innerHTML = rows.length ? `
       <div class="card-h"><h3>Live data check</h3><span class="chip ${worst < 0.1 ? 'up' : 'warn'}">${worst < 0.1 ? 'Matching the exchange' : 'Slight drift'}</span></div>
-      <div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Exchange now</th><th>Shown here</th><th>Difference</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+      <div class="tbl-wrap"><table class="tbl fit"><thead><tr><th class="l">Coin</th><th>Exchange now</th><th class="hide-p">Shown here</th><th>Difference</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
       <p class="fine mt">Prices come straight from the exchange and are shown to the same number of decimals it quotes. Small differences are the seconds between the two readings, not rounding.
       Clock: this device is <b>${Math.abs(skew)} ms ${skew >= 0 ? 'behind' : 'ahead of'}</b> the exchange, and the app corrects for it, so every timestamp on the site is exchange time.
       Currency: 1 USD = ${fx.rate.toFixed(4)} ${esc(fx.code)}, from a live rate feed.</p>

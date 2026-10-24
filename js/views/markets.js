@@ -50,17 +50,17 @@ export async function render(el) {
     const order = (k) => (state.sort !== k ? 'none' : (state.dir === 1) === (k === 'rank' || k === 'name') ? 'ascending' : 'descending');
     const th = (k, label, cls = '') => `<th data-sort="${k}" class="${cls}" aria-sort="${order(k)}">${label}${state.sort === k ? (state.dir === 1 ? '\u00a0↓' : '\u00a0↑') : ''}</th>`;
     area.innerHTML = `<div class="tbl-wrap"><table class="tbl" id="mkt">
-      <thead><tr><th class="l" style="width:28px"></th>${th('rank', '#', 'l')}${th('name', 'Coin', 'l')}${th('price', 'Price')}${th('change1h', '1h', 'hide-m hide-l')}${th('change24h', '24h')}${th('change7d', '7d', 'hide-m')}${th('marketCap', 'Market cap')}${th('volume24h', 'Volume 24h', 'hide-m hide-t')}<th class="hide-m hide-t">Last 7 days</th></tr></thead>
+      <thead><tr><th class="l" style="width:28px"></th>${th('rank', '#', 'l hide-p')}${th('name', 'Coin', 'l')}${th('price', 'Price')}${th('change1h', '1h', 'hide-m hide-l')}${th('change24h', '24h')}${th('change7d', '7d', 'hide-m')}${th('marketCap', 'Market cap', 'hide-p')}${th('volume24h', 'Volume 24h', 'hide-m hide-t')}<th class="hide-m hide-t">Last 7 days</th></tr></thead>
       <tbody>${rows.slice(0, state.limit).map((r) => `
         <tr data-sym="${esc(r.symbol)}" data-pair="${r.binance || ''}">
           <td class="l"><button class="star ${watchlist.has(r.symbol) ? 'on' : ''}" data-star="${esc(r.symbol)}" aria-label="Watch ${esc(r.name)}">${icon('star', 15)}</button></td>
-          <td class="l muted">${r.rank ?? ''}</td>
+          <td class="l muted hide-p">${r.rank ?? ''}</td>
           <td class="l"><div class="coin-cell">${coinLogo(r, 26)}<b>${esc(r.name)}</b><small>${esc(r.symbol)}</small></div></td>
           <td class="p">${money(r.price)}</td>
           <td class="hide-m hide-l">${changeHtml(r.change1h)}</td>
           <td class="c24">${changeHtml(r.change24h)}</td>
           <td class="hide-m">${changeHtml(r.change7d)}</td>
-          <td>${compact(r.marketCap)}</td>
+          <td class="hide-p">${compact(r.marketCap)}</td>
           <td class="hide-m hide-t">${compact(r.volume24h)}</td>
           <td class="hide-m hide-t">${sparkline(r.sparkline, { w: 128, h: 38 })}</td>
         </tr>`).join('')}</tbody></table></div>

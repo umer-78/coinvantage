@@ -87,7 +87,7 @@ export async function render(el, [preset]) {
       const periodVol = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / r.length) * Math.sqrt(r.length);
       return { ...s, total, vol: vol * 100, dd: dd * 100, best: Math.max(...r) * 100, worst: Math.min(...r) * 100, ratio: periodVol ? (mean * r.length) / periodVol : 0, thin: false };
     });
-    $('#stats', el).innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th class="l">Coin</th><th>Return</th><th>Volatility (yr)</th><th>Max drawdown</th><th class="hide-m hide-l">Best / worst candle</th><th>Return ÷ risk</th></tr></thead><tbody>
+    $('#stats', el).innerHTML = `<div class="tbl-wrap"><table class="tbl fit"><thead><tr><th class="l">Coin</th><th>Return</th><th>Volatility (yr)</th><th>Max drawdown</th><th class="hide-m hide-l">Best / worst candle</th><th>Return ÷ risk</th></tr></thead><tbody>
       ${stats.sort((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity)).map((s) => `<tr data-sym="${esc(s.sym)}"><td class="l"><div class="coin-cell">${coinLogo(s.coin, 22)}<b>${esc(s.sym)}</b></div></td>
         ${s.thin
           ? `<td colspan="5" class="muted fine">Not enough price history on this timeframe to measure</td>`
@@ -188,10 +188,10 @@ export async function render(el, [preset]) {
       <div id="selfChart" class="mt"></div>
       <p class="fine" style="margin-top:6px">Each faint line is one past stretch that matched, lined up so the match ends at 0 on the axis. Everything right of the divider is what actually happened next.</p>
       ${v.lines.map((l) => `<p class="fine" style="margin:8px 0 0">${esc(l)}</p>`).join('')}
-      <div class="tbl-wrap mt"><table class="tbl"><thead><tr>
+      <div class="tbl-wrap mt"><table class="tbl fit"><thead><tr>
         <th class="l">Matched stretch ended</th><th>Similarity</th><th>Move over next ${match.horizon}</th><th class="hide-m">Peak</th><th class="hide-m">Trough</th>
       </tr></thead><tbody>
-        ${match.matches.map((m) => `<tr style="cursor:default"><td class="l">${esc(dateTime(m.endTime, iv !== '1d'))}</td>
+        ${match.matches.map((m) => `<tr style="cursor:default"><td class="l wrap">${esc(dateTime(m.endTime, iv !== '1d'))}</td>
           <td>${(m.similarity * 100).toFixed(0)}%</td>
           <td class="${m.futureReturnPct >= 0 ? 'up' : 'down'}"><b>${pct(m.futureReturnPct)}</b></td>
           <td class="hide-m up">${pct(m.maxUpPct)}</td><td class="hide-m down">${pct(m.maxDownPct)}</td></tr>`).join('')}

@@ -681,13 +681,23 @@ body { background: transparent; }
 /* columns that only fit a wide screen */
 @media (max-width: 1439px) { .hide-l { display: none !important; } }
 /* phone-only: what a narrow screen drops (hide-p), and what it shows instead (show-p inline, show-pb block) */
-.show-p { display: none; }
+.show-p, .show-t { display: none; }
+@media (max-width: 1180px) { .show-t { display: inline; } }
 .show-pb { display: none; }
 .tbl td small.show-p-block { display: none; }
-@media (max-width: 520px) { .tbl td small.show-p-block { display: block; font-weight: 400; white-space: normal; } .tbl.fit .chip { white-space: normal; } }
+@media (max-width: 520px) { .tbl td small.show-p-block { display: block; font-weight: 400; white-space: normal; } .tbl.fit .chip { white-space: normal; border-radius: 10px; } }
 .show-pb .tbl.fit { font-size: 11px; }
 .show-pb .tbl.fit td, .show-pb .tbl.fit th { padding: 6px 2px; }
 @media (max-width: 520px) { .hide-p { display: none !important; } .show-p { display: inline; } .show-pb { display: block; } }
+/* the markets list on a phone: the name over the symbol, beside the logo, so a long name wraps instead of pushing the prices off screen */
+@media (max-width: 520px) {
+  #mkt .coin-cell { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; }
+  #mkt .coin-cell > :first-child { grid-row: span 2; }
+  #mkt .coin-cell b { white-space: normal; word-break: keep-all; }
+  #mkt th, #mkt td { padding-left: 5px; padding-right: 5px; }
+}
+/* five numbers a row on the Compare page: the symbol alone names the coin on a phone */
+@media (max-width: 520px) { #stats .coin-cell .logo { display: none; } }
 @media (max-width: 1180px) {
   .hide-t { display: none !important; }
   .cmp-grid { grid-template-columns: minmax(0, 1fr); }

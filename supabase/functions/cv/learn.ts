@@ -1,4 +1,4 @@
-// Scheduled AI learning (cron every five minutes): one chart and a few coins a
+// Scheduled AI learning (cron every minute): one chart and a few coins a
 // run, in turn (learnjob.js), into the shared record in ai_learn, one row per
 // chart. The pages read that row's summary, so the AI keeps learning with every
 // browser closed and every device shows the same record.

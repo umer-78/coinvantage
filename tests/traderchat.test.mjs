@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { traderAnswer, TRADER_Q } from '../js/lib/traderchat.js';
 import { newState, DEFAULT_CONFIG, PER_COIN_RULES, CHART_TESTED } from '../js/lib/autotrader.js';
+import { pct } from '../js/format.js';
 
 test('questions about the AI trader are recognised; market questions are not', () => {
   for (const q of ['How is my AI trader doing?', 'How does the AI trader work?', 'what rules does the AI use for BTC?', 'Is the trading bot making money?', 'how much profit did the AI make', 'Does the AI have any open positions?', 'show my AI account'])
@@ -18,7 +19,7 @@ test('before it has started, it says so and how to start it', () => {
   assert.match(a.text, /has not started yet/);
   assert.match(a.text, /\[Trading\]\(#\/trader\)/);
   const t = CHART_TESTED['1h'].adopt ? CHART_TESTED['1h'].own : CHART_TESTED['1h'].standard; // the rules the chart trades
-  assert.match(a.text, new RegExp(`\\+${t.ret}% per ${CHART_TESTED['1h'].block}`), 'the chart\'s tested result');
+  assert.match(a.text, new RegExp(`${pct(t.ret).replace(/[+.]/g, '\\$&')} per ${CHART_TESTED['1h'].block}`), 'the chart\'s tested result, gain or loss');
   assert.match(a.text, /Not financial advice/);
 });
 

@@ -181,7 +181,10 @@ test('a chart trades its own rules only where the published test clears the bar 
     const clears = x.better >= 2 && x.own.ret - x.standard.ret >= 1 && dd(x.own) <= dd(x.standard) + 5;
     assert.ok(x.holdDrop > 0 && x.own.dd > 0 && x.standard.dd > 0, `${iv}: drops measured`);
     assert.ok(x.fillCost == null || x.fillCost > 0, `${iv}: the cost of worse fills, where measured on the rules it trades`);
-    assert.equal(x.adopt, clears, `${iv}: adopt must follow the bar`);
+    assert.equal(x.cleared, clears, `${iv}: the run's verdict follows the bar`);
+    // a published decision changes only when the latest two runs agree
+    if (x.adopt) assert.ok(x.cleared || x.previous?.cleared, `${iv}: its own pick traded only with a passing run behind it`);
+    else assert.ok(!(x.cleared && x.previous?.cleared), `${iv}: two passing runs in a row switch its own pick on`);
     assert.equal(Boolean(CHART_RULES[iv]), x.adopt, `${iv}: rules shipped exactly where adopted`);
   }
 });

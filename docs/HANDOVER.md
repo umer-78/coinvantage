@@ -80,6 +80,31 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### Trader re-measured on 2026-10-24; tables fit narrow screens (2026-10-24)
+- **No rule change.** `CHART_TESTED` and `VOL_SCALE` now hold the Evaluate run of 2026-10-24
+  (trader-folds, with the shipped exits in `CHART_EXITS`) and the run of 2026-10-23 as
+  `previous`. A change needs the latest two runs to agree, and they agree on none. 15m's own
+  pick cleared the bar on 2026-10-22 and 23, was held back for a run that also measured the
+  cost of worse fills for it, and failed that run (1 of 3 blocks; −10.61% against −3.87% a
+  block, −12.89% against −5.25% after fills). 1d's own pick failed on 22 (worst drop 0.6
+  points over the bar) and 23 (1 of 3) and cleared it on 24. Volatility sizing: 15m cleared
+  it on 22 and 23 and failed on 24; 1d on 16, 22 and 24, failing on 23; 1h only on 24; 4h
+  only on 22 — so it stays off everywhere. Each chart now has `cleared` (this run's verdict)
+  next to `adopt` (traded, which needs `cleared` and `previous.cleared`); the test encodes it,
+  and the Trading page says when a pick passed once but not twice.
+- **Figures** (standard rules, a period's average after the 0.1% fee): 15m −3.87% (10 days),
+  1h −2.72% (6 weeks), 4h +2.93% (5 months), 1d +20.31% (18 months); with fills 0.05% worse
+  each way −5.25 / −4.93 / +1.96 / +19.59. Holding the same coins made more on every chart
+  (−2.22 / +14.86 / +27.15 / +35.70). 1d is still the best tested chart after fill costs.
+- **Tables on phones and laptops.** Markets (`#mkt`): rank and market cap hidden on phones,
+  name over symbol, CJK names kept whole. Scanner: Move timing and RSI hidden up to 1180px;
+  on phones price and 24h sit under the coin, AI up and 80% range hidden. Exchanges: Pair
+  hidden up to 1180px; rank, 24h and volume on phones. Track's live check: the price shown
+  here sits under the exchange's on phones. Compare: fit table, no logos on phones. Coin
+  page: the models table and the AI trades table fit (sold date under bought on phones).
+  Label audit: 130 of 132 page × width checks clean; the two left are the AI page's
+  suggestion row, which scrolls sideways by design.
+
 ### The AI learns and trades in the cloud (2026-10-22)
 Before this, the AI learning pass and the AI trader only ran while a page was open, and the
 learning record lived in that one browser. Now:
