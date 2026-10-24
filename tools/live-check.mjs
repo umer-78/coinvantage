@@ -117,6 +117,24 @@ for (const [name, hash, sel, re, ms, rowSel, minRows] of pages) {
   console.log(`page ${name.padEnd(13)} ${problem ? `✗ ${problem}` : `✓${rowSel ? ` (${n} rows)` : ''}`}`);
   rows.push({ sym: `page:${name}`, iv: '', ok: !problem, problems: problem ? [problem] : [] });
 }
+// The 3D world: three.js must come through the page's CSP and import map from the
+// CDN. A runner without a GPU may have no WebGL, which the page handles (no-webgl);
+// a world that fails to load where WebGL works is the failure.
+{
+  const blocked = [];
+  const onConsole = (m) => { if (m.type() === 'error' && /Content Security Policy|import ?map|three/i.test(m.text())) blocked.push(m.text().slice(0, 160)); };
+  page.on('console', onConsole);
+  errors.length = 0;
+  await page.goto(`${BASE}#/`, { waitUntil: 'domcontentloaded' });
+  const end = Date.now() + 30000;
+  let state = '';
+  while (Date.now() < end && !(state = await page.evaluate(() => (document.documentElement.classList.contains('webgl') ? 'webgl' : document.documentElement.classList.contains('no-webgl') ? 'no-webgl' : '')))) await page.waitForTimeout(500);
+  const gl = await page.evaluate(() => { try { return Boolean(document.createElement('canvas').getContext('webgl2')); } catch { return false; } });
+  const problem = blocked[0] || errors[0] || (!state ? 'never started' : state === 'no-webgl' && gl ? 'WebGL works but the world did not load' : null);
+  console.log(`page ${'3D world'.padEnd(13)} ${problem ? `✗ ${problem}` : `✓ (${state}${gl ? '' : ', no WebGL on this machine'})`}`);
+  rows.push({ sym: 'page:3D world', iv: '', ok: !problem, problems: problem ? [problem] : [] });
+  page.off('console', onConsole);
+}
 await browser.close();
 
 const bad = rows.filter((r) => !r.ok);
