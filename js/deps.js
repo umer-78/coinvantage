@@ -21,6 +21,7 @@ export const DEPS = {
     'lib/predict.js',
     'lib/selfimprove.js',
     'lib/signals.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -35,6 +36,7 @@ export const DEPS = {
     'config.js',
     'format.js',
     'lib/demo.js',
+    'lib/validate.js',
     'store.js',
     'ui.js',
     'views/auth.js'
@@ -45,6 +47,7 @@ export const DEPS = {
     'api/fx.js',
     'config.js',
     'format.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -71,6 +74,7 @@ export const DEPS = {
     'lib/tickers.js',
     'lib/timing.js',
     'lib/trade.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -83,6 +87,7 @@ export const DEPS = {
     'config.js',
     'format.js',
     'lib/demo.js',
+    'lib/validate.js',
     'store.js',
     'ui.js',
     'views/auth.js'
@@ -116,6 +121,7 @@ export const DEPS = {
     'lib/tickers.js',
     'lib/timing.js',
     'lib/traderchat.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -125,6 +131,7 @@ export const DEPS = {
     'api/fx.js',
     'config.js',
     'format.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -166,6 +173,7 @@ export const DEPS = {
     'lib/tickers.js',
     'lib/timing.js',
     'lib/trade.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -185,6 +193,7 @@ export const DEPS = {
     'lib/indicators.js',
     'lib/pooled.js',
     'lib/predict.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -197,6 +206,7 @@ export const DEPS = {
     'config.js',
     'format.js',
     'lib/demo.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -213,6 +223,7 @@ export const DEPS = {
     'lib/demo.js',
     'lib/geometry.js',
     'lib/indicators.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -235,6 +246,7 @@ export const DEPS = {
     'lib/history.js',
     'lib/indicators.js',
     'lib/learncenter.js',
+    'lib/learnguide.js',
     'lib/learnpass.js',
     'lib/pooled.js',
     'lib/predict.js',
@@ -243,6 +255,7 @@ export const DEPS = {
     'lib/tickers.js',
     'lib/timing.js',
     'lib/tradelearn.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -258,6 +271,7 @@ export const DEPS = {
     'lib/predict.js',
     'lib/signals.js',
     'lib/timing.js',
+    'lib/validate.js',
     'store.js'
   ],
   'views/markets.js': [
@@ -269,6 +283,7 @@ export const DEPS = {
     'config.js',
     'format.js',
     'lib/demo.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -278,6 +293,7 @@ export const DEPS = {
     'api/fx.js',
     'config.js',
     'format.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -287,6 +303,7 @@ export const DEPS = {
     'api/fx.js',
     'config.js',
     'format.js',
+    'lib/validate.js',
     'store.js',
     'ui.js',
     'views/auth.js'
@@ -314,6 +331,7 @@ export const DEPS = {
     'lib/signals.js',
     'lib/tickers.js',
     'lib/timing.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -330,6 +348,7 @@ export const DEPS = {
     'lib/demo.js',
     'lib/geometry.js',
     'lib/indicators.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -347,6 +366,7 @@ export const DEPS = {
     'lib/predict.js',
     'lib/selfimprove.js',
     'lib/signals.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ],
@@ -385,6 +405,7 @@ export const DEPS = {
     'lib/timing.js',
     'lib/tradelearn.js',
     'lib/traderrun.js',
+    'lib/validate.js',
     'store.js',
     'ui.js',
     'views/auth.js'
@@ -402,6 +423,7 @@ export const DEPS = {
     'lib/indicators.js',
     'lib/signals.js',
     'lib/trade.js',
+    'lib/validate.js',
     'store.js',
     'ui.js'
   ]

@@ -1,4 +1,4 @@
-import { esc } from './format.js';
+import { esc, safeUrl } from './format.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -36,8 +36,8 @@ export const icon = (name, size = 18) =>
 
 export function coinLogo(coin, size = 24) {
   const letter = esc((coin?.symbol || '?').slice(0, 1));
-  if (!coin?.image) return `<span class="logo logo-fb" style="width:${size}px;height:${size}px;font-size:${size * 0.45}px">${letter}</span>`;
-  return `<img class="logo" src="${esc(coin.image)}" width="${size}" height="${size}" alt="" loading="lazy" data-letter="${letter}">`;
+  if (!safeUrl(coin?.image)) return `<span class="logo logo-fb" style="width:${size}px;height:${size}px;font-size:${size * 0.45}px">${letter}</span>`;
+  return `<img class="logo" src="${esc(safeUrl(coin.image))}" width="${size}" height="${size}" alt="" loading="lazy" data-letter="${letter}">`;
 }
 
 // The page's Content-Security-Policy has no 'unsafe-inline' for scripts, so an
@@ -179,7 +179,7 @@ export function markdown(src) {
 export function modal(html, { onClose, wide = false } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'modal-bg';
-  wrap.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true"><button class="icon-btn modal-x" aria-label="Close">${icon('close')}</button>${html}</div>`;
+  wrap.innerHTML = `<div class="modal${wide ? ' wide' : ''}" role="dialog" aria-modal="true"><button class="icon-btn modal-x" type="button" aria-label="Close dialog">${icon('close')}</button>${html}</div>`;
   // Focus was left on whatever opened the dialog, so keyboard users tabbed
   // straight past it into the page behind — which is still fully interactive.
   const opener = document.activeElement;
@@ -211,6 +211,9 @@ export function modal(html, { onClose, wide = false } = {}) {
   window.addEventListener('hashchange', close);
   // move focus into the dialog: the first real control, or the close button
   setTimeout(() => { (focusables().find((x) => !x.classList.contains('modal-x')) || wrap.querySelector('.modal-x'))?.focus(); }, 0);
+  // name the dialog after its heading, so a screen reader announces what opened
+  const box = wrap.querySelector('.modal'), heading = box.querySelector('h1, h2, h3');
+  if (heading) { heading.id ||= `dlg-${Math.random().toString(36).slice(2, 9)}`; box.setAttribute('aria-labelledby', heading.id); }
   document.body.append(wrap);
-  return { el: wrap.querySelector('.modal'), close };
+  return { el: box, close };
 }

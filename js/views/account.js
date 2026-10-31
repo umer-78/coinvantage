@@ -1,6 +1,6 @@
 // Account page: profile, alert channels (e-mail + Telegram), premium status, data & deletion.
 import { $, $$, icon, toast, modal } from '../ui.js';
-import { esc, money } from '../format.js';
+import { esc, money, safeUrl } from '../format.js';
 import { load, settings } from '../store.js';
 import { myActivity, myForecasts, forecastScore, resolveDueForecasts, clearMyActivity } from '../api/activity.js';
 import { changePassword, signOutEverywhere } from '../api/security.js';
@@ -151,7 +151,7 @@ export async function render(el, [flag]) {
       $('#tgMsg', el).textContent = 'Preparing link…';
       try {
         const r = await callFn('account', { action: 'telegram-link' });
-        $('#tgMsg', el).innerHTML = `Open <a href="${esc(r.url)}" target="_blank" rel="noopener"><b>@${esc(r.bot)}</b></a> and press Start. Code: <code>${esc(r.code)}</code> (valid 20 minutes). Come back and refresh this page.`;
+        $('#tgMsg', el).innerHTML = `Open <a href="${esc(safeUrl(r.url, '#/account'))}" target="_blank" rel="noopener noreferrer"><b>@${esc(r.bot)}</b></a> and press Start. Code: <code>${esc(r.code)}</code> (valid 20 minutes). Come back and refresh this page.`;
         window.open(r.url, '_blank', 'noopener');
       } catch (e) { $('#tgMsg', el).textContent = e.message; }
     });

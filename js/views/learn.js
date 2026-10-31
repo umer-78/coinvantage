@@ -12,6 +12,7 @@ import { activeLessons, reviewTrades } from '../lib/tradelearn.js';
 import { TESTED_ACCURACY, recheckOverall } from '../lib/predict.js';
 import { FORECAST_TESTED } from '../lib/forecastview.js';
 import { learningStatus, loadLedger, learnedTrust, MIN_GRADED_FOR_TRUST, TREND_WORDS } from '../lib/selfimprove.js';
+import { LEARN_GUIDE } from '../lib/learnguide.js';
 
 export const title = 'AI learning';
 
@@ -27,7 +28,12 @@ export async function render(el) {
         <button class="btn primary" id="pass">${icon('refresh', 16)} Refresh</button>
       </div>
     </div>
-    <p class="fine" id="status" style="margin-top:-6px"></p>
+    <details class="card learn-guide" id="guide">
+      <summary><span><b>How the testing works, in plain words</b><small class="fine">The learning loop, walk-forward tests, what counts as evidence, and what is not measured</small></span>${icon('info', 16)}</summary>
+      <div class="seo-intro">${LEARN_GUIDE.map((x, i) => `<section aria-labelledby="lg-${i}"><h2 id="lg-${i}">${esc(x.h2)}</h2>${(x.paras || []).map((t) => `<p>${esc(t)}</p>`).join('')}${x.steps ? `<ol class="steps">${x.steps.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>` : ''}${x.list ? `<ul class="steps">${x.list.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}</section>`).join('')}
+        <p class="fine">Educational, not financial advice. Every figure on this page describes the period it was measured on.</p></div>
+    </details>
+    <p class="fine" id="status" role="status" aria-live="polite"></p>
     <div id="body"></div>`;
 
   // A call is only scored once its horizon has passed, so right after the first

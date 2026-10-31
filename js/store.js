@@ -1,5 +1,7 @@
 // Per-device storage (watchlist, portfolio, alerts, settings). Wrapped so the
 // site still works in private mode or when storage is blocked.
+import { cleanSettings } from './lib/validate.js';
+
 const mem = {};
 const PREFIX = 'cv:';
 
@@ -56,9 +58,14 @@ export const watchlist = {
   },
 };
 
+const SETTING_DEFAULTS = Object.freeze({ theme: 'dark', interval: '1h', horizon: 12, currency: 'USD', lang: 'en', digest: true, llmModel: '', llmAuto: false, customEndpoint: '', customModel: '', customKey: '' });
+
+// Read back through cleanSettings (js/lib/validate.js): a value saved by an
+// older version, edited by hand or written by another script is replaced by
+// its default instead of reaching a fetch() or the page.
 export const settings = {
-  get: () => ({ theme: 'dark', interval: '1h', horizon: 12, llmModel: '', llmAuto: false, customEndpoint: '', customModel: '', customKey: '', ...load('settings', {}) }),
-  set(patch) { save('settings', { ...settings.get(), ...patch }); },
+  get: () => cleanSettings(load('settings', {}), SETTING_DEFAULTS),
+  set(patch) { save('settings', cleanSettings({ ...settings.get(), ...patch }, SETTING_DEFAULTS)); },
 };
 
 /**

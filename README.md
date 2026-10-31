@@ -5,12 +5,15 @@
 **Live demo:** https://umer-78.github.io/coinvantage/
 
 An installable website for live crypto markets: prices, Binance-style charts,
-buy/sell signals, multi-year history comparison and an AI price forecast that
-runs right on your machine — **no paid API keys required**. Works on phones and
+indicator signals, multi-year history comparison, a paper-trading simulator and
+an AI price-range forecast that runs right on your machine — **no paid API keys
+required**. Every model's accuracy is measured and published next to it,
+including where it does no better than a simple baseline. Works on phones and
 computers alike.
 
-> Signals, forecasts and AI answers are educational tools, not financial advice.
-> The site never places trades and never asks for exchange API keys, private keys or seed phrases.
+> Signals, forecasts, AI answers and the trading simulator are educational tools, not financial advice.
+> Simulated and past results do not promise future returns. The site never places trades and never
+> asks for exchange API keys, private keys or seed phrases.
 
 It wears the same design as the [portfolio](https://umer-78.github.io/): obsidian,
 ivory and champagne gold, Cormorant Garamond over Manrope, glass panels on a live
@@ -242,6 +245,27 @@ tests/                  unit tests (node --test)
 - RSS from Cointelegraph, CoinDesk, Decrypt, Bitcoin Magazine, The Block
 
 If every source is unreachable, clearly-labelled demo data is shown instead.
+
+## Security and trust
+
+- **Content-Security-Policy** on every page (`index.html`, copied into each generated page):
+  scripts only from the site, the pinned jsDelivr CDN and the hash-pinned import map; no
+  inline handlers (`script-src-attr 'none'`); `object-src 'none'`, `base-uri 'self'`,
+  `form-action 'self'`, `frame-src 'none'`. `connect-src` names every host the app reads
+  from. `tests/security.test.mjs` scans `js/` and fails if a fetched host is missing.
+  GitHub Pages cannot send headers, so `frame-ancestors` (ignored in a meta tag) is backed
+  by a same-origin-only framing guard in `js/app.js`.
+- **Untrusted text and links:** everything from APIs, news feeds and users is escaped
+  (`esc`), and every outside `href`/`src` goes through `safeUrl` (https only, no
+  `javascript:`/`data:`). The assistant's markdown only links to in-app `#/` routes.
+- **Custom AI endpoint:** `js/lib/validate.js` accepts only `http://localhost` /
+  `127.0.0.1` or a short list of https providers (also in `connect-src`), a safe model
+  name and a plausible key. Settings read back from storage are re-validated, and a
+  rejected endpoint drops its key. Requests go with no cookies, no referrer and no redirects.
+- **AI answers** name what they were based on (live data, signals, forecast, your
+  simulated account) and who wrote the words. A language model only rewords the
+  built-in analyst's answer; if it quotes figures that are not in the data, the
+  analyst's answer is shown instead.
 
 ## Known notes
 

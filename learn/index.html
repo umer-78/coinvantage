@@ -5,13 +5,23 @@
   <base href="/coinvantage/">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>How the AI Learns and How It Is Tested | CoinVantage</title>
-  <meta name="description" content="Every indicator, the forecast and the AI trader are graded against what the market did. See the walk-forward tests, the live record kept in the cloud, and what was learned from the results.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https://umer-78.github.io; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self' https://api.coingecko.com https://data-api.binance.vision https://cdn.jsdelivr.net; script-src 'self' 'sha256-gGBMy7aDnHeWxwjS1IWbYtRJ6eGNvL5bC7uZgb9+vrE=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;">
+  <meta name="description" content="How every indicator, the forecast and the AI trader are graded against what the market did next: walk-forward tests, a live record kept in the cloud, and what was tried and rejected.">
+  <!-- Content-Security-Policy. Only our own files, the pinned CDN and the one
+       inline import map (allowed by its exact hash: change the map and you must
+       update the hash) may run code; inline event handlers and javascript: URLs
+       never run (script-src-attr 'none'). Network access is limited to the data
+       sources the app reads, the backend, the WebLLM model hosts, this computer
+       (a local AI server) and the AI providers in js/lib/validate.js
+       (tests/security.test.mjs keeps them in step). Inline style attributes are
+       still allowed because the views use them for layout; images may come from
+       any https host because news thumbnails do. frame-ancestors is ignored in a
+       <meta> tag, so js/app.js also refuses to run inside a frame. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'none'; form-action 'self'; manifest-src 'self'; media-src 'none'; script-src 'self' 'sha256-gGBMy7aDnHeWxwjS1IWbYtRJ6eGNvL5bC7uZgb9+vrE=' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; script-src-attr 'none'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https://cjpljmzustvgsmueqese.supabase.co wss://cjpljmzustvgsmueqese.supabase.co https://cdn.jsdelivr.net https://data-api.binance.vision https://api.binance.com https://fapi.binance.com wss://data-stream.binance.vision wss://stream.binance.com:9443 wss://fstream.binance.com https://api.coingecko.com https://api.coinpaprika.com https://api.alternative.me https://open.er-api.com https://api.gateio.ws wss://api.gateio.ws https://api.huobi.pro wss://api.huobi.pro https://www.okx.com wss://ws.okx.com:8443 https://api.bybit.com https://api.exchange.coinbase.com https://api.kraken.com https://api.gemini.com https://api.crypto.com https://api.bitget.com https://ethereum-rpc.publicnode.com https://bsc-rpc.publicnode.com https://polygon-bor-rpc.publicnode.com https://api.mainnet-beta.solana.com https://mempool.space https://blockstream.info https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://api.openai.com https://openrouter.ai https://api.groq.com https://api.together.xyz https://api.mistral.ai https://api.deepseek.com http://localhost:* http://127.0.0.1:*; upgrade-insecure-requests">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#070708">
   <meta name="color-scheme" content="dark">
   <meta property="og:title" content="How the AI Learns and How It Is Tested | CoinVantage">
-  <meta property="og:description" content="Every indicator, the forecast and the AI trader are graded against what the market did. See the walk-forward tests, the live record kept in the cloud, and what was learned from the results.">
+  <meta property="og:description" content="How every indicator, the forecast and the AI trader are graded against what the market did next: walk-forward tests, a live record kept in the cloud, and what was tried and rejected.">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="CoinVantage">
   <meta property="og:url" content="https://umer-78.github.io/coinvantage/learn/">
@@ -22,18 +32,24 @@
   <meta name="twitter:card" content="summary_large_image">
   <link rel="canonical" href="https://umer-78.github.io/coinvantage/learn/">
   <meta name="robots" content="index, follow, max-image-preview:large">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"How the AI Learns and How It Is Tested | CoinVantage","url":"https://umer-78.github.io/coinvantage/learn/","description":"Every indicator, the forecast and the AI trader are graded against what the market did. See the walk-forward tests, the live record kept in the cloud, and what was learned from the results."}</script>
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"CoinVantage","item":"https://umer-78.github.io/coinvantage/"},{"@type":"ListItem","position":2,"name":"Learn","item":"https://umer-78.github.io/coinvantage/learn/"}]}</script>
+  <!-- ld:start -->
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"How the AI Learns and How It Is Tested | CoinVantage","url":"https://umer-78.github.io/coinvantage/learn/","description":"How every indicator, the forecast and the AI trader are graded against what the market did next: walk-forward tests, a live record kept in the cloud, and what was tried and rejected.","isPartOf":{"@type":"WebSite","name":"CoinVantage","url":"https://umer-78.github.io/coinvantage/"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"CoinVantage","item":"https://umer-78.github.io/coinvantage/"},{"@type":"ListItem","position":2,"name":"How the AI learns and how it is tested","item":"https://umer-78.github.io/coinvantage/learn/"}]}</script>
+  <!-- ld:end -->
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e7c1'/%3E%3Cstop offset='.45' stop-color='%238c7d6b'/%3E%3Cstop offset='1' stop-color='%23d9a441'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 42L20 20h8l8 22h-8l-1-4H21l-1 4h-8zm14-11l-2 7h4l-2-7zm23-11h7v22h-7v-8l-5 8h-8l5-8-5-8h8l5 8v-8zm-25 0h8l2 6 2-6h8l-5 10 5 10h-8l-2-6-2 6h-8l5-10-5-10z' fill='url(%23g)'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23f6e7c1'/%3E%3Cstop offset='.45' stop-color='%23d6b46c'/%3E%3Cstop offset='1' stop-color='%239c7a3c'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='%230b0a09' stroke='url(%23g)' stroke-width='2'/%3E%3Cpath d='M15 41l11-11 8 8 15-17' stroke='url(%23g)' stroke-width='4.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preload" href="fonts/cormorant-garamond.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://data-api.binance.vision">
   <link rel="preconnect" href="https://api.coingecko.com">
+  <!-- three.js for the 3D world behind the page (js/world/). The CSP allows this
+       one inline script by its hash: change the map and you must update the hash. -->
   <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
   <link rel="stylesheet" href="css/app.css">
+  <!-- The app shell's modules, fetched in parallel (tools/build-deps.mjs). -->
+  <!-- modulepreload:start -->
   <link rel="modulepreload" href="js/app.js">
   <link rel="modulepreload" href="js/api/backend.js">
   <link rel="modulepreload" href="js/api/clock.js">
@@ -54,8 +70,10 @@
   <link rel="modulepreload" href="js/lib/predict.js">
   <link rel="modulepreload" href="js/lib/selfimprove.js">
   <link rel="modulepreload" href="js/lib/signals.js">
+  <link rel="modulepreload" href="js/lib/validate.js">
   <link rel="modulepreload" href="js/store.js">
   <link rel="modulepreload" href="js/ui.js">
+  <!-- modulepreload:end -->
 </head>
 <body>
   <a class="skip-link" href="#view">Skip to content</a>
@@ -66,98 +84,77 @@
   <div class="app">
     <aside class="sidebar" aria-label="Main navigation">
       <a class="brand" href="#/">
-        <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradSide" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e7c1"/><stop offset=".45" stop-color="#8c7d6b"/><stop offset="1" stop-color="#d9a441"/></linearGradient></defs><path d="M12 42L20 20h8l8 22h-8l-1-4H21l-1 4h-8zm14-11l-2 7h4l-2-7zm23-11h7v22h-7v-8l-5 8h-8l5-8-5-8h8l5 8v-8zm-25 0h8l2 6 2-6h8l-5 10 5 10h-8l-2-6-2 6h-8l5-10-5-10z" fill="url(#cvGradSide)"/></svg>
+        <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradSide" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e7c1"/><stop offset=".45" stop-color="#d6b46c"/><stop offset="1" stop-color="#9c7a3c"/></linearGradient></defs><circle cx="32" cy="32" r="30" fill="#0b0a09" stroke="url(#cvGradSide)" stroke-width="2"/><path d="M15 41l11-11 8 8 15-17" stroke="url(#cvGradSide)" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span class="brand-name" data-app-name>CoinVantage</span>
       </a>
       <nav class="nav" id="nav"></nav>
       <div class="side-foot">
-        <div class="live-pill" id="livePill" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>Connecting…</span></div>
-        <p class="fine">Data: 10 exchanges (Binance first) and CoinGecko. Signals and forecasts are not financial advice.</p>
-        <a class="side-gh" href="https://github.com/umer-78/coinvantage" target="_blank" rel="noreferrer noopener">GitHub ↗</a>
+        <div class="live-pill" id="livePill" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>Connecting…</span></div>
+        <p class="fine">Data: 10 exchanges (Binance first) and CoinGecko. Signals, forecasts and the trading simulator are educational tools, not financial advice.</p>
+        <a class="side-gh" href="https://github.com/umer-78/coinvantage" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a>
       </div>
     </aside>
 
     <div class="main">
       <header class="topbar">
-        <a class="brand brand-m" href="#/" aria-label="Home">
-          <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e7c1"/><stop offset=".45" stop-color="#8c7d6b"/><stop offset="1" stop-color="#d9a441"/></linearGradient></defs><path d="M12 42L20 20h8l8 22h-8l-1-4H21l-1 4h-8zm14-11l-2 7h4l-2-7zm23-11h7v22h-7v-8l-5 8h-8l5-8-5-8h8l5 8v-8zm-25 0h8l2 6 2-6h8l-5 10 5 10h-8l-2-6-2 6h-8l5-10-5-10z" fill="url(#cvGradTop)"/></svg>
+        <a class="brand brand-m" href="#/" aria-label="CoinVantage home">
+          <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e7c1"/><stop offset=".45" stop-color="#d6b46c"/><stop offset="1" stop-color="#9c7a3c"/></linearGradient></defs><circle cx="32" cy="32" r="30" fill="#0b0a09" stroke="url(#cvGradTop)" stroke-width="2"/><path d="M15 41l11-11 8 8 15-17" stroke="url(#cvGradTop)" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
-        <div class="search" id="search">
+        <div class="search" id="search" role="search">
           <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="searchInput" type="search" placeholder="Search coin (BTC, Ethereum…)" autocomplete="off" aria-label="Search coins">
+          <label class="sr-only" for="searchInput">Search coins by name or ticker</label>
+          <input id="searchInput" type="search" placeholder="Search coin (BTC, Ethereum…)" autocomplete="off" spellcheck="false" maxlength="40">
           <div class="search-results" id="searchResults" hidden></div>
         </div>
-        <select class="mini-sel" id="curSel" aria-label="Display currency"></select>
+        <label class="sr-only" for="curSel">Display currency</label>
+        <select class="mini-sel" id="curSel"></select>
         <button class="btn sm" id="accountBtn" aria-label="Account" type="button"></button>
       </header>
       <div id="banner"></div>
-      <div class="ticker" id="ticker" aria-label="Live prices"></div>
+      <div class="ticker" id="ticker" role="region" aria-label="Live prices"></div>
       <main id="view" tabindex="-1">
-        <section class="card seo-intro">
-          <h1>How the AI learns and how it is tested</h1>
-          <p>Every call is graded against what price did next, in the cloud, whether or not a page is open. A method only survives if it keeps working after the market shifts.</p>
-        </section>
-
-        <section class="card" aria-labelledby="loop-heading">
-          <h2 id="loop-heading">The learning loop</h2>
-          <ol>
-            <li><strong>Collect live market data.</strong> Price, volume, volatility, momentum, and other market features are captured from the public exchange streams and API feeds.</li>
-            <li><strong>Score the signal.</strong> Each candidate signal, indicator, or forecast is evaluated using the actual market move that followed.</li>
-            <li><strong>Update what is trusted.</strong> The system keeps the stronger patterns and rejects the ones that fail in real conditions.</li>
-            <li><strong>Repeat on a rolling basis.</strong> The test window moves forward, so the model is always measured against fresh data rather than a single historical snapshot.</li>
-          </ol>
-        </section>
-
-        <section class="card" aria-labelledby="test-heading">
-          <h2 id="test-heading">Why the testing matters</h2>
-          <p>Walk-forward testing is important because it reduces hindsight bias. A model may look strong on a static backtest, but if it falls apart when the market regime changes, it is not useful.</p>
-          <p>CoinVantage evaluates every prediction against what happened next. That means the AI trader, the forecast overlay, and the signal logic all have to prove themselves in ongoing conditions, not just in a polished demo.</p>
-        </section>
-
-        <section class="card" aria-labelledby="what-measured-heading">
-          <h2 id="what-measured-heading">What gets measured</h2>
-          <ul>
-            <li>Directional accuracy of the forecast</li>
-            <li>Signal quality versus subsequent price movement</li>
-            <li>Whether an indicator adds value beyond noise, randomness, and trend-following alone</li>
-            <li>Whether the model still performs across multiple market conditions</li>
-          </ul>
-        </section>
-
-        <section class="card" aria-labelledby="read-heading">
-          <h2 id="read-heading">How to read the results</h2>
-          <p>The goal is not to claim certainty. The goal is to show the evidence: what was predicted, what happened next, and whether the model improved with each round of learning.</p>
-          <p>Market behavior changes over time. A good forecast system is transparent, measured, and adaptive. If a strategy starts losing edge, it is either adjusted or shown clearly as weaker than before.</p>
-        </section>
+        <section class="card seo-intro"><h1>How the AI learns and how it is tested</h1><p class="lede">Every call is graded against what price did next, in the cloud, whether or not a page is open. A method only takes over when it beats the current one on that record, and it is demoted when it stops doing so.</p><p>Across 1,440 direction tests the models were right 53.9% of the time, against 58.5% for simply always calling the more common outcome, so direction is never shown as a buy or sell call.</p><p>Its price range is measured: the 80% range held 79–80.1% of the time across about 540,000 tests on 106 coins.</p>
+          <ul class="facts" aria-label="At a glance"><li><b>What it does</b><p>Logs each signal, forecast and trade before the outcome is known, grades it when the time is up, and shifts weight toward the methods that keep earning it.</p></li><li><b>What it measures</b><p>How often forecast ranges held, direction hit rates against a baseline, and trading returns after fees against simply holding.</p></li><li><b>What it does not do</b><p>It does not learn from your personal data, does not see the future, and does not turn a method that failed into a recommendation.</p></li><li><b>Limitations</b><p>Every figure describes the period it was measured on. A method that worked can stop working when the market changes, which is why the tests keep running.</p></li></ul>
+          <section aria-labelledby="learn-s1"><h2 id="learn-s1">The learning loop</h2><ol class="steps"><li>Record. Live prices, volume and volatility come from public exchange feeds. Each indicator reading, forecast and trade is written down with the time it was made.</li><li>Wait. Nothing is graded until the forecast horizon has passed, so the answer cannot leak into the call.</li><li>Grade. The call is compared with what price actually did, and with a simple baseline, such as always calling the more common outcome.</li><li>Re-weight. A method that beats the baseline over many calls gains weight; one that does not loses it, however clever it sounds.</li><li>Repeat. The window moves forward and the grading never stops, so the record always includes the newest market.</li></ol></section>
+          <section aria-labelledby="learn-s2"><h2 id="learn-s2">How signals are scored</h2><p>Each indicator reading (trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume, ADX) is stored with its score and then checked against the move that followed. A reading counts as useful only if it is right more often than the baseline over a large number of cases.</p><p>This has produced uncomfortable results, and they are shown as they are: across 106 coins the strongest readings were followed by a rise least often, so the scanner describes how stretched a move is rather than predicting the next one.</p></section>
+          <section aria-labelledby="learn-s3"><h2 id="learn-s3">How the forecast is tested</h2><p>The forecast is a price range, not a single target. An 80% range should contain the later price about 80% of the time; if it held 95% of the time it would be too wide to be useful, and at 60% it would be overconfident.</p><p>Its price range is measured: the 80% range held 79–80.1% of the time across about 540,000 tests on 106 coins. Direction is graded separately. Across 1,440 direction tests the models were right 53.9% of the time, against 58.5% for simply always calling the more common outcome, so direction is never shown as a buy or sell call.</p></section>
+          <section aria-labelledby="learn-s4"><h2 id="learn-s4">Walk-forward validation, in plain words</h2><p>Think of a practice exam and a real exam. The rules are chosen using only the history before a period, then run on that period, which they have never seen. Then the window moves forward and it happens again.</p><p>Fees are charged on every trade, and a second run makes fills worse to stand in for spread and slippage. A result that only appears when the test can peek at the answers is not counted.</p></section>
+          <section aria-labelledby="learn-s5"><h2 id="learn-s5">What counts as evidence</h2><ul class="steps"><li>The call was logged before its outcome was known.</li><li>It was tested on data the method was not tuned on.</li><li>It beat a plain baseline (always calling the more common outcome, or simply holding the coins).</li><li>It held up over many cases and more than one period, not a lucky streak.</li><li>For the AI trader: a new pick must pass in two runs in a row before it is traded.</li></ul></section>
+          <section aria-labelledby="learn-s6"><h2 id="learn-s6">What is measured, and what is not</h2><ul class="steps"><li>Measured: how often forecast ranges held; direction hit rate against a baseline; trading return after fees and modelled fill costs; worst drop; number of trades; what holding did.</li><li>Not measured: news and events before they happen; how your own order would fill in a thin market; exchange outages; taxes; your own timing and discipline.</li></ul></section>
+          <section aria-labelledby="learn-s7"><h2 id="learn-s7">What gets discarded or demoted</h2><ul class="steps"><li>Direction calls that do not beat the baseline are never shown as buy or sell signals.</li><li>Rule sets that lose to their baseline in the walk-forward test are not adopted, and one that passes once must pass again first.</li><li>Charts that leave too little data to test on are dropped: the weekly chart is not offered to the trader for this reason.</li><li>Models inside the forecast are weighted by their measured accuracy, so one that stops working fades out on its own.</li></ul></section>
+          <section aria-labelledby="learn-s8"><h2 id="learn-s8">Feedback loops and changing markets</h2><p>Markets move between regimes: steady trends, choppy ranges, quiet spells and violent ones. A rule tuned to one regime can fail in the next, and a pattern that many traders act on tends to fade as they do. Neither can be tested away.</p><p>So nothing here is treated as settled. The tests are repeated on new data, the live record keeps grading in the cloud, and when a method gets worse the page says so instead of quietly keeping its old figure. That is the point of measuring: it is how you find out a model has stopped working before you rely on it.</p></section>
+          <p class="row" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="#/learn">Open the live how the AI learns and how it is tested</a></p>
+          <p class="fine">Educational, not financial advice. Forecasts, signals and simulated results describe the past and do not promise future returns. Crypto is volatile; never risk money you cannot afford to lose.</p></section>
       </main>
       <footer class="foot">
-        <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts and AI answers are educational tools, <b>not financial advice</b>. Crypto is volatile — never risk more than you can afford to lose.
-        <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a> · <a href="#/ai">AI</a></span>
+        <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts, AI answers and the paper-trading simulator are educational tools, <b>not financial advice</b>. Past and simulated results do not promise future returns. Crypto is volatile — never risk money you can't afford to lose.
+        <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a> · <a href="#/learn">How it is tested</a> · <a href="https://github.com/umer-78/coinvantage" target="_blank" rel="noopener noreferrer">Source on GitHub</a> · <span id="buildTag"></span></span>
       </footer>
 
+      <!-- Quick chat: live-data commands (/price, /signal, /market). Open questions go to the Ask page. -->
       <button class="chat-fab" id="chatBtn" type="button" aria-controls="chatPanel" aria-expanded="false" aria-label="Open quick chat"></button>
-      <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Quick chat" aria-hidden="true" hidden>
+      <div class="chat-panel" id="chatPanel" role="dialog" aria-modal="false" aria-labelledby="chatTitle" hidden>
         <div class="chat-header">
-          <div class="chat-title">Quick chat</div>
-          <button class="chat-close" id="chatClose" type="button" aria-label="Close quick chat">&times;</button>
+          <h2 class="chat-title" id="chatTitle">Quick chat</h2>
+          <button class="chat-close" id="chatClose" type="button" aria-label="Close quick chat"><span aria-hidden="true">&times;</span></button>
         </div>
-        <div class="chat-messages" id="chatMessages" aria-live="polite">
+        <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions">
           <div class="chat-message bot">
-            <span class="avatar">AI</span>
-            <span class="msg">Live market answers in one line. Try /price BTC, /signal ETH or /market. For open questions, use the Ask page.</span>
+            <span class="avatar" aria-hidden="true">AI</span>
+            <span class="msg">Live market answers in one line, read straight from exchange data. Try /price BTC, /signal ETH or /market. For open questions, use the Ask page. Not financial advice.</span>
           </div>
         </div>
         <div class="chat-input-wrapper">
-          <label class="sr-only" for="chatInput">Ask a market question</label>
-          <input type="text" id="chatInput" placeholder="/price BTC" aria-label="Chat command">
-          <button class="chat-send" id="chatSend" type="button">Send</button>
+          <label class="sr-only" for="chatInput">Quick chat command</label>
+          <input type="text" id="chatInput" placeholder="/price BTC" maxlength="120" autocomplete="off" spellcheck="false">
+          <button class="chat-send" id="chatSend" type="button" aria-label="Send command">Send</button>
         </div>
       </div>
     </div>
 
     <nav class="bottombar" id="bottombar" aria-label="Mobile navigation"></nav>
   </div>
-  <noscript><p style="padding:24px;color:#fff">This site needs JavaScript enabled.</p></noscript>
+  <noscript><p style="padding:24px;color:#fff">CoinVantage needs JavaScript for live prices and charts. The text above describes each page; turn JavaScript on to use it.</p></noscript>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

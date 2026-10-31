@@ -6,12 +6,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Zcash (ZEC) Price, Live Chart &amp; Tested AI Forecast | CoinVantage</title>
   <meta name="description" content="Live ZEC price and chart from Binance, 13 indicators, a price-range forecast tested on 106 coins and an AI paper-trading signal with its measured record.">
-  <!-- Locks the page down against injected scripts: only our own files and the
-       pinned CDN may run code, framing is blocked by the server header, and forms cannot be
-       redirected off-site. Inline markup styles still work; inline SCRIPTS do not,
-       which is the attack this closes. The one inline script below is allowed by
-       its exact hash — change it and you must update the hash. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-gGBMy7aDnHeWxwjS1IWbYtRJ6eGNvL5bC7uZgb9+vrE=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src 'self' https: wss: blob: data: http://localhost:* http://127.0.0.1:*; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+  <!-- Content-Security-Policy. Only our own files, the pinned CDN and the one
+       inline import map (allowed by its exact hash: change the map and you must
+       update the hash) may run code; inline event handlers and javascript: URLs
+       never run (script-src-attr 'none'). Network access is limited to the data
+       sources the app reads, the backend, the WebLLM model hosts, this computer
+       (a local AI server) and the AI providers in js/lib/validate.js
+       (tests/security.test.mjs keeps them in step). Inline style attributes are
+       still allowed because the views use them for layout; images may come from
+       any https host because news thumbnails do. frame-ancestors is ignored in a
+       <meta> tag, so js/app.js also refuses to run inside a frame. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; frame-src 'none'; form-action 'self'; manifest-src 'self'; media-src 'none'; script-src 'self' 'sha256-gGBMy7aDnHeWxwjS1IWbYtRJ6eGNvL5bC7uZgb9+vrE=' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; script-src-attr 'none'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' data: blob: https://cjpljmzustvgsmueqese.supabase.co wss://cjpljmzustvgsmueqese.supabase.co https://cdn.jsdelivr.net https://data-api.binance.vision https://api.binance.com https://fapi.binance.com wss://data-stream.binance.vision wss://stream.binance.com:9443 wss://fstream.binance.com https://api.coingecko.com https://api.coinpaprika.com https://api.alternative.me https://open.er-api.com https://api.gateio.ws wss://api.gateio.ws https://api.huobi.pro wss://api.huobi.pro https://www.okx.com wss://ws.okx.com:8443 https://api.bybit.com https://api.exchange.coinbase.com https://api.kraken.com https://api.gemini.com https://api.crypto.com https://api.bitget.com https://ethereum-rpc.publicnode.com https://bsc-rpc.publicnode.com https://polygon-bor-rpc.publicnode.com https://api.mainnet-beta.solana.com https://mempool.space https://blockstream.info https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com https://api.openai.com https://openrouter.ai https://api.groq.com https://api.together.xyz https://api.mistral.ai https://api.deepseek.com http://localhost:* http://127.0.0.1:*; upgrade-insecure-requests">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#070708">
   <meta name="color-scheme" content="dark">
@@ -65,6 +70,7 @@
   <link rel="modulepreload" href="js/lib/predict.js">
   <link rel="modulepreload" href="js/lib/selfimprove.js">
   <link rel="modulepreload" href="js/lib/signals.js">
+  <link rel="modulepreload" href="js/lib/validate.js">
   <link rel="modulepreload" href="js/store.js">
   <link rel="modulepreload" href="js/ui.js">
   <!-- modulepreload:end -->
@@ -83,58 +89,64 @@
       </a>
       <nav class="nav" id="nav"></nav>
       <div class="side-foot">
-        <div class="live-pill" id="livePill"><i></i><span>Connecting…</span></div>
-        <p class="fine">Data: 10 exchanges (Binance first) and CoinGecko. Signals and forecasts are not financial advice.</p>
-        <a class="side-gh" href="https://github.com/umer-78/coinvantage">GitHub ↗</a>
+        <div class="live-pill" id="livePill" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>Connecting…</span></div>
+        <p class="fine">Data: 10 exchanges (Binance first) and CoinGecko. Signals, forecasts and the trading simulator are educational tools, not financial advice.</p>
+        <a class="side-gh" href="https://github.com/umer-78/coinvantage" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a>
       </div>
     </aside>
 
     <div class="main">
       <header class="topbar">
-        <a class="brand brand-m" href="#/" aria-label="Home">
+        <a class="brand brand-m" href="#/" aria-label="CoinVantage home">
           <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="cvGradTop" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6e7c1"/><stop offset=".45" stop-color="#d6b46c"/><stop offset="1" stop-color="#9c7a3c"/></linearGradient></defs><circle cx="32" cy="32" r="30" fill="#0b0a09" stroke="url(#cvGradTop)" stroke-width="2"/><path d="M15 41l11-11 8 8 15-17" stroke="url(#cvGradTop)" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
-        <div class="search" id="search">
+        <div class="search" id="search" role="search">
           <svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="searchInput" type="search" placeholder="Search coin (BTC, Ethereum…)" autocomplete="off" aria-label="Search coins">
+          <label class="sr-only" for="searchInput">Search coins by name or ticker</label>
+          <input id="searchInput" type="search" placeholder="Search coin (BTC, Ethereum…)" autocomplete="off" spellcheck="false" maxlength="40">
           <div class="search-results" id="searchResults" hidden></div>
         </div>
-        <select class="mini-sel" id="curSel" aria-label="Display currency"></select>
+        <label class="sr-only" for="curSel">Display currency</label>
+        <select class="mini-sel" id="curSel"></select>
         <button class="btn sm" id="accountBtn" aria-label="Account" type="button"></button>
       </header>
       <div id="banner"></div>
-      <div class="ticker" id="ticker" aria-label="Live prices"></div>
+      <div class="ticker" id="ticker" role="region" aria-label="Live prices"></div>
       <main id="view" tabindex="-1">
-        <section class="card seo-intro"><h1>Zcash (ZEC) price, chart and AI forecast</h1><p>The live ZEC price and candlestick chart come from Binance. When you open the page the app trains its forecast models on ZEC's own candles, in your browser, and shows the price range they give for the next candles, the indicators and the AI trader's signal for ZEC.</p><p>Its price range is measured: the 80% range held 79–80.1% of the time across about 540,000 tests on 106 coins.</p><p>No model has beaten chance at calling which way price goes next, so the page never presents a direction as a buy or sell call.</p><p class="row" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="#/coin/ZEC">Open the live ZEC chart</a> <a class="btn" href="#/trader">AI trading simulator</a> <a class="btn" href="#/learn">How it is tested</a></p><p class="fine">Not financial advice. Crypto is volatile; never risk money you cannot afford to lose.</p></section>
+        <section class="card seo-intro"><h1>Zcash (ZEC) price, chart and AI forecast</h1><p class="lede">The live ZEC price and candlestick chart come from Binance. When you open the page the app trains its forecast models on ZEC's own candles, in your browser, and shows the price range they give for the next candles, the indicators and the AI trader's signal for ZEC.</p><p>Its price range is measured: the 80% range held 79–80.1% of the time across about 540,000 tests on 106 coins.</p><p>No model has beaten chance at calling which way price goes next, so the page never presents a direction as a buy or sell call.</p>
+          <ul class="facts" aria-label="At a glance"><li><b>What it does</b><p>Shows the live ZEC price and chart, 13 indicators, a price-range forecast trained on ZEC's own candles in your browser, and the AI trader's signal.</p></li><li><b>What it measures</b><p>How often the forecast range held across the tested coins, and the AI trader's walk-forward result on each chart.</p></li><li><b>What it does not do</b><p>It does not say whether to buy or sell ZEC, place orders, or know about news before it happens.</p></li><li><b>Limitations</b><p>Direction calls have not beaten a simple baseline, and every figure describes the past. Not financial advice.</p></li></ul>
+          <p class="row" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="#/coin/ZEC">Open the live ZEC chart</a> <a class="btn" href="#/trader">AI trading simulator</a> <a class="btn" href="#/learn">How it is tested</a></p>
+          <p class="fine">Educational, not financial advice. Forecasts, signals and simulated results describe the past and do not promise future returns. Crypto is volatile; never risk money you cannot afford to lose.</p></section>
       </main>
       <footer class="foot">
-        <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts and AI answers are educational tools, <b>not financial advice</b>. Crypto is volatile — never risk money you can't afford to lose.
-        <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a> · <a href="https://github.com/umer-78/coinvantage">Source on GitHub</a> · <span id="buildTag"></span></span>
+        <span data-app-name>CoinVantage</span> · Live data from public exchange APIs · Signals, forecasts, AI answers and the paper-trading simulator are educational tools, <b>not financial advice</b>. Past and simulated results do not promise future returns. Crypto is volatile — never risk money you can't afford to lose.
+        <span class="foot-links"><a href="#/legal/terms">Terms</a> · <a href="#/legal/privacy">Privacy</a> · <a href="#/legal/risk">Risk disclosure</a> · <a href="#/track">Track record</a> · <a href="#/learn">How it is tested</a> · <a href="https://github.com/umer-78/coinvantage" target="_blank" rel="noopener noreferrer">Source on GitHub</a> · <span id="buildTag"></span></span>
       </footer>
 
       <!-- Quick chat: live-data commands (/price, /signal, /market). Open questions go to the Ask page. -->
       <button class="chat-fab" id="chatBtn" type="button" aria-controls="chatPanel" aria-expanded="false" aria-label="Open quick chat"></button>
-      <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Quick chat" hidden>
+      <div class="chat-panel" id="chatPanel" role="dialog" aria-modal="false" aria-labelledby="chatTitle" hidden>
         <div class="chat-header">
-          <div class="chat-title">Quick chat</div>
-          <button class="chat-close" id="chatClose" type="button" aria-label="Close chat">&times;</button>
+          <h2 class="chat-title" id="chatTitle">Quick chat</h2>
+          <button class="chat-close" id="chatClose" type="button" aria-label="Close quick chat"><span aria-hidden="true">&times;</span></button>
         </div>
-        <div class="chat-messages" id="chatMessages">
+        <div class="chat-messages" id="chatMessages" role="log" aria-live="polite" aria-relevant="additions">
           <div class="chat-message bot">
-            <span class="avatar">AI</span>
-            <span class="msg">Live market answers in one line. Try /price BTC, /signal ETH or /market. For open questions, use the Ask page.</span>
+            <span class="avatar" aria-hidden="true">AI</span>
+            <span class="msg">Live market answers in one line, read straight from exchange data. Try /price BTC, /signal ETH or /market. For open questions, use the Ask page. Not financial advice.</span>
           </div>
         </div>
         <div class="chat-input-wrapper">
-          <input type="text" id="chatInput" placeholder="/price BTC" aria-label="Chat command">
-          <button class="chat-send" id="chatSend" type="button">Send</button>
+          <label class="sr-only" for="chatInput">Quick chat command</label>
+          <input type="text" id="chatInput" placeholder="/price BTC" maxlength="120" autocomplete="off" spellcheck="false">
+          <button class="chat-send" id="chatSend" type="button" aria-label="Send command">Send</button>
         </div>
       </div>
     </div>
 
     <nav class="bottombar" id="bottombar" aria-label="Mobile navigation"></nav>
   </div>
-  <noscript><p style="padding:24px;color:#fff">This site needs JavaScript enabled.</p></noscript>
+  <noscript><p style="padding:24px;color:#fff">CoinVantage needs JavaScript for live prices and charts. The text above describes each page; turn JavaScript on to use it.</p></noscript>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

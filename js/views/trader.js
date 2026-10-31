@@ -125,6 +125,15 @@ export async function render(el) {
     <div class="page-head">
       <div><h1>Trading</h1>
         <p>Three accounts, side by side: the demo trades you place yourself, the trades you really made, and the AI running the strategy on its own. Only the real account involves real money — CoinVantage never places an order and holds no keys.</p>
+        <div class="callout warn mt" role="note"><b>${icon('info', 14)} Simulation, not a path to profit</b><p>The demo and AI accounts trade simulated money on live prices. Orders fill at the candle's price with modelled fees; real orders also pay spread and slippage, can fill partly or not at all, and exchanges can go down mid-move. In walk-forward tests the rules have lost money in some periods and simply holding has sometimes done better: the figures below show both, with the worst drop. Treat a result here as evidence about the rules, not an expected return. Not financial advice. <a class="acc" href="#/learn">How the rules are tested →</a></p></div>
+        <details class="mt"><summary class="fine" style="cursor:pointer">What each account and strategy means</summary>
+          <dl class="defs">
+            <dt>Demo account</dt><dd>Simulated money you trade by hand, to practise without risk. Fees are modelled; slippage is not.</dd>
+            <dt>AI account</dt><dd>Simulated money traded automatically by the rules you choose in Settings, on live prices, in your browser and (when signed in) in the cloud.</dd>
+            <dt>Real account</dt><dd>A record of trades you placed yourself on an exchange, entered by hand or imported, measured the same way. The app never places them.</dd>
+            <dt>Tested default strategy</dt><dd>The rules for each chart that went through the walk-forward test with fees included. Their measured result, good or bad, is shown next to the account.</dd>
+            <dt>Custom strategy</dt><dd>Your own settings. They were not part of the walk-forward test, so the tested figures say nothing about them; "Test these settings" gives a look back, which flatters rules picked on the same history.</dd>
+          </dl></details>
         <p class="fine" id="syncNote">${syncNote()}</p></div>
       <div class="row">
         <span class="session-chip ${session.status}" id="sessionChip"><i></i>${sessionLabel(session.status)}</span>

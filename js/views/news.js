@@ -1,6 +1,6 @@
 // Crypto news, collected server-side from public RSS feeds every 20 minutes.
 import { $, $$, skeleton, bindSeg, icon } from '../ui.js';
-import { esc, ago } from '../format.js';
+import { esc, ago, safeUrl } from '../format.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 
 export const title = 'News';
@@ -45,9 +45,9 @@ export async function render(el, [coinParam]) {
     if (q) list = list.filter((r) => `${r.title} ${r.summary || ''}`.toLowerCase().includes(q));
     $('#list', el).innerHTML = list.length ? list.map((r) => `
       <article class="news-item">
-        ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none" data-fallback="remove">` : ''}
+        ${safeUrl(r.image) ? `<img src="${esc(safeUrl(r.image))}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none" data-fallback="remove">` : ''}
         <div style="min-width:0">
-          <a class="ttl" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
+          <a class="ttl" href="${esc(safeUrl(r.link, '#/news'))}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
           ${r.summary ? `<p class="fine" style="margin:4px 0 0">${esc(r.summary.slice(0, 200))}${r.summary.length > 200 ? '…' : ''}</p>` : ''}
           <div class="meta"><b>${esc(r.source)}</b><span>${ago(new Date(r.published_at).getTime())}</span>${(r.coins || []).slice(0, 5).map((c) => `<a href="#/coin/${esc(c)}" class="chip">${esc(c)}</a>`).join('')}</div>
         </div>

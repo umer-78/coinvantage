@@ -11,7 +11,7 @@ import { directionTrustFor } from '../lib/selfimprove.js';
 import { DEFAULT_HORIZON } from '../ai/context.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { $, $$, icon, coinLogo, skeleton, bindSeg, modal } from '../ui.js';
-import { esc, pct, money, horizonText, changeHtml } from '../format.js';
+import { esc, safeUrl, pct, money, horizonText, changeHtml } from '../format.js';
 import { load } from '../store.js';
 
 export const title = 'Market scan';
@@ -107,7 +107,7 @@ export async function render(el) {
       e.stopPropagation();
       const sym = b.dataset.trade;
       modal(`<h3>Where to trade ${esc(sym)}</h3>
-        <div class="sheet-grid mt">${venuesFor(sym).map((v) => `<a class="sheet-item" href="${esc(v.href)}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}</div>
+        <div class="sheet-grid mt">${venuesFor(sym).map((v) => `<a class="sheet-item" href="${esc(safeUrl(v.href, '#/exchanges'))}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}</div>
         <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>`);
     }));
   };

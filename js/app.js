@@ -15,6 +15,16 @@ import { auth, sb, backendEnabled, isAdmin, signOut, pullUserData, pushUserData,
 import { createSync, SYNCED_KEYS, TRADING_KEYS } from './lib/cloudsync.js';
 import { DEPS } from './deps.js';
 
+// Clickjacking guard. GitHub Pages cannot send a frame-ancestors header and
+// browsers ignore that directive in a <meta> CSP, so a page inside another
+// site's frame hides itself. Same-origin frames (the portfolio on the same
+// github.io host) are allowed: reading top.location only works for them.
+if (typeof window !== 'undefined' && window.top !== window.self) {
+  let sameOrigin = false;
+  try { sameOrigin = window.top.location.origin === window.location.origin; } catch { /* another site */ }
+  if (!sameOrigin) document.documentElement.style.visibility = 'hidden';
+}
+
 const NAV = [
   { path: '', label: 'Markets', icon: 'markets', short: 'Markets' },
   { path: 'advice', label: 'Market scan', icon: 'bolt', short: 'Scan' },
@@ -70,11 +80,11 @@ function navItems() {
 function renderNav() {
   const cur = location.hash.replace(/^#\/?/, '').split('/')[0];
   $('#nav').innerHTML = navItems().map((n) =>
-    `<a href="#/${n.path}" class="${cur === n.path ? 'on' : ''}">${icon(n.icon)}<span>${esc(t(n.label))}</span>${n.badge ? `<em class="badge">${n.badge}</em>` : ''}</a>`).join('');
+    `<a href="#/${n.path}" class="${cur === n.path ? 'on' : ''}"${cur === n.path ? ' aria-current="page"' : ''}>${icon(n.icon)}<span>${esc(t(n.label))}</span>${n.badge ? `<em class="badge">${esc(n.badge)}</em>` : ''}</a>`).join('');
   $('#bottombar').innerHTML = `${MOBILE.map((p) => {
     const n = NAV.find((x) => x.path === p);
-    return `<a href="#/${p}" class="${cur === p ? 'on' : ''}">${icon(n.icon, 22)}<span>${esc(t(n.short))}</span></a>`;
-  }).join('')}<button id="moreBtn" class="${MOBILE.includes(cur) ? '' : 'on'}">${icon('more', 22)}<span>${esc(t('More'))}</span></button>`;
+    return `<a href="#/${p}" class="${cur === p ? 'on' : ''}"${cur === p ? ' aria-current="page"' : ''}>${icon(n.icon, 22)}<span>${esc(t(n.short))}</span></a>`;
+  }).join('')}<button id="moreBtn" type="button" aria-haspopup="dialog" class="${MOBILE.includes(cur) ? '' : 'on'}">${icon('more', 22)}<span>${esc(t('More'))}</span></button>`;
   $('#moreBtn').addEventListener('click', openMore);
 }
 
@@ -172,16 +182,37 @@ function initSearch() {
   const hint = () => { input.placeholder = narrow.matches ? 'Search' : 'Search coin (BTC, Ethereum…)'; };
   hint();
   narrow.addEventListener('change', hint);
-  let items = [], active = -1;
+  let items = [], active = -1, seq = 0, timer = null;
+  input.maxLength = 40;
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-controls', 'searchResults');
+  input.setAttribute('aria-expanded', 'false');
+  box.setAttribute('role', 'listbox');
+  box.setAttribute('aria-label', 'Matching coins');
   const draw = () => {
     box.hidden = !items.length;
-    box.innerHTML = items.map((c, i) => `<a href="#/coin/${esc(c.symbol)}" class="${i === active ? 'on' : ''}">${coinLogo(c, 22)}<b>${esc(c.name)}</b><span class="muted">${esc(c.symbol)}</span><span style="margin-left:auto">${money(c.price)}</span></a>`).join('');
+    input.setAttribute('aria-expanded', String(!!items.length));
+    box.innerHTML = items.map((c, i) => `<a href="#/coin/${encodeURIComponent(c.symbol)}" id="sr-${i}" role="option" aria-selected="${i === active}" class="${i === active ? 'on' : ''}">${coinLogo(c, 22)}<b>${esc(c.name)}</b><span class="muted">${esc(c.symbol)}</span><span style="margin-left:auto">${money(c.price)}</span></a>`).join('');
+    if (active >= 0) input.setAttribute('aria-activedescendant', `sr-${active}`); else input.removeAttribute('aria-activedescendant');
   };
-  input.addEventListener('input', async () => { items = await searchCoins(input.value); active = -1; draw(); });
+  // Debounced, and only the newest query may draw: a slow answer for "BT"
+  // used to land after the one for "BTC" and replace it.
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) { seq++; items = []; active = -1; draw(); return; }
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      const found = await searchCoins(q).catch(() => []);
+      if (mine !== seq) return;
+      items = Array.isArray(found) ? found : []; active = -1; draw();
+    }, 140);
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { active = Math.min(items.length - 1, active + 1); draw(); e.preventDefault(); }
     if (e.key === 'ArrowUp') { active = Math.max(0, active - 1); draw(); e.preventDefault(); }
-    if (e.key === 'Enter' && items.length) { location.hash = `#/coin/${items[Math.max(0, active)].symbol}`; input.value = ''; items = []; draw(); input.blur(); }
+    if (e.key === 'Enter' && items.length) { location.hash = `#/coin/${encodeURIComponent(items[Math.max(0, active)].symbol)}`; input.value = ''; items = []; draw(); input.blur(); }
     if (e.key === 'Escape') { items = []; draw(); }
   });
   box.addEventListener('click', () => { input.value = ''; items = []; draw(); });
@@ -573,15 +604,16 @@ if (location.protocol === 'https:') {
   const chatMessages = $('#chatMessages');
   const chatInput = $('#chatInput');
   const chatSend = $('#chatSend');
-  const chatSendBtn = document.getElementById('chatSend');
 
   const chatBtn = $('#chatBtn');
   chatBtn.innerHTML = `${icon('ai', 18)}<span>Quick chat</span>`;
 
   // Toggle chat panel (its own button; the theme button only changes the theme)
+  chatInput.maxLength = 120;
   const toggleChat = () => {
     chatPanel.hidden = !chatPanel.hidden;
     chatBtn.setAttribute('aria-expanded', String(!chatPanel.hidden));
+    chatBtn.setAttribute('aria-label', chatPanel.hidden ? 'Open quick chat' : 'Close quick chat');
     if (chatPanel.hidden) { chatInput.value = ''; chatBtn.focus(); }
     else setTimeout(() => chatInput.focus(), 50);
   };
@@ -595,9 +627,13 @@ if (location.protocol === 'https:') {
   });
 
   // Send message
+  // one command at a time: a double press used to fetch and answer twice
+  let chatBusy = false;
   const sendMessage = async (message) => {
-    if (!message.trim()) return;
-    const trimmed = message.trim();
+    const trimmed = String(message || '').trim().slice(0, 120);
+    if (!trimmed || chatBusy) return;
+    chatBusy = true;
+    chatSend.disabled = true;
 
     // Add user message to UI
     const userMsg = document.createElement('div');
@@ -623,7 +659,7 @@ if (location.protocol === 'https:') {
       // Replace typing indicator with response
       const typingEl = $('#typingIndicator');
       if (typingEl) typingEl.remove();
-      if (response === null) return; // e.g. /clear
+      if (response === null) return; // e.g. /clear (finally still runs)
 
       const botMsg = document.createElement('div');
       botMsg.className = 'chat-message bot';
@@ -635,8 +671,12 @@ if (location.protocol === 'https:') {
 
       const errorMsg = document.createElement('div');
       errorMsg.className = 'chat-message bot';
-      errorMsg.innerHTML = `<span class="avatar">AI</span><span class="msg">Sorry, I encountered an error: ${esc(err.message)}</span>`;
+      console.warn('quick chat', err);
+      errorMsg.innerHTML = '<span class="avatar">AI</span><span class="msg">Live data did not load for that command, so there is no answer rather than a guess. Try again in a moment.</span>';
       chatMessages.appendChild(errorMsg);
+    } finally {
+      chatBusy = false;
+      chatSend.disabled = false;
     }
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -720,12 +760,12 @@ if (location.protocol === 'https:') {
 
   const quickBar = document.createElement('div');
   quickBar.className = 'chat-quick';
-  quickBar.innerHTML = `<span class="muted">Try:</span>${quickQuestions.map(q => `<button class="quick-btn" type="button" title="${q}">${q}</button>`).join(' ')}`;
+  quickBar.innerHTML = `<span class="muted">Try:</span>${quickQuestions.map(q => `<button class="quick-btn" type="button" data-cmd="${esc(q)}" aria-label="Run ${esc(q)}">${esc(q)}</button>`).join(' ')}`;
   chatMessages.parentNode.insertBefore(quickBar, chatInput.parentNode);
 
-  document.querySelectorAll('.quick-btn').forEach(btn => {
+  quickBar.querySelectorAll('.quick-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      sendMessage(btn.getAttribute('title'));
+      sendMessage(btn.dataset.cmd);
       chatInput.focus();
     });
   });

@@ -57,7 +57,7 @@ export function namedCoins(q) {
 // "Which coin should I buy?" is a different question from "should I buy BTC?".
 export function isMarketWide(q) {
   const s = (q || '').toLowerCase();
-  if (/(which|what) (coin|crypto|one|token|altcoin)|best (coin|crypto|buy|pick|token)|top (coin|pick|buy)|what (should i|to) buy|anything (good|worth)|all (the|of the)? ?coins|every coin|whole market|scan the market|market overview|any (good )?(buy|opportunit)|recommend|picks?\b|where should i (put|invest)|shopping list/.test(s)) return true;
+  if (/(which|what) (coin|crypto|one|token|altcoin)|best (coin|crypto|buy|pick|token)|top (coin|pick|buy)|what (should i|to) buy|anything (good|worth)|all (the|of the)? ?coins|every coin|whole market|scan the market|market overview|any (good )?(buy|opportunit)|evidence (is )?(the )?strongest|strongest (evidence|setups?)|recommend|picks?\b|where should i (put|invest)|shopping list/.test(s)) return true;
   // A buy/sell/timing question that names no coin is a question about the market.
   if (namedCoins(q).length || /\b(this coin|my)\b/.test(s)) return false;
   return /\b(buy|sell|short|long|invest|entry|exit|hold)\b/.test(s)

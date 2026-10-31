@@ -13,7 +13,7 @@ import { remember, DEFAULT_HORIZON } from '../ai/context.js';
 import { CandleChart } from '../charts/candles.js';
 import { LineChart } from '../charts/line.js';
 import { $, $$, icon, coinLogo, skeleton, errorBox, bindSeg, bindTabs, modal, toast } from '../ui.js';
-import { esc, usd, compact, pct, amount, changeHtml, dateTime, ago, horizonText, INTERVAL_LABEL, money } from '../format.js';
+import { esc, safeUrl, usd, compact, pct, amount, changeHtml, dateTime, ago, horizonText, INTERVAL_LABEL, money } from '../format.js';
 import { watchlist, settings, load, save } from '../store.js';
 import { venuesFor, tradable, TRADE_DISCLAIMER } from '../lib/trade.js';
 import { getNews, backendEnabled, getAiRecord } from '../api/backend.js';
@@ -136,7 +136,7 @@ export async function render(el, [symParam]) {
     card.innerHTML = `
       <div class="card-h"><h3>${esc(coin.symbol)} news</h3><button class="btn sm ghost" id="allNews">See all</button></div>
       <div class="news-mini">${rows.map((r) => `
-        <a href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">
+        <a href="${esc(safeUrl(r.link, '#/news'))}" target="_blank" rel="noopener noreferrer">
           <span>${esc(r.title)}</span>
           <small class="fine">${esc(r.source || '')} · ${esc(ago(new Date(r.published_at).getTime()))}</small>
         </a>`).join('')}</div>
@@ -171,7 +171,7 @@ export async function render(el, [symParam]) {
         <div><div class="k">Stop-loss to set</div><div class="v down">${money(sig.plan.stopLoss)}</div></div>
       </div><p class="fine" style="margin-top:8px">Set the stop-loss on the exchange as soon as the order fills.</p>` : ''}
       <div class="sheet-grid mt">
-        ${venues.map((v) => `<a class="sheet-item" href="${esc(v.href)}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}
+        ${venues.map((v) => `<a class="sheet-item" href="${esc(safeUrl(v.href, '#/exchanges'))}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}
       </div>
       <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>
 
@@ -1177,9 +1177,9 @@ export async function render(el, [symParam]) {
           <p class="fine" style="margin-bottom:10px">${rows.length} recent ${rows.length === 1 ? 'story' : 'stories'} tagged <b>${esc(coin.symbol)}</b>, newest first. Headlines are collected automatically and shown unedited — check the source before acting on one.</p>
           <div class="news-list">${rows.map((r) => `
             <article class="news-item">
-              ${r.image ? `<img src="${esc(r.image)}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none">` : ''}
+              ${safeUrl(r.image) ? `<img src="${esc(safeUrl(r.image))}" alt="" width="92" height="64" loading="lazy" style="width:92px;height:64px;object-fit:cover;border-radius:10px;flex:none">` : ''}
               <div style="min-width:0">
-                <a class="ttl" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
+                <a class="ttl" href="${esc(safeUrl(r.link, '#/news'))}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>
                 ${r.summary ? `<p class="fine" style="margin:4px 0 0">${esc(r.summary.slice(0, 180))}${r.summary.length > 180 ? '…' : ''}</p>` : ''}
                 <div class="meta"><b>${esc(r.source)}</b><span>${ago(new Date(r.published_at).getTime())}</span>${(r.coins || []).filter((c) => c !== coin.symbol).slice(0, 4).map((c) => `<a href="#/coin/${esc(c)}" class="chip">${esc(c)}</a>`).join('')}</div>
               </div>
@@ -1322,7 +1322,7 @@ export async function render(el, [symParam]) {
         body.innerHTML = `<div class="grid g2">
           <div><h3 style="margin-bottom:8px">About ${esc(coin.name)}</h3>${note}<p class="muted" style="line-height:1.6">${esc(p?.description || (loaded ? 'No description available.' : ''))}</p>
             <div class="row mt">${(p?.categories || []).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}</div>
-            <div class="row mt">${p?.homepage ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(p.homepage)}">Website ↗</a>` : ''}${p?.explorer ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(p.explorer)}">Explorer ↗</a>` : ''}</div></div>
+            <div class="row mt">${safeUrl(p?.homepage) ? `<a class="btn sm" target="_blank" rel="noopener noreferrer" href="${esc(safeUrl(p.homepage))}">Website ↗</a>` : ''}${safeUrl(p?.explorer) ? `<a class="btn sm" target="_blank" rel="noopener noreferrer" href="${esc(safeUrl(p.explorer))}">Explorer ↗</a>` : ''}</div></div>
           <dl class="kv">
             <dt>Circulating supply</dt><dd>${compact(coin.circulatingSupply, '')} ${esc(coin.symbol)}</dd>
             <dt>Total supply</dt><dd>${p?.totalSupply ? compact(p.totalSupply, '') : unknown}</dd>

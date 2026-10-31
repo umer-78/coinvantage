@@ -897,3 +897,66 @@ html:not(.webgl) .hero .key-hint { display: none; }
 @container (max-width: 200px) { .stat .v { font-size: 21px; } .plan .v { font-size: 16px; } }
 @container (max-width: 150px) { .stat .v { font-size: 18px; } .plan .v { font-size: 14px; } }
 .coin-head h1, .coin-head .price, .coin-head .chg { text-shadow: 0 2px 18px rgba(7, 7, 8, 0.9); }
+
+/* ============================================================ trust, states and access
+   One set of state tokens for every notice in the app, so a warning on the
+   Trading page looks like a warning on the Ask page. Each state is carried by
+   an icon or a word as well as its colour. */
+:root {
+  --success: var(--up); --danger: var(--down); --info: var(--series-1);
+  --success-soft: var(--up-soft); --danger-soft: var(--down-soft); --warn-soft: rgba(240, 163, 94, 0.1); --info-soft: rgba(127, 176, 230, 0.1);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--gold-hi);
+}
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
+.btn:focus-visible, .chip:focus-visible, .nav a:focus-visible, .seg button:focus-visible, .icon-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.inp[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger) inset; }
+#aiFormMsg:empty { display: none; }
+
+.callout { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; padding: 14px 16px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-2); color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.callout > b:first-child, .callout > strong:first-child { grid-column: 1 / -1; color: var(--ivory); font-weight: 700; letter-spacing: .01em; }
+.callout > :last-child { margin-bottom: 0; }
+.callout.info { border-color: rgba(127, 176, 230, 0.3); background: var(--info-soft); }
+.callout.warn { border-color: rgba(240, 163, 94, 0.32); background: var(--warn-soft); }
+.callout.danger { border-color: rgba(242, 135, 123, 0.32); background: var(--danger-soft); }
+.callout.success { border-color: rgba(95, 211, 165, 0.28); background: var(--success-soft); }
+.callout .tag { font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+
+/* The assistant's account of each answer: who wrote it, what it rests on */
+.msg .src { flex-direction: column; gap: 3px; padding-top: 8px; border-top: 1px solid var(--line-soft); line-height: 1.5; }
+.msg .src b { color: var(--text-2); font-weight: 700; }
+.msg .src .src-note { color: var(--faint); }
+.msg .src a[data-facts] { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; align-self: flex-start; }
+
+/* Landing pages written before the app runs (tools/build-pages.mjs) */
+.seo-intro { display: grid; gap: 14px; }
+.seo-intro h2 { font: 400 24px/1.15 var(--serif); color: var(--ivory); margin: 6px 0 2px; }
+.seo-intro .lede { font-size: 15px; color: var(--text); max-width: 72ch; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 4px 0; padding: 0; list-style: none; }
+.facts > li { padding: 14px 16px; border-radius: var(--radius-sm); border: 1px solid var(--line-soft); background: var(--surface-2); }
+.facts > li > b { display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.facts > li p, .facts > li ul { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.facts > li ul { padding-left: 18px; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--text-2); max-width: 78ch; }
+.steps li::marker { color: var(--gold); font-weight: 700; }
+.seo-intro section { display: grid; gap: 8px; }
+.seo-intro section p, .seo-intro section li { max-width: 78ch; }
+
+@media (forced-colors: active) {
+  .chip, .callout, .btn, .facts > li { border: 1px solid CanvasText; }
+  .live-pill i { forced-color-adjust: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+.chat-panel h2.chat-title { font: 700 15px/1.3 var(--sans); margin: 0; letter-spacing: 0; color: var(--ivory); }
+.defs { display: grid; grid-template-columns: minmax(130px, max-content) 1fr; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; }
+.defs dt { color: var(--ivory); font-weight: 700; }
+.defs dd { margin: 0; color: var(--text-2); }
+@media (max-width: 560px) { .defs { grid-template-columns: 1fr; } .defs dd { margin-bottom: 6px; } }
+.learn-guide { margin-bottom: 14px; }
+.learn-guide > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+.learn-guide > summary::-webkit-details-marker { display: none; }
+.learn-guide > summary > span { display: grid; gap: 2px; }
+.learn-guide > summary b { font: 400 22px/1.2 var(--serif); color: var(--ivory); }
+.learn-guide[open] > summary { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }

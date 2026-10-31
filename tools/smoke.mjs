@@ -49,6 +49,10 @@ page.on('console', (m) => {
   if (m.type() !== 'error') return;
   const text = m.text();
   if (IGNORE.test(text)) return;
+  // frame-ancestors is kept in the meta CSP on purpose (it takes effect if the
+  // site moves to a host that sends the policy as a header); browsers note
+  // that a meta tag cannot apply it. js/app.js guards against framing meanwhile.
+  if (/directive 'frame-ancestors' is ignored when delivered via a <meta> element/.test(text)) return;
   if (GEO_CORS.test(text) && GEO_HOSTS.test(text.split(' from origin')[0])) return;
   problems.push(`[${current}] console: ${text}`);
 });

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { FORECAST_TESTED } from '../js/lib/forecastview.js';
 import { TESTED_ACCURACY } from '../js/lib/predict.js';
 import { CHART_TESTED, TESTED_COINS } from '../js/lib/autotrader.js';
+import { LEARN_GUIDE, rangeLine, directionMeasured } from '../js/lib/learnguide.js';
 const TESTED_CHARTS = Object.keys(CHART_TESTED).filter((k) => CHART_TESTED[k]?.standard);
 const holdBeat = TESTED_CHARTS.filter((k) => { const x = CHART_TESTED[k]; return x.hold > (x.adopt ? x.own : x.standard).ret; }).length;
 
@@ -56,7 +57,8 @@ const facts = {
   rangeTests: Math.round(rangeTests / 1000) * 1000,
   recheckTests: TESTED_ACCURACY.recheck?.tests,
 };
-const rangeLine = `Its price range is measured: the 80% range held ${facts.band80}% of the time across about ${facts.rangeTests.toLocaleString('en-US')} tests on ${facts.coins} coins.`;
+const holdLoss = TESTED_CHARTS.filter((k) => { const x = CHART_TESTED[k]; return (x.adopt ? x.own : x.standard).ret < 0; }).length;
+const traderMeasured = `In the latest walk-forward test (${CHART_TESTED.measuredOn}, ${CHART_TESTED.coins} coins, fees included) the rules lost money on ${holdLoss === TESTED_CHARTS.length ? 'every one' : `${holdLoss}`} of the ${TESTED_CHARTS.length} charts tested, and holding the same coins did better on ${holdBeat === TESTED_CHARTS.length ? 'every chart' : `${holdBeat} of them`}.`;
 const directionLine = 'No model has beaten chance at calling which way price goes next, so the page never presents a direction as a buy or sell call.';
 
 // ---------------------------------------------------------------- pages
@@ -64,23 +66,70 @@ const SECTIONS = [
   { route: '#/', path: '', title: 'CoinVantage — Live Crypto Prices, Charts, Tested AI Forecasts & AI Trading Simulator',
     desc: `Live prices and candlestick charts for the top crypto coins, price-range forecasts tested on ${facts.coins} coins, an AI paper-trading simulator and a public track record. Every figure is measured, not promised. Not financial advice.`,
     h1: 'Live crypto prices, charts and tested AI forecasts',
-    body: [`Prices and charts for the largest coins, from the exchange each one trades on (Binance first, then Gate.io and HTX). Open any coin for its chart, 13 indicators, a price-range forecast and the AI trader's signal.`, rangeLine, directionLine] },
+    body: [`Prices and charts for the largest coins, from the exchange each one trades on (Binance first, then Gate.io and HTX). Open any coin for its chart, 13 indicators, a price-range forecast and the AI trader's signal.`, rangeLine, directionLine],
+    more: {
+      does: 'Shows live prices and charts, scores indicators, forecasts a price range, answers questions from that data and runs a paper-trading simulator.',
+      measures: 'How often each forecast range held, how often direction calls were right against a simple baseline, and what the trading rules made after fees against holding.',
+      not: 'It does not place orders, hold funds or keys, or tell you what to buy. It is an educational tool, not financial advice.',
+      limits: 'Measured results describe the past. Markets change, data feeds can lag or fail, and a forecast range will be wrong about one time in five by design.',
+    } },
   { route: '#/scanner', path: 'scanner/', title: 'Crypto Scanner — Indicator Scores for the Top Coins | CoinVantage',
     desc: 'Ranks the top 20 to 50 coins by how strongly their indicators agree, with the same forecast and AI signal as each coin page. Filters for rising, falling, oversold and overbought.',
-    h1: 'Crypto scanner', body: ['Ranks the top coins by how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree right now.', 'Tested on 1.58 million candles across 106 coins, the highest readings were followed by a rise least often on every chart: the score describes the move so far, it does not predict the next one.'] },
+    h1: 'Crypto scanner', body: ['Ranks the top coins by how strongly trend, momentum, RSI, MACD, Bollinger, Stoch RSI, volume and ADX agree right now.', 'Tested on 1.58 million candles across 106 coins, the highest readings were followed by a rise least often on every chart: the score describes the move so far, it does not predict the next one.'],
+    more: {
+      does: 'Reads eight indicators for each of the top coins on the chart you pick and ranks them by how strongly the readings agree.',
+      measures: 'What price did after each score level, on every chart, so you can see which readings carried information and which did not.',
+      not: 'A high score is not a buy signal and a low one is not a sell signal; the test showed the opposite tendency at the extremes.',
+      limits: 'Indicators are built from past prices only. They say nothing about news, liquidity or events that have not happened yet.',
+    } },
   { route: '#/trader', path: 'trader/', title: 'AI Crypto Trading Simulator — Paper Trading with Tested Rules | CoinVantage',
     desc: `An AI trader that runs tested rules on live prices with simulated money, plus a demo account and a record of your real trades. Walk-forward results on ${facts.coins} coins are shown next to it. No orders are ever placed.`,
     h1: 'AI trading simulator',
-    body: ['An AI trader that buys and sells with simulated money on live prices, using rules tested walk-forward on every coin it can trade, fees included. It places no orders on any exchange.', `On each chart the page shows what the same rules made in the test, the worst drop, and what simply holding the coins made. In the latest test (${CHART_TESTED.measuredOn}) holding the same coins made more on ${holdBeat === TESTED_CHARTS.length ? 'every chart' : holdBeat ? `${holdBeat} of ${TESTED_CHARTS.length} charts` : 'no chart'}: the page shows both, each with its worst drop.`] },
+    body: ['An AI trader that buys and sells with simulated money on live prices, using rules tested walk-forward on every coin it can trade, fees included. It places no orders on any exchange.', `On each chart the page shows what the same rules made in the test, the worst drop, and what simply holding the coins made. ${traderMeasured} The page shows both, each with its worst drop.`],
+    more: {
+      does: 'Runs a demo account you trade by hand, an AI account that follows rules automatically, and a record of real trades you placed elsewhere, all measured the same way.',
+      measures: 'Return after fees, worst drop (open trades included), number of trades and win rate, next to what holding the same coins did over the same periods.',
+      not: 'It never places a real order, holds no funds or exchange keys, and is not a path to profit. Simulated results are not real results.',
+      limits: 'Simulated orders fill at the candle price. Real orders pay spread and slippage, can fill partly or not at all, and exchanges can halt. Custom rules were not part of the test.',
+    },
+    sections: [
+      { h2: 'Accounts and strategies, explained', list: [
+        'Demo account: simulated money you trade by hand, to practise without risk.',
+        'AI account: simulated money traded by the rules you choose, on live prices, in your browser and in the cloud when you are signed in.',
+        'Real account: a record of trades you placed yourself on an exchange, entered by hand or imported. The app does not place them.',
+        'Tested default strategy: the rules for each chart that went through the walk-forward test with fees and fill costs counted. Their result is shown whether it is good or bad.',
+        'Custom strategy: your own settings. They were not tested, so the tested figures say nothing about them; a look back on the same history flatters them.',
+      ] },
+    ] },
   { route: '#/learn', path: 'learn/', title: 'How the AI Learns and How It Is Tested | CoinVantage',
-    desc: 'Every indicator, the forecast and the AI trader are graded against what the market did. See the walk-forward tests, the live record kept in the cloud, and what was tried and rejected.',
-    h1: 'How the AI learns and how it is tested', body: ['Every call is graded against what price did next, in the cloud, whether or not a page is open. A method only takes over when it beats the current one on that record.', directionLine, rangeLine] },
+    desc: 'How every indicator, the forecast and the AI trader are graded against what the market did next: walk-forward tests, a live record kept in the cloud, and what was tried and rejected.',
+    h1: 'How the AI learns and how it is tested',
+    body: ['Every call is graded against what price did next, in the cloud, whether or not a page is open. A method only takes over when it beats the current one on that record, and it is demoted when it stops doing so.', directionMeasured, rangeLine],
+    more: {
+      does: 'Logs each signal, forecast and trade before the outcome is known, grades it when the time is up, and shifts weight toward the methods that keep earning it.',
+      measures: 'How often forecast ranges held, direction hit rates against a baseline, and trading returns after fees against simply holding.',
+      not: 'It does not learn from your personal data, does not see the future, and does not turn a method that failed into a recommendation.',
+      limits: 'Every figure describes the period it was measured on. A method that worked can stop working when the market changes, which is why the tests keep running.',
+    },
+    sections: LEARN_GUIDE },
   { route: '#/track', path: 'track/', title: 'Public Track Record of Every Logged Signal | CoinVantage',
     desc: 'Every signal the server logged before the outcome was known, scored against the hit rate of always calling the more common outcome.',
-    h1: 'Public track record', body: ['Each signal is logged before its outcome is known and scored when the horizon passes, against the hit rate of always calling the more common outcome.'] },
+    h1: 'Public track record', body: ['Each signal is logged before its outcome is known and scored when the horizon passes, against the hit rate of always calling the more common outcome.'],
+    more: {
+      does: 'Lists the signals the server logged, when each was made, and how each turned out once its horizon passed.',
+      measures: 'Hit rate per chart and horizon, side by side with the baseline of always calling the more common outcome.',
+      not: 'It does not drop losing calls or rewrite old ones; a signal is graded exactly as it was logged.',
+      limits: 'A short record can look better or worse than it is. Read hit rates together with how many signals they cover.',
+    } },
   { route: '#/advice', path: 'advice/', title: 'Crypto Market Scan — Where the Evidence Is Strongest | CoinVantage',
     desc: 'A scan of your holdings and the top coins across charts, weighting every reading by how accurate it has actually been.',
-    h1: 'Market scan', body: ['Reads your holdings and the top coins across several charts and weights every reading by its measured accuracy, so a reading that has never earned trust counts for little.'] },
+    h1: 'Market scan', body: ['Reads your holdings and the top coins across several charts and weights every reading by its measured accuracy, so a reading that has never earned trust counts for little.'],
+    more: {
+      does: 'Scans your holdings and the top coins on several charts and sorts them by how much tested evidence stands behind each reading.',
+      measures: 'Each reading is weighted by its measured hit rate against a baseline, so untested or weak signals count for little.',
+      not: 'It does not tell you to buy or sell, and "no clear evidence" is a common and honest result.',
+      limits: 'Weights come from past tests. Entries, stops and targets are worked examples of risk, not predictions.',
+    } },
   { route: '#/compare', path: 'compare/', title: 'Compare Crypto Coins — Performance, Volatility, Drawdown & Correlation | CoinVantage',
     desc: 'Compare up to six coins: normalised performance, volatility, maximum drawdown, return against risk and a correlation matrix.',
     h1: 'Compare coins', body: ['Up to six coins side by side: normalised performance, volatility, maximum drawdown, return against risk and how closely they move together.'] },
@@ -93,8 +142,14 @@ const SECTIONS = [
     h1: 'Crypto tools', body: ['A converter, a dollar-cost-averaging backtest on real prices, and a position sizer that keeps each trade to the risk you set.'] },
   { route: '#/exchanges', path: 'exchanges/', title: 'Crypto Exchanges — Volume and Trust | CoinVantage', desc: 'The main crypto exchanges ranked by trading volume, and which of them the app reads live prices and candles from.', h1: 'Crypto exchanges', body: ['The main exchanges by trading volume.'] },
   { route: '#/ai', path: 'ai/', title: 'Crypto AI Assistant — Answers from Live Data | CoinVantage',
-    desc: 'Ask about any coin, the market or your AI trader. Answers come from live prices and the app\'s tested models, in your browser.',
-    h1: 'Crypto AI assistant', body: ['Ask about a coin, the market or your AI trader. The answers are built from live prices and the app\'s tested models, and every figure in them comes from that data, with nothing to download.'] },
+    desc: 'Ask about any coin, the market or your AI trader. Answers come from live prices and the app\'s tested models, in your browser, and say what they are based on.',
+    h1: 'Crypto AI assistant', body: ['Ask about a coin, the market or your AI trader. The answers are built from live prices and the app\'s tested models, and every figure in them comes from that data, with nothing to download.', 'Each answer names what it used (live prices, signals, the forecast, your simulated account) and who wrote the words: the built-in analyst, or a language model that only rewords the analyst\'s answer and is checked for figures that are not in the data.'],
+    more: {
+      does: 'Answers questions about coins, the market, comparisons, risk and your paper-trading account, from live data and the measured models.',
+      measures: 'Nothing new: it reports figures the rest of the app measured, with their measured accuracy, and shows the verified data behind each answer.',
+      not: 'It does not predict prices with certainty, place trades, or invent figures. An answer quoting numbers that are not in the data is replaced by the analyst\'s own.',
+      limits: 'Where the evidence is weak it says so. Direction calls have not beaten chance in testing, and a language model can still word things badly. Not financial advice.',
+    } },
   { route: '#/alerts', path: 'alerts/', title: 'Crypto Price Alerts | CoinVantage', desc: 'Set price and indicator alerts for any coin and get notified in the browser, by e-mail or on Telegram when they trigger.', h1: 'Price alerts', body: ['Set price and signal alerts for any coin.'] },
   { route: '#/wallet', path: 'wallet/', title: 'Read-only Crypto Wallet View | CoinVantage', desc: 'See a wallet\'s balances read-only. The app never asks for keys or signatures.', h1: 'Wallet', body: ['Connect a wallet read-only to see its balances. The app never asks for private keys, seed phrases or signatures.'] },
   { route: '#/premium', path: 'premium/', title: 'Free and Premium Plans | CoinVantage', desc: 'What the free plan of CoinVantage includes, what Premium adds, and what neither of them can promise about returns.', h1: 'Plans', body: ['What the free plan includes and what Premium adds.'] },
@@ -114,6 +169,12 @@ const COINS = universe.coins.map((c) => {
     title: `${label} Price, Live Chart & Tested AI Forecast | CoinVantage`,
     desc: `Live ${sym} price and chart from ${venue}, 13 indicators, a price-range forecast tested on ${facts.coins} coins and an AI paper-trading signal with its measured record.`,
     h1: `${label} price, chart and AI forecast`,
+    more: {
+      does: `Shows the live ${sym} price and chart, 13 indicators, a price-range forecast trained on ${sym}'s own candles in your browser, and the AI trader's signal.`,
+      measures: 'How often the forecast range held across the tested coins, and the AI trader\'s walk-forward result on each chart.',
+      not: `It does not say whether to buy or sell ${sym}, place orders, or know about news before it happens.`,
+      limits: 'Direction calls have not beaten a simple baseline, and every figure describes the past. Not financial advice.',
+    },
     body: [`The live ${sym} price and candlestick chart come from ${venue}. When you open the page the app trains its forecast models on ${sym}'s own candles, in your browser, and shows the price range they give for the next candles, the indicators and the AI trader's signal for ${sym}.`, rangeLine, directionLine],
   };
 });
@@ -148,8 +209,19 @@ function page(p) {
   html = swap(html, /<!-- ld:start -->[\s\S]*?<!-- ld:end -->/, `<!-- ld:start -->\n${ld.map((x) => `  <script type="application/ld+json">${JSON.stringify(x)}</script>`).join('\n')}\n  <!-- ld:end -->`, 'structured data');
   const links = p.coin
     ? `<a class="btn primary" href="${p.route}">Open the live ${esc(p.coin)} chart</a> <a class="btn" href="#/trader">AI trading simulator</a> <a class="btn" href="#/learn">How it is tested</a>`
-    : `<a class="btn primary" href="${p.route}">Open ${esc(p.h1.toLowerCase())}</a>`;
-  const main = `<main id="view" tabindex="-1">\n        <section class="card seo-intro"><h1>${esc(p.h1)}</h1>${p.body.map((t) => `<p>${esc(t)}</p>`).join('')}<p class="row" style="gap:8px;flex-wrap:wrap">${links}</p><p class="fine">Not financial advice. Crypto is volatile; never risk money you cannot afford to lose.</p></section>\n      </main>`;
+    : `<a class="btn primary" href="${p.route}">Open the live ${esc(p.h1.charAt(0).toLowerCase() + p.h1.slice(1))}</a>${p.route === '#/learn' ? '' : ' <a class="btn" href="#/learn">How it is tested</a>'}`;
+  const n = (t) => `\n          ${t}`;
+  const more = p.more ? n(`<ul class="facts" aria-label="At a glance">${[['What it does', p.more.does], ['What it measures', p.more.measures], ['What it does not do', p.more.not], ['Limitations', p.more.limits]].map(([k, v]) => `<li><b>${k}</b><p>${esc(v)}</p></li>`).join('')}</ul>`) : '';
+  const sections = (p.sections || []).map((x, i) => {
+    const id = `${(p.path || 'home').replace(/[^a-z0-9]+/gi, '-').replace(/-$/, '')}-s${i + 1}`;
+    const inner = [
+      ...(x.paras || []).map((t) => `<p>${esc(t)}</p>`),
+      x.steps ? `<ol class="steps">${x.steps.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>` : '',
+      x.list ? `<ul class="steps">${x.list.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '',
+    ].join('');
+    return n(`<section aria-labelledby="${id}"><h2 id="${id}">${esc(x.h2)}</h2>${inner}</section>`);
+  }).join('');
+  const main = `<main id="view" tabindex="-1">\n        <section class="card seo-intro"><h1>${esc(p.h1)}</h1>${p.body.map((t, i) => `<p${i === 0 ? ' class="lede"' : ''}>${esc(t)}</p>`).join('')}${more}${sections}${n(`<p class="row" style="gap:8px;flex-wrap:wrap">${links}</p>`)}${n('<p class="fine">Educational, not financial advice. Forecasts, signals and simulated results describe the past and do not promise future returns. Crypto is volatile; never risk money you cannot afford to lose.</p>')}</section>\n      </main>`;
   html = swap(html, /<main id="view" tabindex="-1">[\s\S]*?<\/main>/, main, 'main');
   return html;
 }
