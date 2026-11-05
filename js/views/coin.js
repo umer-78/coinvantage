@@ -99,7 +99,7 @@ export async function render(el, [symParam]) {
             <span class="fine" id="drawHint">Tap two points on the chart to place a trend line.</span>
           </div>
           <div class="chart-box" id="chart"></div>
-          <p class="fine" style="margin:6px 4px 0">Scroll or pinch to zoom · drag to pan · double-click to reset. Yellow cone = AI forecast.</p>
+          <p class="fine" style="margin:6px 4px 0">Scroll or pinch to zoom · drag to pan · double-click to reset. Gold fan = the forecast's price range (inner: half of outcomes in testing, outer: 80%); thin lines = possible paths with that spread, not predictions.</p>
         </div>
         <div class="card" id="summaryCard" hidden></div>
       </div>
@@ -795,7 +795,7 @@ export async function render(el, [symParam]) {
     // the summary reads the forecast, so redraw the signal card now it exists
     if (st.signal?.ok && !st.disposed && iv === st.interval) updateSignal();
     if (!fc.ok) { $('#fcCard', el).innerHTML = `<h3>AI forecast</h3><p class="muted">${esc(fc.reason)}</p>`; return; }
-    chart.setProjection(st.fcView.path);
+    chart.setProjection(st.fcView.path, { leanRemoved: Boolean(st.fcView.leanRemoved), seed: `${coin.symbol}:${iv}:${st.candles[st.candles.length - 1]?.t}` });
     drawForecastCard(st.fcView);
     if (st.tab === 'forecast' || st.tab === 'patterns') drawTab();
   }
@@ -883,13 +883,27 @@ export async function render(el, [symParam]) {
       const cls = r.pct >= 55 ? 'up' : r.pct < 45 ? 'down' : '';
       return `<b class="${cls}">${r.pct}%</b> <span class="fine">(${r.hits}/${r.total})</span>`;
     };
+    // What the forecast is worth, said as conditions: the range was measured
+    // (how often it held), the direction was measured too or was not, and on
+    // which chart and data. The range leads: it is the part that held up.
+    const measuredRange = Boolean((fc.leanRemoved && FORECAST_TESTED.centred[st.interval]) || typeof TESTED_ACCURACY.band80?.[st.interval] === 'number');
+    const lo90 = fc.range.p05 ?? fc.range.p10, hi90 = fc.range.p95 ?? fc.range.p90;
+    const at = (v) => Math.max(0, Math.min(100, ((v - lo90) / (hi90 - lo90 || 1)) * 100));
     $('#fcCard', el).innerHTML = `
-      <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${conf === 'High' ? 'up' : conf === 'Moderate' ? 'warn' : ''}" title="${esc(confWhy)}">${conf} confidence</span></div>
-      <dl class="kv">
-        <dt>80% range · next ${horizonText(st.interval, fc.horizon).replace(/^1 /, '')}</dt><dd><b>${usd(fc.range.p10)} – ${usd(fc.range.p90)}</b> <span class="fine">${coverage('band80')}</span></dd>
-        ${fc.range.p05 ? `<dt>90% range</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="fine">${coverage('band90')}</span></dd>` : ''}
-      </dl>
-      <div class="prob mt">${ring(reliable ? shown : null)}
+      <div class="card-h"><h3>${icon('ai', 16)} AI forecast</h3><span class="chip ${conf === 'High' ? 'up' : conf === 'Moderate' ? 'warn' : ''}" title="${esc(confWhy)}">Direction confidence: ${conf.toLowerCase()}</span></div>
+      <div class="fc-range">
+        <div class="k">Next ${esc(horizonText(st.interval, fc.horizon))}: likely between</div>
+        <div class="v"><b>${usd(fc.range.p10)}</b> <span class="muted">and</span> <b>${usd(fc.range.p90)}</b></div>
+        <div class="range-bar" role="img" aria-label="Today's price within the forecast range"><i style="left:${at(fc.range.p10).toFixed(1)}%;right:${(100 - at(fc.range.p90)).toFixed(1)}%"></i><i class="mid" style="left:${at(fc.range.p25).toFixed(1)}%;right:${(100 - at(fc.range.p75)).toFixed(1)}%"></i><b style="left:${at(fc.lastPrice).toFixed(1)}%" title="Today's price"></b></div>
+        <div class="fine">The 80% range: it ${coverage('band80')}.</div>
+      </div>
+      <div class="conditions" aria-label="How far to trust this forecast">
+        <span class="chip ${measuredRange ? 'up' : 'warn'}">Range: ${measuredRange ? 'tested' : 'not tested on this chart'}</span>
+        <span class="chip ${reliable ? 'up' : 'warn'}">Direction: ${reliable ? 'tested' : 'not better than chance'}</span>
+        <span class="chip">${esc(st.interval)} chart · ${st.candles.length.toLocaleString('en-US')} candles${st.tested ? ' · live' : ' · demo data'}</span>
+      </div>
+      ${fc.range.p05 ? `<dl class="kv mt"><dt>90% range</dt><dd>${usd(fc.range.p05)} – ${usd(fc.range.p95)} <span class="fine">${coverage('band90')}</span></dd></dl>` : ''}
+      <div class="${reliable ? 'prob mt' : 'mt'}">${reliable ? ring(shown) : ''}
         <div class="stack" style="gap:4px">
           <div>Next <b>${horizonText(st.interval, fc.horizon)}</b>: ${dirTxt}</div>
           ${fc.leanRemoved ? `<div class="fine">Half the time it ends between <b>${usd(fc.range.p25)} – ${usd(fc.range.p75)}</b> — ${coverage('band50')}</div>` : `<div class="fine">Target ≈ <b>${usd(fc.targetPrice)}</b> (${pct(fc.expectedReturnPct)})</div>`}
@@ -898,6 +912,7 @@ export async function render(el, [symParam]) {
           ${reliable ? `<div class="fine">${trustNote(trust)}</div>` : `<div class="fine">${rawLeanNote(fc)}</div>`}
         </div>
       </div>
+      <details class="mt fc-more"><summary class="fine">Its record, the cross-check models and calibration</summary>
       <div class="learning-box mt">
         <div class="row spread"><b>Your forecast record</b><span class="chip ${trendCls}">${esc(TREND_WORDS[ls.trend] || ls.trend)}</span></div>
         <div class="grid g2" style="margin-top:8px">
@@ -924,6 +939,7 @@ export async function render(el, [symParam]) {
         <dt>Measured 80% band coverage</dt><dd>${band80 !== null ? band80 + '%' : '—'} <span class="muted">target ~80%</span></dd>
         <dt>Measured 90% band coverage</dt><dd>${typeof TESTED_ACCURACY.band90?.[st.interval] === 'number' ? TESTED_ACCURACY.band90[st.interval] + '%' : '—'} <span class="muted">target ~90%</span></dd>
       </dl>
+      </details>
       ${timingCardBlock()}
       <div class="row mt"><span class="fine">Horizon</span><div class="seg" id="hSeg">${[Math.max(3, Math.round(st.horizon / 2)), DEFAULT_HORIZON[st.interval] || 12, (DEFAULT_HORIZON[st.interval] || 12) * 2].filter((v, i, a) => a.indexOf(v) === i).map((h) => `<button data-v="${h}" class="${h === st.horizon ? 'on' : ''}">${horizonText(st.interval, h)}</button>`).join('')}</div></div>
       <div id="histLine" class="mt"></div>`;
@@ -1082,7 +1098,7 @@ export async function render(el, [symParam]) {
           <div>
             <h3 style="margin-bottom:6px">Price path forecast · next ${horizonText(st.interval, fc.horizon).replace(/^1 /, '')}</h3>
             <div id="fcChart"></div>
-            <p class="fine">Solid line = actual price. Dashed = AI median forecast. Shaded = 50% and 80% likely ranges.</p>
+            <p class="fine">Solid line = actual price. Shaded = the ranges that held half and 80% of outcomes in testing.${fc.leanRemoved ? ' No median line: the direction was not measured reliably on this chart, so the range is centred on today\'s price.' : ' Dashed = the median forecast.'}</p>
           </div>
           <div class="stack">
             <div class="grid g3">
@@ -1131,7 +1147,7 @@ export async function render(el, [symParam]) {
       const band50 = [{ x: last.t, lo: last.c, hi: last.c }, ...fc.path.map((p) => ({ x: p.t, lo: p.p25, hi: p.p75 }))];
       lc.set([
         { name: 'Price', color: cssVar('--text'), data: hist.map((c) => ({ x: c.t, y: c.c })), width: 1.8 },
-        { name: 'AI median forecast', color: accent, dash: true, data: [{ x: last.t, y: last.c }, ...fc.path.map((p) => ({ x: p.t, y: p.p50 }))], width: 2.2 },
+        ...(fc.leanRemoved ? [] : [{ name: 'AI median forecast', color: accent, dash: true, data: [{ x: last.t, y: last.c }, ...fc.path.map((p) => ({ x: p.t, y: p.p50 }))], width: 2.2 }]),
       ], { bands: [{ color: accent, alpha: 0.1, data: bandPts }, { color: accent, alpha: 0.2, data: band50 }], divider: last.t, dividerLabel: 'now' });
       drawTimingChart(body);
       return;

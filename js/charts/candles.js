@@ -1,12 +1,46 @@
 // Canvas candlestick chart: zoom/pan (mouse, wheel, touch pinch), crosshair,
 // EMA / Bollinger overlays, volume, RSI & MACD panes, levels, markers, and an
-// optional AI forecast cone drawn to the right of the last candle.
+// optional AI forecast fan drawn to the right of the last candle.
 import { computeAll } from '../lib/indicators.js';
 import { FIB_LEVELS, distToSegment } from '../lib/geometry.js';
 // money() converts to the visitor's display currency; the chart's own scale stays in USD.
 import { money as fmtPrice, compact } from '../format.js';
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/**
+ * Possible paths with the forecast's measured spread, for the fan: a random
+ * walk scaled so that at every step its spread matches the range (about 80% of
+ * them end inside the 80% range), above and below the median by the range's
+ * own upper and lower widths. Seeded by the coin and the candle, so they hold
+ * still between redraws. They show what the range means; none is a prediction.
+ */
+export function samplePaths(proj, seed = '', count = 14) {
+  let h = 2166136261;
+  for (const ch of String(seed)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  let a = h >>> 0;
+  const rand = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const gauss = () => { let u = 0; while (u === 0) u = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand()); };
+  const Z80 = 1.2816; // a normal variable is under this 90% of the time
+  const out = [];
+  for (let j = 0; j < count; j++) {
+    let z = 0;
+    out.push(proj.map((p, k) => {
+      // unit spread at every step, each step leaning on the one before (a Brownian walk, normalised)
+      z = z * Math.sqrt(k / (k + 1)) + gauss() * Math.sqrt(1 / (k + 1));
+      if (!(p.p50 > 0 && p.p90 > 0 && p.p10 > 0)) return p.p50;
+      const up = Math.log(p.p90 / p.p50) / Z80, dn = Math.log(p.p50 / p.p10) / Z80;
+      return p.p50 * Math.exp(z * (z >= 0 ? up : dn));
+    }));
+  }
+  return out;
+}
 
 export class CandleChart {
   constructor(el, opts = {}) {
@@ -17,6 +51,9 @@ export class CandleChart {
     this.levels = [];
     this.markers = [];
     this.projection = null;
+    this.projMeta = {};
+    this.projPaths = null;
+    this.projReveal = 1; // how much of the fan is drawn while it opens out
     // Drawings are stored in TIME and PRICE, never pixels, so a trend line drawn
     // at one zoom level still touches the same two candles at another.
     this.drawings = [];
@@ -122,11 +159,29 @@ export class CandleChart {
     return { x: this.xOf(i), y: y(pt.p) };
   }
   setMarkers(markers) { this.markers = markers || []; this.draw(); }
-  setProjection(p) {
+  /**
+   * The forecast to draw: its path of percentiles, and `meta.leanRemoved` when
+   * the direction was not measured reliably (then no median line is drawn: it
+   * would sit on today's price and read as "the price stays put").
+   */
+  setProjection(p, meta = {}) {
     this.projection = p;
-    // make room on the right for the forecast cone unless the user has scrolled back
+    this.projMeta = meta || {};
+    this.projPaths = p?.length ? samplePaths(p, this.projMeta.seed || '', this.w < 520 ? 9 : 14) : null;
+    // make room on the right for the forecast fan unless the user has scrolled back
     if (p?.length && this.opts.projection && this.offset <= 0) this.offset = -(p.length + 3);
-    this.draw();
+    // the fan opens out from the last candle; with reduced motion it is simply there
+    cancelAnimationFrame(this.projAnim);
+    const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!p?.length || still) { this.projReveal = 1; this.draw(); return; }
+    const t0 = performance.now();
+    this.projReveal = 0;
+    const step = (now) => {
+      this.projReveal = Math.min(1, (now - t0) / 700);
+      this.draw();
+      if (this.projReveal < 1) this.projAnim = requestAnimationFrame(step);
+    };
+    this.projAnim = requestAnimationFrame(step);
   }
 
   fitDefault() {
@@ -392,7 +447,7 @@ export class CandleChart {
       bg: css('--chart-bg') || '#0b0f17', grid: css('--chart-grid') || '#1b2230', text: css('--text-muted') || '#8a93a6',
       up: css('--up') || '#16c784', down: css('--down') || '#ea3943', ink: css('--text') || '#e6e9ef',
       ema20: css('--series-1') || '#3987e5', ema50: css('--series-2') || '#d95926', ema200: css('--series-7') || '#9085e9',
-      accent: css('--accent') || '#f0b90b', band: css('--band') || 'rgba(57,135,229,.12)',
+      accent: css('--accent') || '#f0b90b', accentInk: css('--accent-ink') || '#1a1305', band: css('--band') || 'rgba(57,135,229,.12)',
     };
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.fillStyle = col.bg; ctx.fillRect(0, 0, this.w, this.h);
@@ -511,19 +566,47 @@ export class CandleChart {
     if (this.opts.ema50) this.line(ind.ema50, first, last, y, col.ema50, 1.5);
     if (this.opts.ema200) this.line(ind.ema200, first, last, y, col.ema200, 1.5);
 
-    // AI forecast cone
+    // AI forecast: the measured range as a fan (the 50%, 80% and, where given,
+    // 90% of outcomes in testing), a few possible paths with that spread, and
+    // the median only where the direction itself was measured. Without a
+    // reliable direction the median is today's price, and the flat line drawn
+    // there read as a forecast that the price stays put.
     if (proj) {
       const x0 = this.xOf(n - 1), p0 = candles[n - 1].c;
+      const upto = Math.max(1, Math.ceil(proj.length * this.projReveal));
+      const shown = proj.slice(0, upto);
       const band = (loK, hiK, alpha) => {
+        if (!shown.every((p) => Number.isFinite(p[loK]) && Number.isFinite(p[hiK]))) return;
         ctx.beginPath(); ctx.moveTo(x0, y(p0));
-        proj.forEach((p, k) => ctx.lineTo(this.xOf(n + k), y(p[hiK])));
-        for (let k = proj.length - 1; k >= 0; k--) ctx.lineTo(this.xOf(n + k), y(proj[k][loK]));
+        shown.forEach((p, k) => ctx.lineTo(this.xOf(n + k), y(p[hiK])));
+        for (let k = shown.length - 1; k >= 0; k--) ctx.lineTo(this.xOf(n + k), y(shown[k][loK]));
         ctx.closePath(); ctx.globalAlpha = alpha; ctx.fillStyle = col.accent; ctx.fill(); ctx.globalAlpha = 1;
       };
-      band('p10', 'p90', 0.1); band('p25', 'p75', 0.18);
-      ctx.setLineDash([5, 4]); ctx.strokeStyle = col.accent; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x0, y(p0)); proj.forEach((p, k) => ctx.lineTo(this.xOf(n + k), y(p.p50))); ctx.stroke();
-      ctx.setLineDash([]); ctx.lineWidth = 1;
+      band('p05', 'p95', 0.07); band('p10', 'p90', 0.13); band('p25', 'p75', 0.2);
+      ctx.strokeStyle = col.accent; ctx.lineWidth = 1;
+      // the 80% range's edges
+      ctx.globalAlpha = 0.7; ctx.setLineDash([3, 3]);
+      for (const key of ['p10', 'p90']) {
+        ctx.beginPath(); ctx.moveTo(x0, y(p0));
+        shown.forEach((p, k) => ctx.lineTo(this.xOf(n + k), y(p[key])));
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      // possible paths with the measured spread
+      if (this.projPaths) {
+        ctx.globalAlpha = 0.3;
+        for (const path of this.projPaths) {
+          ctx.beginPath(); ctx.moveTo(x0, y(p0));
+          for (let k = 0; k < upto; k++) ctx.lineTo(this.xOf(n + k), y(path[k]));
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
+      if (!this.projMeta.leanRemoved) {
+        ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x0, y(p0)); shown.forEach((p, k) => ctx.lineTo(this.xOf(n + k), y(p.p50))); ctx.stroke();
+        ctx.setLineDash([]); ctx.lineWidth = 1;
+      }
     }
 
     // markers
@@ -573,13 +656,18 @@ export class CandleChart {
     ctx.fillStyle = col.text; ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     for (const t of ticks) ctx.fillText(fmtPrice(t), this.plotW + 6, y(t));
     const lastC = candles[n - 1];
+    // the 80% range at the forecast's end, on the axis
+    if (proj && this.projReveal >= 1) {
+      const end = proj[proj.length - 1];
+      for (const key of ['p90', 'p10']) if (Number.isFinite(end[key])) tags.push({ y: y(end[key]), text: fmtPrice(end[key]), color: col.accent, ink: col.accentInk });
+    }
     tags.push({ y: y(lastC.c), text: fmtPrice(lastC.c), color: lastC.c >= lastC.o ? col.up : col.down, solid: true });
     const lastTagY = y(lastC.c);
     for (const tg of tags) {
       if (tg.y < 0 || tg.y > main.h) continue;
       if (!tg.solid && Math.abs(tg.y - lastTagY) < 18) continue;
       ctx.fillStyle = tg.color; ctx.fillRect(this.plotW + 1, tg.y - 9, L.axisW - 2, 18);
-      ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui'; ctx.fillText(tg.text, this.plotW + 5, tg.y);
+      ctx.fillStyle = tg.ink || '#fff'; ctx.font = '600 11px system-ui'; ctx.fillText(tg.text, this.plotW + 5, tg.y);
     }
     if (lastC && this.offset <= 0.5) {
       ctx.strokeStyle = lastC.c >= lastC.o ? col.up : col.down; ctx.setLineDash([2, 3]);
@@ -703,7 +791,9 @@ export class CandleChart {
     this.hoverIndex = Math.min(idx, n - 1);
     if (idx >= n && this.projection) {
       const p = this.projection[idx - n];
-      this.legend.innerHTML = `<b class="acc">AI forecast</b> <span>${timeLabel(p.t, 0, true)}</span> <span>Median <b>${fmtPrice(p.p50)}</b></span> <span>Likely ${fmtPrice(p.p25)} – ${fmtPrice(p.p75)}</span>`;
+      this.legend.innerHTML = this.projMeta.leanRemoved
+        ? `<b class="acc">AI range</b> <span>${timeLabel(p.t, 0, true)}</span> <span>80% <b>${fmtPrice(p.p10)} – ${fmtPrice(p.p90)}</b></span> <span>50% ${fmtPrice(p.p25)} – ${fmtPrice(p.p75)}</span>`
+        : `<b class="acc">AI forecast</b> <span>${timeLabel(p.t, 0, true)}</span> <span>Median <b>${fmtPrice(p.p50)}</b></span> <span>Likely ${fmtPrice(p.p25)} – ${fmtPrice(p.p75)}</span>`;
       return;
     }
     const c = candles[this.hoverIndex];
