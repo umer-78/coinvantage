@@ -193,6 +193,33 @@ const tooLong = (err) => err?.name === 'ContextWindowSizeExceededError' || /cont
 
 const stripThink = (t) => t.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/^\s+/, '');
 
+/**
+ * The AI services the page may call (index.html's connect-src lists the same
+ * hosts): a server on this computer, or one of these OpenAI-compatible APIs.
+ * The browser blocks every other address, so it is refused here, with the
+ * reason, instead of failing later as "could not reach it".
+ */
+export const AI_HOSTS = ['api.openai.com', 'api.groq.com', 'openrouter.ai', 'api.together.xyz', 'api.mistral.ai', 'api.deepseek.com', 'generativelanguage.googleapis.com'];
+const LOCAL = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** Checks the "your own AI server" settings. { ok, url, model, key } or { ok: false, field, error }. */
+export function checkCustomAI({ url = '', model = '', key = '' } = {}) {
+  const u = String(url).trim();
+  if (!u) return { ok: false, field: 'url', error: 'Enter the address of the server, for example http://localhost:11434/v1.' };
+  let p;
+  try { p = new URL(u); } catch { return { ok: false, field: 'url', error: 'That is not a web address. It should start with http:// or https://.' }; }
+  if (p.protocol !== 'http:' && p.protocol !== 'https:') return { ok: false, field: 'url', error: 'Only http:// and https:// addresses can be used.' };
+  if (p.username || p.password) return { ok: false, field: 'url', error: 'Put the key in the API key box, not in the address.' };
+  const local = LOCAL.has(p.hostname);
+  if (p.protocol === 'http:' && !local) return { ok: false, field: 'url', error: 'A plain http:// address is only allowed on this computer (localhost). Use https:// for a server elsewhere.' };
+  if (!local && !AI_HOSTS.includes(p.hostname)) return { ok: false, field: 'url', error: `This page may only call a server on this computer or ${AI_HOSTS.join(', ')}; the browser blocks every other address.` };
+  const m = String(model).trim();
+  if (m && !/^[\w.:/@+-]{1,120}$/.test(m)) return { ok: false, field: 'model', error: 'A model name is letters, numbers and . : / @ + - _ only.' };
+  const k = String(key).trim();
+  if (k && !/^[\x21-\x7e]{8,400}$/.test(k)) return { ok: false, field: 'key', error: 'An API key has no spaces and is at least 8 characters.' };
+  return { ok: true, url: `${p.origin}${p.pathname.replace(/\/+$/, '')}`, model: m, key: k };
+}
+
 // Streams an answer. Returns { text, source, cut } — cut: the answer stopped
 // at its length limit, not at its end.
 export async function askLLM({ history, question, facts, data, onText, signal }) {
@@ -219,6 +246,12 @@ const WAIT_MS = 90e3; // a model loading on your server can take a while to answ
 
 async function askEndpoint(messages, { onText, signal }) {
   const s = settings.get();
+  const ok = checkCustomAI({ url: s.customEndpoint, model: s.customModel, key: s.customKey });
+  if (!ok.ok) {
+    customState.reached = false;
+    customState.lastError = ok.error;
+    throw new Error(ok.error);
+  }
   // Record whether this endpoint was actually reached, so the panel can stop
   // reporting "Connected" for an address that has never answered.
   const ctl = new AbortController();
@@ -228,7 +261,7 @@ async function askEndpoint(messages, { onText, signal }) {
   try {
     let res;
     try {
-      res = await fetch(`${s.customEndpoint.replace(/\/$/, '')}/chat/completions`, {
+      res = await fetch(`${ok.url}/chat/completions`, {
         method: 'POST', signal: ctl.signal,
         headers: { 'content-type': 'application/json', ...(s.customKey ? { authorization: `Bearer ${s.customKey}` } : {}) },
         body: JSON.stringify({ model: s.customModel || 'default', messages, stream: true, temperature: 0.3, max_tokens: ANSWER_TOKENS }),

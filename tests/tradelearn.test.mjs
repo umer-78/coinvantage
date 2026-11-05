@@ -105,4 +105,8 @@ test('the trade diagnosis explains a losing log in numbers', async () => {
   // all ten losing positions of $2,000 were open at hour 13: 200% of the account
   assert.match(text, /open positions added up to 200% of the starting balance/);
   assert.deepEqual(diagnose(log.slice(0, 3)), [], 'too few trades to say anything');
+  // one of a kind reads as one; amounts in the page's currency when it passes a formatter
+  const one = diagnose([...log.slice(0, 5), mk(30, 'DDD', 'signal reversal', -40)], { fmt: (v) => `${v < 0 ? '−' : ''}₨${Math.abs(v * 280).toFixed(0)}` }).join('\n');
+  assert.match(one, /1 was sold on a reversal \(−₨11200\)/);
+  assert.match(one, /DDD \(1 trade, 0 won/);
 });

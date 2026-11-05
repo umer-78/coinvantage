@@ -505,7 +505,7 @@ setTimeout(() => {
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261024-192121";
+export const BUILD = "20261105-132725";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
@@ -520,7 +520,14 @@ const BUILD_STAMP = /^\d{8}-\d{6}$/;
   if (tag) tag.textContent = `Version ${BUILD.slice(0, 4)}-${BUILD.slice(4, 6)}-${BUILD.slice(6, 8)} ${BUILD.slice(9, 11)}:${BUILD.slice(11, 13)} UTC`;
 }
 
-async function checkForUpdate() {
+// A tab left open for hours checks too, every half hour (see below). Found
+// that way, the new build loads only once nobody has touched the page for two
+// minutes and nothing is being typed, so it never reloads under someone's hand.
+let lastInput = Date.now();
+for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true });
+const idleNow = () => Date.now() - lastInput > 120e3 && !document.activeElement?.matches?.('input, textarea, select, [contenteditable="true"]');
+
+async function checkForUpdate({ whenIdle = false } = {}) {
   if (navigator.onLine === false) return;
   try {
     const res = await fetch(`version.txt?t=${Date.now()}`, { cache: 'no-store' });
@@ -528,6 +535,7 @@ async function checkForUpdate() {
     const latest = (await res.text()).trim();
     if (!BUILD_STAMP.test(latest)) return;
     if (latest === BUILD) { sessionStorage.removeItem('cv:reloaded'); return; }
+    if (whenIdle && !idleNow()) { setTimeout(() => checkForUpdate({ whenIdle: true }), 60e3); return; }
     // One try per new build every ten minutes, never a loop: right after a
     // deploy, GitHub Pages' servers can still hand out the previous files for a
     // few minutes, and a later check then gets the new ones.
@@ -560,8 +568,9 @@ if (location.protocol === 'https:') {
   window.addEventListener('load', () => {
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => { /* offline support is optional */ });
     checkForUpdate();
-    // and again whenever the tab is brought back to the front
+    // and again whenever the tab is brought back to the front, and every half hour while it stays open
     document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+    setInterval(() => { if (!document.hidden) checkForUpdate({ whenIdle: true }); }, 30 * 60e3);
   });
 }
 

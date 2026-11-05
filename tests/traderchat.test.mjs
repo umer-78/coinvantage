@@ -2,7 +2,7 @@
 // itself, with the rules and tested numbers the Trading page shows.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { traderAnswer, TRADER_Q } from '../js/lib/traderchat.js';
+import { traderAnswer, TRADER_Q, isTraderFollowUp } from '../js/lib/traderchat.js';
 import { newState, DEFAULT_CONFIG, PER_COIN_RULES, CHART_TESTED } from '../js/lib/autotrader.js';
 import { pct } from '../js/format.js';
 
@@ -59,4 +59,49 @@ test('it says what the settings can be expected to make, from the same test as t
   const own = traderAnswer('What can my AI trader make?', { saved: { interval: '1d', strategy: 'custom' } });
   assert.match(own.text, /nothing measured — your own rules have no published test/);
   assert.match(traderAnswer('What can my AI trader make?', { saved: { interval: '30m' } }).text, /the 30m chart has no published test/);
+});
+
+test('a short follow-up to a question about the AI trader stays on the trader', () => {
+  const asked = 'How is my AI trader doing?';
+  for (const q of ['why?', 'What should I change?', 'and on 4h?', 'how do I fix it', 'Explain'])
+    assert.ok(isTraderFollowUp(q, asked), q);
+  assert.ok(!isTraderFollowUp('what is bitcoin?', asked), 'a new question');
+  assert.ok(!isTraderFollowUp('why?', 'Will BTC go up?'), 'after a market question');
+  assert.ok(!isTraderFollowUp('why?', ''), 'nothing asked before');
+  assert.ok(!isTraderFollowUp('why does the market crash every time the dollar index rises sharply?', asked), 'too long to lean on the last question');
+});
+
+test('asked why, or down, it says how the trades ended, what the settings risk and what tested best', () => {
+  const cfg = { ...DEFAULT_CONFIG, interval: '1h', maxPositions: 10, maxPositionPct: 25 };
+  const state = newState(cfg);
+  state.balance = 9700;
+  state.closed = [
+    { symbol: 'BTC', pnl: -200, pnlPct: -2, reason: 'stop', exitAt: 2, openedAt: 1 },
+    { symbol: 'ETH', pnl: -150, pnlPct: -1.5, reason: 'stop', exitAt: 4, openedAt: 3 },
+    { symbol: 'SOL', pnl: 50, pnlPct: 0.5, reason: 'target', exitAt: 6, openedAt: 5 },
+  ];
+  const saved = { interval: '1h', maxPositions: 10, maxPositionPct: 25 };
+  const a = traderAnswer('How is my AI trader doing? why?', { state, saved, followUp: true, latest: 'why?' });
+  assert.match(a.text, /Why it is down/);
+  assert.match(a.text, /3 closed trades ended: 2 by stop, 1 by target/);
+  assert.match(a.text, /Losing trades averaged −1\.75%, winning ones \+0\.50%/);
+  assert.match(a.text, /Up to 10 open trades/, 'the settings warning about open trades the cash cannot fund');
+  assert.match(a.text, /3 trades are too few to judge the rules by/);
+  assert.doesNotMatch(a.text, /Account:/, 'a follow-up answers the question, not the account again');
+  assert.equal(a.data.aiTrader.why.closedTrades, 3);
+  assert.equal(traderAnswer('why?', { state }), null, 'a bare "why?" with nothing before it is not about the trader');
+});
+
+test('asked what to change, it gives the steps with the numbers behind them, not the diagnosis again', () => {
+  const saved = { interval: '1h', riskPct: 5, maxPositions: 10, maxPositionPct: 25 };
+  const b = traderAnswer('How is my AI trader doing? what should I change?', { saved, followUp: true, latest: 'what should I change?' });
+  assert.match(b.text, /Before you start: what to change/);
+  assert.match(b.text, /1\. \*\*Chart:\*\* switch to/);
+  assert.match(b.text, /\*\*Risk:\*\* lower it from 5% to 1\.5% a trade/);
+  assert.match(b.text, /\*\*Open trades:\*\* set Max open trades to 4/);
+  assert.match(b.text, /\*\*Then leave it:\*\*/);
+  assert.doesNotMatch(b.text, /has not started yet\*\*/, 'not the status again');
+  // settings that match the tests get only the last step
+  const ok = traderAnswer('what should I change on my AI trader?', { saved: { interval: '1d', riskPct: 1.5, maxPositions: 5, maxPositionPct: 25 } });
+  assert.doesNotMatch(ok.text, /\*\*Risk:\*\*|\*\*Open trades:\*\*/);
 });

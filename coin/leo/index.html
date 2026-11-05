@@ -7,11 +7,14 @@
   <title>LEO Price, Live Chart &amp; Tested AI Forecast | CoinVantage</title>
   <meta name="description" content="Live LEO price and chart from Gate.io, 13 indicators, a price-range forecast tested on 106 coins and an AI paper-trading signal with its measured record.">
   <!-- Locks the page down against injected scripts: only our own files and the
-       pinned CDN may run code, framing is blocked by the server header, and forms cannot be
-       redirected off-site. Inline markup styles still work; inline SCRIPTS do not,
-       which is the attack this closes. The one inline script below is allowed by
-       its exact hash — change it and you must update the hash. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-gGBMy7aDnHeWxwjS1IWbYtRJ6eGNvL5bC7uZgb9+vrE=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; connect-src 'self' https: wss: blob: data: http://localhost:* http://127.0.0.1:*; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+       pinned CDN may run code, and the page may talk only to the hosts listed
+       under connect-src (the exchanges, the app's backend, the model files and
+       the AI services it supports). Forms cannot post off-site. Inline styles
+       still work; inline SCRIPTS do not, which is the attack this closes. The
+       one inline script (the import map) is allowed by its exact hash: change
+       it and you must update the hash. Framing is refused by the server where
+       it can send headers; GitHub Pages cannot, and a meta tag cannot either. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-gGBMy7aDnHeWxwjS1IWbYtRJ6eGNvL5bC7uZgb9+vrE=' https://cdn.jsdelivr.net 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' blob: data: https://api.coingecko.com https://api.coinpaprika.com https://api.alternative.me https://open.er-api.com https://data-api.binance.vision https://api.binance.com https://fapi.binance.com wss://data-stream.binance.vision wss://stream.binance.com:9443 wss://fstream.binance.com https://api.gateio.ws wss://api.gateio.ws https://api.huobi.pro wss://api.huobi.pro https://www.okx.com wss://ws.okx.com:8443 https://api.bybit.com https://api.exchange.coinbase.com https://api.kraken.com https://api.gemini.com https://api.crypto.com https://api.bitget.com https://ethereum-rpc.publicnode.com https://bsc-rpc.publicnode.com https://polygon-bor-rpc.publicnode.com https://api.mainnet-beta.solana.com https://mempool.space https://blockstream.info https://cjpljmzustvgsmueqese.supabase.co wss://cjpljmzustvgsmueqese.supabase.co https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co https://raw.githubusercontent.com http://localhost:* http://127.0.0.1:* https://api.openai.com https://api.groq.com https://openrouter.ai https://api.together.xyz https://api.mistral.ai https://api.deepseek.com https://generativelanguage.googleapis.com; media-src 'self'; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <meta name="theme-color" content="#070708">
   <meta name="color-scheme" content="dark">
@@ -83,9 +86,9 @@
       </a>
       <nav class="nav" id="nav"></nav>
       <div class="side-foot">
-        <div class="live-pill" id="livePill"><i></i><span>Connecting…</span></div>
+        <div class="live-pill" id="livePill" role="status" aria-live="polite" aria-atomic="true"><i aria-hidden="true"></i><span>Connecting…</span></div>
         <p class="fine">Data: 10 exchanges (Binance first) and CoinGecko. Signals and forecasts are not financial advice.</p>
-        <a class="side-gh" href="https://github.com/umer-78/coinvantage">GitHub ↗</a>
+        <a class="side-gh" href="https://github.com/umer-78/coinvantage" target="_blank" rel="noopener noreferrer">Source on GitHub ↗</a>
       </div>
     </aside>
 
@@ -117,16 +120,17 @@
       <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Quick chat" hidden>
         <div class="chat-header">
           <div class="chat-title">Quick chat</div>
-          <button class="chat-close" id="chatClose" type="button" aria-label="Close chat">&times;</button>
+          <button class="chat-close" id="chatClose" type="button" aria-label="Close quick chat">&times;</button>
         </div>
-        <div class="chat-messages" id="chatMessages">
+        <div class="chat-messages" id="chatMessages" aria-live="polite">
           <div class="chat-message bot">
             <span class="avatar">AI</span>
             <span class="msg">Live market answers in one line. Try /price BTC, /signal ETH or /market. For open questions, use the Ask page.</span>
           </div>
         </div>
         <div class="chat-input-wrapper">
-          <input type="text" id="chatInput" placeholder="/price BTC" aria-label="Chat command">
+          <label class="sr-only" for="chatInput">Quick chat command</label>
+          <input type="text" id="chatInput" placeholder="/price BTC" autocomplete="off" maxlength="200">
           <button class="chat-send" id="chatSend" type="button">Send</button>
         </div>
       </div>

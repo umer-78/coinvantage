@@ -560,7 +560,7 @@ export async function render(el, [symParam]) {
         <p class="fine" style="margin:6px 0 0">The last ${pt.recent.length} shown. Real prices, but the rules were chosen on history that includes many of these candles, so this looks better than it will live; the record above is the one to expect.</p></details>`
       : `<p class="fine" style="margin:6px 0 0">It made no trades on ${esc(coin.symbol)} over these candles (holding from ${esc(day(pt.from))}: ${sg(pt.holdPct)}).</p>`;
     return `<div class="ai-signal" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">
-      <div class="row spread"><b>AI signal · tested ${esc(st.interval)} rule</b><span class="chip ${tone}" style="font-weight:700">${label}</span></div>
+      <div class="row spread"><b>AI signal · ${a.tested ? `tested ${esc(st.interval)} rule` : `rule untested on ${esc(st.interval)}`}</b><span class="chip ${tone}" style="font-weight:700">${label}</span></div>
       <p style="margin:6px 0 0">${what}</p>
       <p class="fine" style="margin:6px 0 0">${rec} Simulated, fees included; a record is not a promise.</p>
       <p class="fine" id="aiLive" style="margin:6px 0 0" hidden></p>
@@ -684,7 +684,7 @@ export async function render(el, [symParam]) {
           <div><div class="k">Take-profit 1</div><div class="v up">${money(plan.takeProfits[0])}</div></div>
           <div><div class="k">Take-profit 2 / 3</div><div class="v up">${money(plan.takeProfits[1])} / ${money(plan.takeProfits[2])}</div></div>
         </div>
-        <ul class="reasons mt">${plan.exitRules.map((r) => `<li class="s">${esc(r)}</li>`).join('')}</ul>`
+        <ul class="reasons mt">${(plan.exits || plan.exitRules.map((text) => ({ text }))).map((r) => `<li class="s">${esc(r.text).replace('{price}', r.price != null ? money(r.price) : '')}</li>`).join('')}</ul>`
       : `<h3 class="mt" style="margin-bottom:8px">No trade — wait for a trigger</h3><ul class="reasons">${sig.waitFor.map((w) => `<li class="b">${esc(w)}</li>`).join('')}</ul>`}
       ${aiTraderHtml(sig)}
       <details class="mt"><summary class="fine" style="cursor:pointer">Why this signal (${sig.reasons.bullish.length} bullish · ${sig.reasons.bearish.length} bearish)</summary>

@@ -141,7 +141,7 @@ function boot(canvas, coins, wide) {
     }
     if (tier === 0) return;
     frames += 1;
-    if (dt > 1 / 38) slow += 1;
+    if (dt > (tier === 2 ? 1 / 38 : 1 / 22)) slow += 1; // a phone's target is 30 frames a second
     if (frames >= 90) {
       if (slow > 45) setTier(tier - 1);
       frames = 0;
@@ -154,12 +154,17 @@ function boot(canvas, coins, wide) {
   let time = 0;
   function loop(now) {
     requestAnimationFrame(loop);
+    const live = !motion.matches && page === 'markets' && heroVisible;
+    if (paused || document.hidden || (!live && !needsRender && !ring.gliding)) {
+      last = now;
+      return;
+    }
+    // a phone draws the slow orbit at 30 frames a second, half the work for the
+    // same look; the time skipped counts at the next frame drawn
+    if (live && tier < 2 && !ring.gliding && now - last < 1000 / 30 - 3) return;
     // a frame's timestamp can precede the clock reading taken before it was requested, so never step backwards
     const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
     last = now;
-    if (paused || document.hidden) return;
-    const live = !motion.matches && page === 'markets' && heroVisible;
-    if (!live && !needsRender && !ring.gliding) return;
     if (live) time += dt;
     const moving = ring.update(motion.matches ? STILL : time, live || ring.gliding ? dt : 0, now);
     draw();

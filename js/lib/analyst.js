@@ -54,6 +54,22 @@ export function namedCoins(q) {
   return [...text.matchAll(NAMES_A_COIN_G)].filter((m) => isTickerMention(m[0], text, m.index)).map((m) => m[0].toUpperCase());
 }
 
+/**
+ * The chart a question's own time span calls for: "this week" is a question
+ * for the daily chart (7 days ahead), "tomorrow" for the 4h (a day ahead),
+ * "today" for the hourly (12 hours ahead). Null when it names no span, and the
+ * chart picked on the page is used. "Is ETH worth buying this week?" used to
+ * be answered from the 4h chart, about the next day.
+ */
+export function horizonChart(q) {
+  const s = String(q || '').toLowerCase();
+  if (/\b(this|next|coming) (month|quarter|year)\b|\blong[- ]?term\b|\b(few|couple of) (weeks|months)\b|\bhodl\b|\bhold(ing)? (it )?for\b/.test(s)) return '1d';
+  if (/\b(this|next|coming) week\b|\b(a|one|1) week\b|\b(7|seven|few|couple of) days\b|\bweekly\b/.test(s)) return '1d';
+  if (/\btomorrow\b|\b(next|coming) (day|24 ?h(ours)?)\b|\bin (a|one|1) day\b/.test(s)) return '4h';
+  if (/\btoday\b|\btonight\b|\b(next|coming) (few )?hours?\b|\bintraday\b|\bscalp/.test(s)) return '1h';
+  return null;
+}
+
 // "Which coin should I buy?" is a different question from "should I buy BTC?".
 export function isMarketWide(q) {
   const s = (q || '').toLowerCase();

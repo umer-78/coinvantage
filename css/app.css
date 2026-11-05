@@ -10,7 +10,7 @@
   color-scheme: dark;
   --bg: #070708;
   /* glass over the world; the solid steps are what charts and inputs sit on */
-  --glass: rgba(11, 10, 9, 0.74); --glass-strong: rgba(10, 9, 9, 0.9);
+  --glass: rgba(11, 10, 9, 0.84); --glass-strong: rgba(10, 9, 9, 0.9);
   --surface: #0f0e0c; --surface-2: rgba(255, 246, 225, 0.045); --surface-3: rgba(255, 246, 225, 0.09);
   --line: rgba(214, 180, 108, 0.16); --line-strong: rgba(214, 180, 108, 0.4); --line-soft: rgba(214, 180, 108, 0.09);
   --border: var(--line); --border-strong: var(--line-strong);
@@ -66,7 +66,7 @@ p { margin: 0 0 8px; }
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 6px; }
 .live-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
 .live-pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
-.live-pill.on i { background: var(--up); box-shadow: 0 0 0 4px var(--up-soft); animation: pulse 2s infinite; }
+.live-pill.on i { background: var(--up); box-shadow: 0 0 0 4px var(--up-soft); animation: pulse 2s 4; }
 @keyframes pulse { 50% { box-shadow: 0 0 0 7px transparent; } }
 
 .main { min-width: 0; display: flex; flex-direction: column; }
@@ -172,7 +172,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .meter { height: 8px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
 .meter > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
 
-#toasts { position: fixed; right: 16px; bottom: 16px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+/* above the quick-chat button (and on a phone the bottom bar), not over them */
+#toasts { position: fixed; right: 16px; bottom: 76px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
 .toast { padding: 11px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); max-width: 340px; transition: opacity .3s, transform .3s; }
 .toast.up { border-left: 4px solid var(--up); } .toast.down { border-left: 4px solid var(--down); } .toast.info { border-left: 4px solid var(--accent); }
 .toast.out { opacity: 0; transform: translateY(8px); }
@@ -574,7 +575,7 @@ body { background: transparent; }
 }
 .session-chip i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
 .session-chip.running { color: var(--up); background: var(--up-soft); border-color: transparent; }
-.session-chip.running i { box-shadow: 0 0 0 4px var(--up-soft); animation: pulse 2s infinite; }
+.session-chip.running i { box-shadow: 0 0 0 4px var(--up-soft); animation: pulse 2s 4; }
 .session-chip.stopped { color: var(--warn); background: var(--accent-soft); border-color: transparent; }
 .session-chip.idle { color: var(--text-muted); }
 
@@ -635,6 +636,8 @@ body { background: transparent; }
 @media (max-width: 860px) {
   .chat-fab { right: 14px; bottom: calc(74px + env(safe-area-inset-bottom)); width: 48px; height: 48px; padding: 0; justify-content: center; }
   .chat-fab span { display: none; }
+  #toasts { left: 12px; right: 12px; bottom: calc(132px + env(safe-area-inset-bottom)); }
+  .toast { max-width: none; }
   .chat-panel { left: 8px; right: 8px; width: auto; bottom: calc(132px + env(safe-area-inset-bottom)); max-height: calc(100vh - 210px); }
 }
 
@@ -646,6 +649,8 @@ body { background: transparent; }
   transition: top .15s ease;
 }
 .skip-link:focus { top: 12px; outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+/* for screen readers only: a label the eye does not need */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 @media (max-width: 600px) {
   /* Wrapped onto many rows, the suggested questions took more height than the
@@ -722,8 +727,9 @@ html.webgl #world { opacity: 1; }
 /* behind a page of panels the world steps back, so it never competes with what is read */
 html.webgl:not([data-page="markets"]) #world { opacity: 0.72; }
 .page-head h1, .page-head p { text-shadow: 0 2px 18px rgba(7, 7, 8, 0.9); }
-.grain { position: fixed; inset: -50%; z-index: 200; pointer-events: none; opacity: 0.045; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); animation: grain 1.2s steps(6) infinite; }
-@keyframes grain { 0% { transform: translate(0, 0); } 20% { transform: translate(-3%, 2%); } 40% { transform: translate(2%, -3%); } 60% { transform: translate(-2%, -1%); } 80% { transform: translate(3%, 3%); } 100% { transform: translate(0, 0); } }
+/* small text straight on the world, not on a panel (a page's status line), gets a dark halo so the bright gold never washes it out */
+html.webgl #view :is(p, .fine, .muted, small, label):not(:is(.card, .advice-card, .plan-card, .modal, .banner, .hero, .page-head) *) { color: var(--text-2); text-shadow: 0 0 3px #070708, 0 0 7px #070708, 0 0 14px rgba(7, 7, 8, 0.9); }
+.grain { position: fixed; inset: 0; z-index: 200; pointer-events: none; opacity: 0.045; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
 .app { position: relative; z-index: 1; }
 
 /* type: the serif for what is displayed, the sans for what is read */
@@ -732,7 +738,7 @@ h1 { font-size: 40px; font-weight: 300; line-height: 1.02; letter-spacing: -0.01
 h2 { font-size: 28px; line-height: 1.1; }
 h3 { font-size: 21px; line-height: 1.15; font-weight: 500; }
 h4 { font-size: 17px; font-weight: 500; }
-h1 em, h2 em, .display em { font-style: italic; font-weight: 300; background: var(--gold-grad); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen 9s ease-in-out infinite; padding-right: 0.06em; }
+h1 em, h2 em, .display em { font-style: italic; font-weight: 300; background: var(--gold-grad); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen 4.5s ease-in-out 1 both; padding-right: 0.06em; }
 @keyframes sheen { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 .kicker, .eyebrow { margin: 0; font: 600 10.5px/1.2 var(--sans); letter-spacing: 0.3em; text-transform: uppercase; color: var(--gold); }
 .eyebrow { display: flex; align-items: center; gap: 14px; }
@@ -754,9 +760,12 @@ h1 em, h2 em, .display em { font-style: italic; font-weight: 300; background: va
 /* glass panels with a gold hairline */
 .card, .advice-card, .plan-card, .modal, .chat-panel, .toast, .search-results, .lc-tip {
   background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius);
-  backdrop-filter: blur(16px) saturate(1.25); -webkit-backdrop-filter: blur(16px) saturate(1.25);
   box-shadow: var(--shadow);
 }
+/* Only the few fixed panels blur what is behind them. A blur on every card had
+   to be redrawn for each card on every scroll step (about three times the
+   frame time, measured); the cards get a denser glass instead. */
+.modal, .chat-panel, .toast, .search-results, .lc-tip { backdrop-filter: blur(16px) saturate(1.25); -webkit-backdrop-filter: blur(16px) saturate(1.25); }
 .card { padding: 18px; }
 .modal, .chat-panel, .search-results, .lc-tip { background: var(--glass-strong); }
 .modal { border-color: var(--line-strong); border-radius: 22px; box-shadow: 0 40px 120px -30px rgba(0, 0, 0, 1); }
@@ -783,7 +792,7 @@ h1 em, h2 em, .display em { font-style: italic; font-weight: 300; background: va
 .nav .badge { background: var(--gold-grad); color: var(--accent-ink); }
 .side-foot .fine { color: var(--faint); }
 .topbar { background: rgba(7, 7, 8, 0.6); backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3); border-bottom: 1px solid var(--line); }
-.ticker { border-bottom: 1px solid var(--line-soft); background: rgba(7, 7, 8, 0.35); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.ticker { border-bottom: 1px solid var(--line-soft); background: rgba(7, 7, 8, 0.7); }
 .ticker b { color: var(--ivory); letter-spacing: 0.04em; }
 .search { border-radius: 999px; background: rgba(255, 246, 225, 0.04); border: 1px solid var(--line); padding: 0 16px; }
 .search:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(214, 180, 108, 0.14); }
@@ -793,10 +802,10 @@ h1 em, h2 em, .display em { font-style: italic; font-weight: 300; background: va
 .icon-btn:hover, .mini-sel:hover { border-color: var(--gold); color: var(--gold-hi); background: rgba(255, 246, 225, 0.04); }
 .mini-sel { padding: 0 12px; }
 .mini-sel option { background: #0f0e0c; color: var(--text); }
-.foot { border-top: 1px solid var(--line-soft); color: var(--faint); background: rgba(7, 7, 8, 0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.foot { border-top: 1px solid var(--line-soft); color: var(--faint); background: rgba(7, 7, 8, 0.72); }
 .foot-links a { color: var(--text-muted); }
 .foot-links a:hover { color: var(--gold-hi); }
-.banner { border-radius: 14px; background: rgba(214, 180, 108, 0.1); border: 1px solid var(--line-strong); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.banner { border-radius: 14px; background: linear-gradient(rgba(214, 180, 108, 0.1), rgba(214, 180, 108, 0.1)), rgba(9, 8, 8, 0.84); border: 1px solid var(--line-strong); }
 
 /* controls: pills, as in the portfolio */
 .btn { border-radius: 999px; border: 1px solid var(--line-strong); background: rgba(7, 7, 8, 0.25); color: var(--ivory); font-weight: 600; letter-spacing: 0.02em; padding: 0 18px; transition: transform 0.4s var(--ease), border-color 0.3s, color 0.3s, background-position 0.8s var(--ease), box-shadow 0.4s, background-color 0.3s; }
@@ -879,8 +888,6 @@ html:not(.webgl) .hero .key-hint { display: none; }
   .coin-head .price { font-size: 36px; }
   .bottombar { background: rgba(9, 8, 8, 0.78); backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3); border-top: 1px solid var(--line); }
   .bottombar .on { color: var(--gold-hi); }
-  /* a smaller blur costs a phone's GPU far less */
-  .card, .advice-card, .plan-card { backdrop-filter: blur(10px) saturate(1.2); -webkit-backdrop-filter: blur(10px) saturate(1.2); }
   .hero { min-height: clamp(400px, 66vh, 560px); padding-bottom: 18px; }
   .hero::before { left: -16px; right: -16px; height: 72%; background: linear-gradient(to top, rgba(7, 7, 8, 0.88), rgba(7, 7, 8, 0.55) 55%, transparent); }
   .hero h1 { font-size: clamp(44px, 13vw, 64px); }

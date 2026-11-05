@@ -171,7 +171,7 @@ const EXIT_WORDS = {
  * coins cost most and whether positions ever added up to more than the account.
  * Reads the log only; it changes nothing.
  */
-export function diagnose(closed = [], { startingBalance = null } = {}) {
+export function diagnose(closed = [], { startingBalance = null, fmt = usd } = {}) {
   const trades = closed.filter((t) => Number.isFinite(t.pnl));
   const out = [];
   if (trades.length < 5) return out;
@@ -182,7 +182,7 @@ export function diagnose(closed = [], { startingBalance = null } = {}) {
   const byExit = {};
   for (const t of trades) (byExit[t.reason] ||= { n: 0, pnl: 0 }).n++, byExit[t.reason].pnl += t.pnl;
   const parts = Object.entries(byExit).sort((a, b) => Math.abs(b[1].pnl) - Math.abs(a[1].pnl))
-    .map(([k, v]) => `${v.n} ${EXIT_WORDS[k] || k} (${usd(v.pnl)})`);
+    .map(([k, v]) => `${v.n} ${v.n === 1 ? String(EXIT_WORDS[k] || k).replace(/^were /, 'was ') : EXIT_WORDS[k] || k} (${fmt(v.pnl)})`);
   out.push(`Of ${trades.length} trades, ${parts.join(', ')}.`);
 
   // 2. The win rate it needed, given the size of wins and losses.
@@ -199,14 +199,14 @@ export function diagnose(closed = [], { startingBalance = null } = {}) {
   // 3. Fees.
   if (fees > 0) {
     const ofStart = startingBalance ? ` (${((fees / startingBalance) * 100).toFixed(1)}% of the starting balance)` : '';
-    out.push(`Fees came to ${usd(fees)}${ofStart}${total < 0 && fees > 0 ? ` — ${Math.min(100, (fees / Math.abs(total)) * 100).toFixed(0)}% of the size of the overall loss` : ''}. Every trade pays about 0.2% round trip, so small, frequent trades lose most to fees.`);
+    out.push(`Fees came to ${fmt(fees)}${ofStart}${total < 0 && fees > 0 ? ` — ${Math.min(100, (fees / Math.abs(total)) * 100).toFixed(0)}% of the size of the overall loss` : ''}. Every trade pays about 0.2% round trip, so small, frequent trades lose most to fees.`);
   }
 
   // 4. The coins that cost most.
   const bySym = {};
   for (const t of trades) (bySym[t.symbol] ||= { n: 0, pnl: 0, wins: 0 }).n++, bySym[t.symbol].pnl += t.pnl, bySym[t.symbol].wins += t.pnl > 0 ? 1 : 0;
   const worst = Object.entries(bySym).filter(([, v]) => v.pnl < 0).sort((a, b) => a[1].pnl - b[1].pnl).slice(0, 2);
-  if (worst.length && total < 0) out.push(`Most of the loss came from ${worst.map(([s, v]) => `${s} (${v.n} trades, ${v.wins} won, ${usd(v.pnl)})`).join(' and ')}.`);
+  if (worst.length && total < 0) out.push(`Most of the loss came from ${worst.map(([s, v]) => `${s} (${v.n} trade${v.n === 1 ? '' : 's'}, ${v.wins} won, ${fmt(v.pnl)})`).join(' and ')}.`);
 
   // 5. Positions open at the same time, as a share of the account.
   const ev = [];

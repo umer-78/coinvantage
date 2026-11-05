@@ -344,12 +344,12 @@ export function generateSignal(candles, { interval = '' } = {}) {
       rewardRisk: geo.rr,
       expectancyR: geo.ev,
       geometryTested: geo.tested,
-      exitRules: [
-        `Exit if price closes below the stop (${fmtNum(stop)})`,
-        `Take partial profit at TP1 and move stop to entry`,
-        ind.ema50[i] !== null ? `Trend exit: a close below the 50 EMA (${fmtNum(ind.ema50[i])})` : null,
-        'Exit or tighten stop if RSI goes above 75 and momentum fades',
-      ].filter(Boolean),
+      ...exitList([
+        { text: 'Exit if price closes below the stop ({price})', price: round(stop, price) },
+        { text: 'Take partial profit at TP1 and move stop to entry' },
+        ind.ema50[i] !== null ? { text: 'Trend exit: a close below the 50 EMA ({price})', price: round(ind.ema50[i], price) } : null,
+        { text: 'Exit or tighten stop if RSI goes above 75 and momentum fades' },
+      ]),
     };
   } else if (score <= -THRESHOLDS.normal) {
     let stop = entryStop(price + geo.stopAtr * atrV, r1 !== null ? r1 + 0.25 * atrV : null, 'short', price, atrV);
@@ -366,11 +366,11 @@ export function generateSignal(candles, { interval = '' } = {}) {
       rewardRisk: geo.rr,
       expectancyR: geo.ev,
       geometryTested: geo.tested,
-      exitRules: [
-        'Spot holders: consider closing or reducing the position',
-        `Short invalidated on a close above ${fmtNum(stop)}`,
-        ind.ema50[i] !== null ? `Bearish bias ends on a close back above the 50 EMA (${fmtNum(ind.ema50[i])})` : null,
-      ].filter(Boolean),
+      ...exitList([
+        { text: 'Spot holders: consider closing or reducing the position' },
+        { text: 'Short invalidated on a close above {price}', price: round(stop, price) },
+        ind.ema50[i] !== null ? { text: 'Bearish bias ends on a close back above the 50 EMA ({price})', price: round(ind.ema50[i], price) } : null,
+      ]),
     };
   }
 
@@ -445,6 +445,14 @@ function entryStop(atrStop, levelStop, side, price, atrV) {
   }
   const s = Math.max(atrStop, levelStop);
   return s - price > 3 * atrV ? atrStop : s;
+}
+
+// An exit rule's price is kept apart from its words, so a page can show it in
+// the reader's currency ({price} marks where); `exitRules` is the same list as
+// plain text in the quote currency, for the assistant.
+function exitList(list) {
+  const exits = list.filter(Boolean);
+  return { exits, exitRules: exits.map((e) => (e.price != null ? e.text.replace('{price}', fmtNum(e.price)) : e.text)) };
 }
 
 function num(v) { return v === null || v === undefined || !isFinite(v) ? null : +v.toPrecision(8); }

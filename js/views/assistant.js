@@ -2,19 +2,41 @@ import { CONFIG } from '../config.js';
 import { markets, isStable } from '../api/market.js';
 import { live } from '../api/live.js';
 import { analyzeCoin, analystContext, llmData, detectSymbol, portfolioSummary, scanMarket, marketContext, scanMarketMulti, marketContextMulti, compareCoins } from '../ai/context.js';
-import { ruleBasedAnswer, isMarketWide, detectCompare, namedCoins, SELL_ALL, AI_SYSTEM_PROMPT } from '../lib/analyst.js';
+import { ruleBasedAnswer, isMarketWide, detectCompare, namedCoins, horizonChart, SELL_ALL, AI_SYSTEM_PROMPT } from '../lib/analyst.js';
 import { unsupportedFigures, materialFigures } from '../lib/grounding.js';
 import { conversationalAnswer, termsIn } from '../lib/glossary.js';
-import { traderAnswer, TRADER_Q } from '../lib/traderchat.js';
-import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, customState, recommendedModelId } from '../ai/engine.js';
+import { traderAnswer, TRADER_Q, isTraderFollowUp } from '../lib/traderchat.js';
+import { aiState, deviceSupport, loadLocalModel, askLLM, localReady, customReady, customState, recommendedModelId, checkCustomAI, AI_HOSTS } from '../ai/engine.js';
 import { $, $$, icon, markdown, bindSeg, toast } from '../ui.js';
 import { esc, price, changeHtml, money} from '../format.js';
-import { settings, load } from '../store.js';
+import { settings, load, save } from '../store.js';
 
 export const title = 'Assistant';
-const history = []; // survives navigation within the session
+// The conversation is kept on this device and with the account (cloudsync.js),
+// so the assistant remembers it after a reload and on another device. It used
+// to live in memory only, and every reload started from nothing.
+const HISTORY_KEY = 'assistantHistory';
+const KEEP = 30;
+const history = [];
+function restoreHistory() {
+  const saved = load(HISTORY_KEY, null);
+  history.length = 0;
+  for (const m of Array.isArray(saved?.messages) ? saved.messages : []) if (m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string') history.push(m);
+  history.lastSymbol = (typeof saved?.lastSymbol === 'string' && /^[\p{L}\p{N}_]{1,20}$/u.test(saved.lastSymbol) ? saved.lastSymbol : null) || history.lastSymbol;
+}
+let savingHere = false; // this page's own saves are not news from another device
+function saveHistory() {
+  const value = {
+    // the "show data used" link needs the answer's data, which is not kept
+    messages: history.slice(-KEEP).map((m) => ({ role: m.role, content: String(m.content).slice(0, 6000), ...(m.root ? { root: String(m.root).slice(0, 500) } : {}), ...(m.meta ? { meta: String(m.meta).replace(/<a href="#" data-facts>[^<]*<\/a>/, '') } : {}), at: m.at || Date.now() })),
+    lastSymbol: history.lastSymbol || null,
+  };
+  savingHere = true;
+  try { save(HISTORY_KEY, value); } finally { savingHere = false; }
+}
 
 export async function render(el, [symParam]) {
+  restoreHistory();
   const all = await markets().catch(() => []);
   const st = { symbol: (symParam || history.lastSymbol || 'BTC').toUpperCase(), interval: '4h', busy: false, abort: null, disposed: false };
   const support = await deviceSupport();
@@ -117,11 +139,12 @@ export async function render(el, [symParam]) {
     card.innerHTML = `<div class="card-h"><h3>${icon('ai', 16)} CoinVantage AI · built in</h3></div>${body}
       <details class="mt"><summary class="fine" style="cursor:pointer">Advanced: use your own AI server</summary>
         <form id="customForm" class="stack mt" style="gap:8px">
-          <label class="fld">OpenAI-compatible URL<input class="inp" name="url" placeholder="http://localhost:11434/v1" value="${esc(settings.get().customEndpoint)}"></label>
-          <label class="fld">Model name<input class="inp" name="model" placeholder="llama3.1" value="${esc(settings.get().customModel)}"></label>
-          <label class="fld">API key (optional)<input class="inp" name="key" type="password" value="${esc(settings.get().customKey)}"></label>
+          <label class="fld">OpenAI-compatible URL<input class="inp" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" maxlength="300" placeholder="http://localhost:11434/v1" value="${esc(settings.get().customEndpoint)}"></label>
+          <label class="fld">Model name<input class="inp" name="model" autocomplete="off" spellcheck="false" maxlength="120" placeholder="llama3.1" value="${esc(settings.get().customModel)}"></label>
+          <label class="fld">API key (optional)<input class="inp" name="key" type="password" autocomplete="off" maxlength="400" value="${esc(settings.get().customKey)}"></label>
+          <p class="fine down" id="customErr" role="alert" hidden></p>
           <div class="row"><button class="btn sm primary">Save</button><button class="btn sm" type="button" id="clearCustom">Remove</button></div>
-          <p class="fine">Works with Ollama, LM Studio, vLLM or any OpenAI-compatible service. The key stays in this browser. Ollama only answers other websites when started with <code>OLLAMA_ORIGINS=${esc(location.origin)}</code>; in LM Studio, turn on CORS in the server settings.</p>
+          <p class="fine">Works with Ollama, LM Studio, vLLM on this computer, or ${esc(AI_HOSTS.join(', '))}. It only rewords the built-in engine's answer: the facts and figures still come from the engine, and figures it cannot find in the data are flagged. The key stays in this browser. Ollama only answers other websites when started with <code>OLLAMA_ORIGINS=${esc(location.origin)}</code>; in LM Studio, turn on CORS in the server settings.</p>
         </form></details>`;
     $('#startAi', card)?.addEventListener('click', async () => {
       try { await loadLocalModel($('#modelSel', card).value); toast('The language model is on', 'up'); }
@@ -129,7 +152,15 @@ export async function render(el, [symParam]) {
     });
     $('#customForm', card).addEventListener('submit', (e) => {
       e.preventDefault();
-      settings.set({ customEndpoint: e.target.url.value.trim(), customModel: e.target.model.value.trim(), customKey: e.target.key.value.trim() });
+      const ok = checkCustomAI({ url: e.target.url.value, model: e.target.model.value, key: e.target.key.value });
+      const err = $('#customErr', card);
+      if (!ok.ok) {
+        err.textContent = ok.error; err.hidden = false;
+        e.target[ok.field]?.setAttribute('aria-invalid', 'true');
+        e.target[ok.field]?.focus();
+        return;
+      }
+      settings.set({ customEndpoint: ok.url, customModel: ok.model, customKey: ok.key });
       toast('AI endpoint saved', 'up'); drawEngine();
     });
     $('#clearCustom', card).addEventListener('click', () => { settings.set({ customEndpoint: '', customModel: '', customKey: '' }); drawEngine(); });
@@ -166,7 +197,15 @@ Every answer is built from live prices, signals across four timeframes, a backte
     st.busy = true;
     $('#send', el).disabled = true;
     $('#assistantClear', el).disabled = true;
-    history.push({ role: 'user', content: question });
+    // "why?" or "what should I change?" right after a question about the AI
+    // trader is about the trader, not a new topic; a chain of them stays on it
+    // (each keeps the question that started it)
+    const last = [...history].reverse().find((m) => m.role === 'user');
+    const previous = last ? last.root || last.content : '';
+    const followUp = isTraderFollowUp(question, previous);
+    const root = followUp ? previous : TRADER_Q.test(question) ? question : null;
+    history.push({ role: 'user', content: question, at: Date.now(), ...(root ? { root } : {}) });
+    saveHistory();
     addMsg('user', esc(question));
     const bot = addMsg('bot', '<span class="typing"><i></i><i></i><i></i></span> <span class="fine" data-step>Thinking…</span>');
     const step = (t) => { const n = bot.querySelector('[data-step]'); if (n) n.textContent = t; };
@@ -177,10 +216,10 @@ Every answer is built from live prices, signals across four timeframes, a backte
       const detected = found && termsIn(found).length && !namedCoins(question).includes(found) ? null : found;
       // Greetings, definitions, "how does it work" and "is it a scam" need no
       // chart: answer at once instead of fetching and reading one.
-      const plain = !TRADER_Q.test(question) && conversationalAnswer(question, { symbol: st.symbol, named: detected ? [detected] : namedCoins(question) });
+      const plain = !followUp && !TRADER_Q.test(question) && conversationalAnswer(question, { symbol: st.symbol, named: detected ? [detected] : namedCoins(question) });
       if (plain) {
         const src = '<span>Built-in answer (instant)</span>';
-        history.push({ role: 'assistant', content: plain, meta: src });
+        history.push({ role: 'assistant', content: plain, meta: src, at: Date.now() });
         bot.innerHTML = markdown(plain) + `<div class="src">${src}</div>`;
         return;
       }
@@ -193,26 +232,28 @@ Every answer is built from live prices, signals across four timeframes, a backte
 
       // A question about the AI trader is answered from the user's own account,
       // not from a market scan of the coin in focus.
-      const trader = traderAnswer(question, { state: load('traderState', null), saved: load('traderCfg', {}), lessons: load('traderLessons', []), symbol: detected, fmt: (v) => money(v) });
+      const trader = traderAnswer(followUp ? `${previous} ${question}` : question, { state: load('traderState', null), saved: load('traderCfg', {}), lessons: load('traderLessons', []), symbol: detected, fmt: (v) => money(v), followUp, latest: question });
 
       let analysis = null, market = null, marketFrames = null, compare = null;
+      // the span the question names picks the chart; otherwise the one chosen on the page
+      const iv = horizonChart(question) || st.interval;
       const wantsCompare = !trader && detectCompare(question);
       if (trader) {
         // nothing to fetch: the account is on this device
       } else if (wantsCompare) {
         step(`Comparing ${wantsCompare.join(', ')}…`);
-        compare = await compareCoins(wantsCompare, { interval: st.interval, onStep: step });
+        compare = await compareCoins(wantsCompare, { interval: iv, onStep: step });
       } else if (wantsMarket) {
         step('Scanning every coin on 3 timeframes…');
         const byInterval = await scanMarketMulti({ count: 20, onStep: step });
         marketFrames = marketContextMulti(byInterval);
-        market = marketFrames.frames.find((f) => f.interval === st.interval) || marketFrames.frames[1] || marketFrames.frames[0] || null;
+        market = marketFrames.frames.find((f) => f.interval === iv) || marketFrames.frames[1] || marketFrames.frames[0] || null;
       } else if (!wantsPortfolio || detected) {
-        analysis = await analyzeCoin(st.symbol, { interval: st.interval, onStep: step });
+        analysis = await analyzeCoin(st.symbol, { interval: iv, onStep: step });
       }
       const ctx = analysis
-        ? { ...analystContext(analysis, portfolio), market, marketFrames, compare, compareInterval: st.interval }
-        : { portfolio, market, marketFrames, compare, compareInterval: st.interval, interval: st.interval };
+        ? { ...analystContext(analysis, portfolio), market, marketFrames, compare, compareInterval: iv }
+        : { portfolio, market, marketFrames, compare, compareInterval: iv, interval: iv };
       const facts = trader ? trader.text : ruleBasedAnswer(question, ctx);
       const meta = (src) => `<span>${esc(src)}</span>${marketFrames ? `<span>· scanned ${marketFrames.scanned} coins on ${esc(marketFrames.intervals.join(', '))}</span>` : market ? `<span>· scanned ${market.scanned} coins on ${esc(market.interval)}</span>` : ''}${analysis ? `<span>· ${esc(analysis.coin.symbol)} ${esc(analysis.interval)} · ${analysis.source === 'binance' ? 'live Binance data' : analysis.source === 'demo' ? 'demo data' : 'CoinGecko data'}</span>` : ''}<a href="#" data-facts>· show data used</a>`;
       let finalText = facts, source = 'Rule-based analyst (instant)';
@@ -248,13 +289,14 @@ Every answer is built from live prices, signals across four timeframes, a backte
           }
         }
       }
-      history.push({ role: 'assistant', content: finalText, meta: meta(source) });
+      history.push({ role: 'assistant', content: finalText, meta: meta(source), at: Date.now() });
       bot.innerHTML = markdown(finalText) + `<div class="src">${meta(source)}</div>`;
       bot.querySelector('[data-facts]')?.addEventListener('click', (e) => { e.preventDefault(); addMsg('bot', `<div class="fine"><b>Verified data behind this answer</b></div>${markdown(facts)}`); });
     } catch (err) {
       bot.innerHTML = markdown(`Sorry — ${err.message}`);
-      history.push({ role: 'assistant', content: `Sorry — ${err.message}` });
+      history.push({ role: 'assistant', content: `Sorry — ${err.message}`, at: Date.now() });
     } finally {
+      saveHistory();
       st.busy = false; st.abort = null;
       if (!st.disposed) {
         $('#send', el).disabled = false;
@@ -268,10 +310,13 @@ Every answer is built from live prices, signals across four timeframes, a backte
   // Stop ends the language model's write-up; the instant analyst answer, built
   // from the same verified numbers, is shown instead.
   $('#assistantStop', el).addEventListener('click', () => st.abort?.abort());
-  $('#assistantClear', el).addEventListener('click', () => { if (st.busy) return; history.length = 0; drawHistory(); });
+  $('#assistantClear', el).addEventListener('click', () => { if (st.busy) return; history.length = 0; saveHistory(); drawHistory(); });
   $('#form', el).addEventListener('submit', (e) => { e.preventDefault(); const q = $('#q', el); ask(q.value); q.value = ''; });
   $('#q', el).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#form', el).requestSubmit(); } });
-  $('#coinSel', el).addEventListener('change', (e) => { st.symbol = e.target.value; history.lastSymbol = st.symbol; drawFocus(); });
+  $('#coinSel', el).addEventListener('change', (e) => { st.symbol = e.target.value; history.lastSymbol = st.symbol; saveHistory(); drawFocus(); });
+  // the conversation from another device, when a sync brings it in
+  const onStore = (e) => { if (e.detail?.key === HISTORY_KEY && !savingHere && !st.busy && !st.disposed) { restoreHistory(); drawHistory(); } };
+  window.addEventListener('cv:store', onStore);
   bindSeg($('#ivSeg', el), (v) => { st.interval = v; });
 
   drawHistory(); drawFocus(); drawEngine();
@@ -281,5 +326,5 @@ Every answer is built from live prices, signals across four timeframes, a backte
     loadLocalModel(s.llmModel).catch(() => {});
   }
   if (!support.webgpu && !s.llmModel) recommendedModelId();
-  return () => { st.disposed = true; st.abort?.abort(); focusUnsub?.(); aiState.removeEventListener('change', onAi); };
+  return () => { st.disposed = true; st.abort?.abort(); focusUnsub?.(); aiState.removeEventListener('change', onAi); window.removeEventListener('cv:store', onStore); };
 }

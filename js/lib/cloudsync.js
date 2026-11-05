@@ -26,6 +26,7 @@ export const TRADING_KEYS = [
   'traderCfg', 'traderLessons', 'traderAutoLearn',    // the AI's rules and what it learned
   'traderRunning', 'aiSession', 'traderAutoStarted',  // whether the AI is running
   'aiLedger',                                         // your graded forecasts, which tune how far each chart's direction is trusted
+  'assistantHistory',                                 // the assistant's conversation, so it remembers it on every device
 ];
 /**
  * Keys whose two copies are joined rather than one kept: a forecast record

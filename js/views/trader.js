@@ -86,8 +86,11 @@ export async function render(el) {
   function syncSessionChip() {
     const chip = $('#sessionChip', el);
     if (!chip) return;
-    chip.className = `session-chip ${session.status}`;
-    chip.innerHTML = `<i></i>${sessionLabel(session.status)}`;
+    // only when it changes: redrawing it on every check restarted its pulse,
+    // which then never stopped (a repaint every frame while the page was open)
+    const cls = `session-chip ${session.status}`, html = `<i></i>${sessionLabel(session.status)}`;
+    if (chip.className !== cls) chip.className = cls;
+    if (chip.innerHTML !== html) chip.innerHTML = html;
   }
 
   const all = await markets().catch(() => []);
@@ -192,9 +195,12 @@ export async function render(el) {
       if (!s || !Number.isFinite(s.returnPct)) return null;
       const days = (Date.now() - (state.liveFrom || state.startedAt)) / 864e5;
       if (!(days >= 1)) return { early: true, hours: Math.max(0, Math.round(days * 24)) };
+      // a rate is shown for a span only once the account has run that long:
+      // two days of trades spread over a month read as a forecast, which they are not
       const d = s.returnPct / days;
-      return { hour: d / 24, day: d, week: d * 7, month: d * 30, days };
+      return { hour: d / 24, day: d, week: days >= 7 ? d * 7 : null, month: days >= 30 ? d * 30 : null, days };
     })();
+    const notYet = (need) => `<small class="muted">after ${need} days</small>`;
     const when = rows.map((r) => `${r.chart} ${r.from.slice(0, 7)} → ${r.to.slice(0, 7)}`).join(', ');
     return `<div class="card mt" id="earnCard">
       <div class="card-h"><h3>${icon('chart', 16)} What it can make: per hour, day, week and month</h3><span class="fine">at ${rows[0].risk}% a trade, on ${money(bal)}</span></div>
@@ -203,12 +209,12 @@ export async function render(el) {
           <td>${cell(r.per.hour)}</td><td>${cell(r.per.day)}</td><td>${cell(r.per.week)}</td><td>${cell(r.per.month)}</td>
           <td class="hide-p ${r.worst >= 0 ? 'up' : 'down'}">${pct(r.worst, 2)}<small>in ${esc(r.block)}</small></td>
           <td class="hide-t ${r.holdPer.month >= 0 ? 'up' : 'down'}">${pct(r.holdPer.month, 2)}</td><td class="hide-t">${r.tradesPerMonth}</td></tr>`; }).join('')}
-        ${live ? `<tr><td class="l"><b>Your account so far</b><br><small>${live.early ? `${live.hours} h of trading` : `${Math.round(live.days)} day${Math.round(live.days) === 1 ? '' : 's'}, live`}</small></td>${live.early ? '<td colspan="7" class="l muted">too early to say: a day of trading is the least this can be read on</td>' : `<td>${cell(live.hour)}</td><td>${cell(live.day)}</td><td>${cell(live.week)}</td><td>${cell(live.month)}</td><td class="l muted hide-p">its own record</td><td colspan="2" class="hide-t"></td>`}</tr>` : ''}
+        ${live ? `<tr><td class="l"><b>Your account so far</b><br><small>${live.early ? `${live.hours} h of trading` : `${Math.round(live.days)} day${Math.round(live.days) === 1 ? '' : 's'}, live`}</small></td>${live.early ? '<td colspan="7" class="l muted">too early to say: a day of trading is the least this can be read on</td>' : `<td>${cell(live.hour)}</td><td>${cell(live.day)}</td><td>${live.week === null ? notYet(7) : cell(live.week)}</td><td>${live.month === null ? notYet(30) : cell(live.month)}</td><td class="l muted hide-p">its own record</td><td colspan="2" class="hide-t"></td>`}</tr>` : ''}
       </tbody></table></div>
       <div class="tbl-wrap show-pb"><table class="tbl fine fit"><thead><tr><th>Per hour</th><th>Per day</th><th>Per week</th><th>Per month</th></tr></thead><tbody>
         ${rows.map((r) => `<tr><th colspan="4" class="l">${esc(r.chart)}${r.chart === iv ? ' · yours' : ''}${top && r.chart === top.iv ? ' · recommended' : ''} <span class="muted">· worst test period ${pct(r.worst, 2)} in ${esc(r.block)}</span></th></tr>
           <tr><td>${cellP(r.per.hour)}</td><td>${cellP(r.per.day)}</td><td>${cellP(r.per.week)}</td><td>${cellP(r.per.month)}</td></tr>`).join('')}
-        ${live && !live.early ? `<tr><th colspan="4" class="l">Your account so far · ${Math.round(live.days)} days</th></tr><tr><td>${cellP(live.hour)}</td><td>${cellP(live.day)}</td><td>${cellP(live.week)}</td><td>${cellP(live.month)}</td></tr>` : ''}
+        ${live && !live.early ? `<tr><th colspan="4" class="l">Your account so far · ${Math.round(live.days)} days</th></tr><tr><td>${cellP(live.hour)}</td><td>${cellP(live.day)}</td><td>${live.week === null ? notYet(7) : cellP(live.week)}</td><td>${live.month === null ? notYet(30) : cellP(live.month)}</td></tr>` : ''}
       </tbody></table></div>
       <p class="fine mt">Each chart's average over its ${rows[0].periods} walk-forward test periods with ${esc(rows.every((r) => r.rules === rows[0].rules) ? rows[0].rules : 'its tested rules')}, after fees and the cost of real fills (0.05% worse each way), spread evenly over time.<span class="show-t"> Holding the coins and the number of trades a month are shown on a wider screen.</span> Real results come in lumps: most hours and many days have no trade at all, and the worst test period is shown beside each. The charts were tested on different stretches of time (${esc(when)}), so read across rows with care.${top ? ` Recommended: ${esc(top.iv)}, which made the most a month at the tested 1.5% a trade.` : ''}</p>
       <p class="fine">Holding the same coins made more than the AI on every chart in these periods, which were mostly rising markets. The AI's case is that it fell less on the way and sits in cash when nothing qualifies. An expectation from past periods, not a promise.</p>
@@ -539,11 +545,11 @@ export async function render(el) {
       <div class="grid g4 mt">
         <div class="stat"><span class="k">Trades read</span><span class="v">${o.n}</span></div>
         <div class="stat"><span class="k">Won</span><span class="v">${o.winRate === null ? '—' : `${o.winRate}%`}</span></div>
-        <div class="stat"><span class="k">Average result</span><span class="v ${o.avgR > 0 ? 'up' : o.avgR < 0 ? 'down' : ''}">${o.avgR === null ? '—' : `${o.avgR > 0 ? '+' : ''}${o.avgR}R`}</span><span class="s fine">R = the amount risked per trade</span></div>
+        <div class="stat"><span class="k">Average result</span><span class="v ${o.avgR > 0 ? 'up' : o.avgR < 0 ? 'down' : ''}">${o.avgR === null ? '—' : `${o.avgR > 0 ? '+' : o.avgR < 0 ? '−' : ''}${Math.abs(o.avgR)}R`}</span><span class="s fine">R = the amount risked per trade</span></div>
         <div class="stat"><span class="k">Rules it changed</span><span class="v">${lessons.filter((l) => !l.undo && !l.undone).length}</span></div>
       </div>
       ${review.findings.length ? `<ul class="reasons mt">${review.findings.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
-      ${(() => { const d = diagnose(state.closed, { startingBalance: state.startingBalance }); return d.length ? `<div class="mt"><div class="fine" style="margin-bottom:4px"><b>What drove the result</b></div><ul class="reasons">${d.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''; })()}
+      ${(() => { const d = diagnose(state.closed, { startingBalance: state.startingBalance, fmt: (v) => `${v < 0 ? '−' : ''}${money(Math.abs(v))}` }); return d.length ? `<div class="mt"><div class="fine" style="margin-bottom:4px"><b>What drove the result</b></div><ul class="reasons">${d.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''; })()}
       <p class="fine mt"><b>Rules in force now:</b> ${active.length ? esc(active.join(' · ')) : 'none yet — the original strategy'}.</p>
       ${lessons.length ? `<div class="mt"><div class="fine" style="margin-bottom:4px"><b>What it changed, and when</b></div><ul class="fine" style="list-style:none;padding:0;margin:0">${[...lessons].reverse().slice(0, 12).map((l) => `<li style="padding:4px 0;border-bottom:1px solid var(--border)"><span class="muted" style="display:inline-block;min-width:150px">${dateTime(l.at)}</span>${esc(l.text)}${l.undone ? ' <span class="chip">later undone</span>' : ''}</li>`).join('')}</ul></div>` : ''}
     </div>`;

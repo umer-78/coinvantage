@@ -59,6 +59,8 @@ const noEdgeOn = (iv) => (TESTED_ACCURACY.noEdge || []).includes(iv);
 // release test: one set of numbers on the page, not two that disagree.
 const latestTest = (iv) => TESTED_ACCURACY.recheck?.[iv] || null;
 const accuracyOn = (iv) => (typeof latestTest(iv)?.hit === 'number' ? latestTest(iv).hit : typeof TESTED_ACCURACY[iv] === 'number' ? TESTED_ACCURACY[iv] : null);
+// How many coins the figure for a timeframe was measured on: the latest test where there is one.
+const coinsOn = (iv) => latestTest(iv)?.coins ?? (latestTest(iv) ? TESTED_ACCURACY.recheck?.coins : null) ?? TESTED_ACCURACY.coins;
 // What the model had to beat on a timeframe: always naming the more common direction.
 const baselineOn = (iv) => (typeof latestTest(iv)?.baseline === 'number' ? latestTest(iv).baseline : typeof TESTED_ACCURACY.baseline?.[iv] === 'number' ? TESTED_ACCURACY.baseline[iv] : null);
 
@@ -152,7 +154,9 @@ export function reconcileSteps(rec, interval) {
   } else if (rec.relation === 'split') {
     why = `This ${interval} chart reads ${String(rec.here.text).toLowerCase()}, but the other timeframes point the other way and the weighted view across ${rec.span} cancels out to ${signed(rec.score)}. A board this split is a disagreement, not a trend — acting on the one chart that happens to be loudest is how a reader ends up on the wrong side of the move.`;
   } else if (rec.relation === 'outside') {
-    why = `This ${interval} chart is shorter than any timeframe with a measured track record, so nothing on it has been tested. The combined view across ${rec.span} is ${combined}; use this chart for timing only.`;
+    why = ['3d', '1w', '1M'].includes(interval)
+      ? `This ${interval} chart is longer than any timeframe with a measured track record, so nothing on it has been tested. The combined view across ${rec.span} is ${combined}; read this chart as background for the long view, not as a tested signal.`
+      : `This ${interval} chart is shorter than any timeframe with a measured track record, so nothing on it has been tested. The combined view across ${rec.span} is ${combined}; use this chart for timing only.`;
   } else {
     why = `The timeframes are split and the combined view comes out flat (${signed(rec.score)}). When the spans of price disagree this evenly there is no trend to trade, whatever any single chart says.`;
   }
@@ -166,7 +170,7 @@ export function reconcileSteps(rec, interval) {
   const noEdge = TF_ORDER.filter(noEdgeOn);
   let follow = `Longer timeframes set direction, shorter ones set timing, so where they disagree the ${rec.anchor.interval} reading leads and the shorter charts decide when to act on it.`;
   if (accs) {
-    follow += ` The forecast model is not equally good on all of them — measured direction accuracy on unseen data was ${accs} across ${TESTED_ACCURACY.coins} coins.`;
+    follow += ` The forecast model is not equally good on all of them — measured direction accuracy on unseen data was ${accs} across ${TESTED_ACCURACY.recheck ? `up to ${TESTED_ACCURACY.recheck.coins}` : TESTED_ACCURACY.coins} coins.`;
   }
   if (noEdge.length) {
     follow += ` On ${noEdge.join(', ')} it scored at or below its baseline (always naming whichever direction was more common), so a probability shown there is not evidence — on those charts read the trend structure and ignore the percentage.`;
@@ -184,7 +188,7 @@ export function reconcileSteps(rec, interval) {
  * per-timeframe accuracy table — so the daily chart, the timeframe with the
  * worst measured accuracy of the four, was the one shouting "high confidence".
  */
-function confidenceFor({ interval, strength, conflict, coinAcc, relation, expectancyR }) {
+function confidenceFor({ interval, strength, conflict, coinAcc, relation, expectancyR, geometryTested = true }) {
   const tfAcc = accuracyOn(interval);
   const reasons = [];
   let level = 'low';
@@ -192,7 +196,8 @@ function confidenceFor({ interval, strength, conflict, coinAcc, relation, expect
   if (strength >= 25) level = 'moderate';
 
   // "high" has to clear every measured bar at once, not just look impressive.
-  const geometryPays = expectancyR === null || expectancyR === undefined ? null : expectancyR > 0;
+  // levels never tested on this chart carry the default geometry's number, which says nothing about it
+  const geometryPays = expectancyR === null || expectancyR === undefined || !geometryTested ? null : expectancyR > 0;
   if (strength >= 45 && tfAcc !== null && tfAcc >= 55 && geometryPays === true && relation !== 'against' && !conflict) {
     level = 'high';
   }
@@ -213,10 +218,15 @@ function confidenceFor({ interval, strength, conflict, coinAcc, relation, expect
     reasons.push(`the forecast is at ${coinAcc}% on this coin`);
   }
   if (strength < 25) reasons.push('the indicators barely agree');
+  // a chart nothing was measured on (the weekly, the seconds charts) has no evidence to be confident in
+  if (tfAcc === null) {
+    level = 'low';
+    reasons.push(`nothing on the ${interval} chart was measured: neither the forecast nor these levels were tested on it`);
+  }
 
   const why = reasons.length
     ? `Rated ${level} because ${reasons.join(', and ')}.`
-    : `Rated ${level}: no conflict between the readings, positive tested expectancy on ${interval}, and the forecast has a measured record there. It is a description of the evidence, not a promise.`;
+    : `Rated ${level}: ${['no conflict between the readings', geometryPays === true ? `these stop and target distances tested positive on ${interval}` : null, `the forecast has a measured record there (${tfAcc.toFixed(1)}%)`].filter(Boolean).join(', ')}. It is a description of the evidence, not a promise.`;
 
   return { level, why };
 }
@@ -246,8 +256,9 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
 
   const acc = forecast?.validatedAccuracyPct ?? null;
   const expectancyR = signal.plan?.expectancyR ?? null;
+  const geometryTested = signal.plan?.geometryTested ?? true;
   const { level: confidence, why: confidenceWhy } =
-    confidenceFor({ interval, strength, conflict, coinAcc: acc, relation, expectancyR });
+    confidenceFor({ interval, strength, conflict, coinAcc: acc, relation, expectancyR, geometryTested });
 
   const steps = [];
   const caveats = [];
@@ -357,7 +368,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
     if (acc !== null) text += `, from a model that called direction right ${acc}% of the time on recent data it had never seen`;
     text += '.';
     if (noEdgeOn(interval)) {
-      text += ` Read that number with suspicion here: across ${TESTED_ACCURACY.coins} coins the model scored ${tfAcc !== null ? tfAcc.toFixed(1) : '—'}% on the ${interval} timeframe, below the ${baselineOn(interval) ?? '—'}% it would have scored by always naming the more common direction, so it is shown for completeness and is not part of the verdict above.`;
+      text += ` Read that number with suspicion here: across ${coinsOn(interval)} coins the model scored ${tfAcc !== null ? tfAcc.toFixed(1) : '—'}% on the ${interval} timeframe, below the ${baselineOn(interval) ?? '—'}% it would have scored by always naming the more common direction, so it is shown for completeness and is not part of the verdict above.`;
     }
     steps.push({ label: 'What the model adds', text });
   }
@@ -395,7 +406,7 @@ export function tradeSummary({ signal, forecast, timing, interval, horizonText, 
   }
 
   if (noEdgeOn(interval)) {
-    caveats.push(`On the ${interval} chart the forecast model scored ${accuracyOn(interval).toFixed(1)}% on unseen data across ${TESTED_ACCURACY.coins} coins — not above the ${baselineOn(interval) ?? '—'}% of always naming the more common direction, so it has no edge there. Nothing shown on this timeframe is presented as a confident call, whatever the score says.`);
+    caveats.push(`On the ${interval} chart the forecast model scored ${accuracyOn(interval).toFixed(1)}% on unseen data across ${coinsOn(interval)} coins — not above the ${baselineOn(interval) ?? '—'}% of always naming the more common direction, so it has no edge there. Nothing shown on this timeframe is presented as a confident call, whatever the score says.`);
   }
   if (acc !== null && acc < 52) caveats.push(`The forecast has no measured edge on this coin and timeframe (${acc}%), so weight the chart signal more heavily here.`);
   if (strength < 25 && !conflict) caveats.push('This is a weak reading. A small score means the indicators barely agree, which is a reason to size down or skip it.');

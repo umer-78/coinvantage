@@ -639,6 +639,7 @@ export function replayAll(state, cfg, candlesBySymbol, { regimeCandles = null } 
  * evaluation harness, which reuses one computation across many settings.
  */
 export function replaySeries(state, cfg, series, { from = 210, result = {}, onBar = null } = {}) {
+  state.cursor ||= {}; // an account saved without one (an old copy) starts reading where it is
   const pos = series.map(() => from);
   const rules = series.map((s) => rulesFor(cfg, s.symbol));
   for (const s of series) result[s.symbol] ||= { processed: 0, lastScore: null };
@@ -1104,10 +1105,23 @@ export function stats(state, pricesBySymbol = {}) {
   const eq = equity(state, pricesBySymbol);
 
   let peak = state.startingBalance, maxDd = 0;
-  for (const p of state.equityCurve) {
-    peak = Math.max(peak, p.equity);
-    maxDd = Math.max(maxDd, (peak - p.equity) / peak);
-  }
+  const mark = (e) => {
+    if (!Number.isFinite(e)) return;
+    peak = Math.max(peak, e);
+    maxDd = Math.max(maxDd, (peak - e) / peak);
+  };
+  const curve = state.equityCurve || [];
+  for (const p of curve) mark(p.equity);
+  // The curve gets a point only at a check, so a drop since the last one, or
+  // losses in an account whose curve was never written, read as no drop at
+  // all ("worst drop 0%" under three losing trades). Trades closed after its
+  // last point (all of them, without one) count in the order they closed, and
+  // so does the account as it stands now. Where the curve has a point it is
+  // the better measure: it values the open trades too.
+  const lastT = curve.length ? curve[curve.length - 1].t : -Infinity;
+  let run = curve.length ? curve[curve.length - 1].equity : state.startingBalance;
+  for (const t of closed.filter((x) => (x.exitAt || 0) > lastT).sort((a, b) => (a.exitAt || 0) - (b.exitAt || 0))) { run += t.pnl || 0; mark(run); }
+  mark(eq);
 
   return {
     equity: round(eq, 2),

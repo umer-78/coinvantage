@@ -400,6 +400,35 @@ test('the worst drop counts falls inside open trades, not only closed ones', () 
   assert.equal(+tr.worstDropPct().toFixed(6), 10);
 });
 
+test('the worst drop reads losses that happened since the last check, or with no curve written at all', () => {
+  // an account three losing trades in with an empty curve showed "worst drop 0%"
+  const st = newState({ ...DEFAULT_CONFIG, startingBalance: 1000 });
+  st.equityCurve = [];
+  st.closed = [
+    { symbol: 'A', pnl: -40, exitAt: 3 },
+    { symbol: 'B', pnl: -30, exitAt: 1 },
+    { symbol: 'C', pnl: 20, exitAt: 2 },
+  ];
+  st.balance = 950;
+  // in exit order: 970, 990, 950, so the worst drop is 50 from the start
+  assert.equal(+stats(st, {}).maxDrawdownPct.toFixed(6), 5);
+  // an open trade under water now counts too: 50 down on it, worth 900 against the 1000 start
+  st.open.X = { symbol: 'X', side: 'long', entry: 100, qty: 5, notional: 500, stop: 50, initialStop: 50, tp: null };
+  assert.equal(+stats(st, { X: 90 }).maxDrawdownPct.toFixed(6), 10);
+  // where the curve covers the trades it is the measure: it valued the open
+  // trades too, so cash alone after the losses (950) is not a low it ever saw
+  const cv = newState({ ...DEFAULT_CONFIG, startingBalance: 1000 });
+  cv.closed = [{ symbol: 'A', pnl: -50, exitAt: 5 }];
+  cv.balance = 950;
+  cv.equityCurve = [{ t: 1, equity: 1000 }, { t: 3, equity: 1010 }, { t: 6, equity: 980 }];
+  cv.open.Y = { symbol: 'Y', side: 'long', entry: 10, qty: 3, notional: 30, stop: 5, initialStop: 5, tp: null };
+  assert.equal(stats(cv, { Y: 20 }).maxDrawdownPct, +((30 / 1010) * 100).toFixed(2));
+  // and a loss after its last point still counts
+  cv.closed.push({ symbol: 'B', pnl: -40, exitAt: 7 });
+  cv.balance = 910;
+  assert.equal(stats(cv, { Y: 10 }).maxDrawdownPct, +((100 / 1010) * 100).toFixed(2));
+});
+
 test('the live equity curve values open trades at the latest close', () => {
   const c = Array.from({ length: 700 }, (_, i) => {
     const p = 100 * Math.exp(0.002 * i + Math.sin(i / 7) * 0.04);

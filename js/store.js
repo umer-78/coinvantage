@@ -2,13 +2,29 @@
 // site still works in private mode or when storage is blocked.
 const mem = {};
 const PREFIX = 'cv:';
+// What a key may be: the app's own names only, so nothing built from page
+// input can reach another key (or the prototype of `mem`).
+const KEY = /^[A-Za-z][\w.:-]{0,63}$/;
+const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
 
+/**
+ * A stored value read back. It has to have the shape the caller expects: an
+ * array where the fallback is an array, an object where it is an object, a
+ * true/false where it is one. A value of another shape (written by an older
+ * version, an extension or by hand) is ignored, not trusted, and the fallback
+ * is returned. With no fallback (null) any JSON value is returned.
+ */
 export function load(key, fallback) {
+  if (!KEY.test(key)) return fallback;
+  const fits = (v) => fallback === undefined || fallback === null || kind(v) === kind(fallback);
+  const kept = () => (Object.hasOwn(mem, key) && fits(mem[key]) ? mem[key] : fallback);
   try {
-    const v = localStorage.getItem(PREFIX + key);
-    return v === null ? (key in mem ? mem[key] : fallback) : JSON.parse(v);
+    const raw = localStorage.getItem(PREFIX + key);
+    if (raw === null) return kept();
+    const v = JSON.parse(raw);
+    return fits(v) ? v : fallback;
   } catch {
-    return key in mem ? mem[key] : fallback;
+    return kept();
   }
 }
 
@@ -21,6 +37,7 @@ export const storageState = { persists: true, lastError: null };
 let warned = false;
 
 export function save(key, value) {
+  if (!KEY.test(key)) throw new Error(`not a storage key: ${String(key).slice(0, 40)}`);
   mem[key] = value;
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
@@ -41,13 +58,17 @@ export function save(key, value) {
 
 /** Forget a key, so the next load() returns its fallback again. */
 export function remove(key) {
+  if (!KEY.test(key)) return;
   delete mem[key];
   try { localStorage.removeItem(PREFIX + key); } catch { /* storage blocked: mem was all there was */ }
   window.dispatchEvent(new CustomEvent('cv:store', { detail: { key } }));
 }
 
+// a coin's ticker as the app writes it: letters (any script), digits and _
+export const isTicker = (s) => typeof s === 'string' && /^[\p{L}\p{N}_]{1,20}$/u.test(s);
+
 export const watchlist = {
-  all: () => load('watchlist', ['BTC', 'ETH', 'SOL']),
+  all: () => load('watchlist', ['BTC', 'ETH', 'SOL']).filter(isTicker),
   has: (sym) => watchlist.all().includes(sym),
   toggle(sym) {
     const list = watchlist.all();
@@ -56,8 +77,15 @@ export const watchlist = {
   },
 };
 
+const SETTING_DEFAULTS = { theme: 'dark', interval: '1h', horizon: 12, llmModel: '', llmAuto: false, customEndpoint: '', customModel: '', customKey: '' };
 export const settings = {
-  get: () => ({ theme: 'dark', interval: '1h', horizon: 12, llmModel: '', llmAuto: false, customEndpoint: '', customModel: '', customKey: '', ...load('settings', {}) }),
+  // each stored setting is kept only if it has its default's type
+  get: () => {
+    const saved = load('settings', {});
+    const out = { ...SETTING_DEFAULTS };
+    for (const [k, v] of Object.entries(saved)) if (!(k in SETTING_DEFAULTS) || typeof v === typeof SETTING_DEFAULTS[k]) out[k] = v;
+    return out;
+  },
   set(patch) { save('settings', { ...settings.get(), ...patch }); },
 };
 

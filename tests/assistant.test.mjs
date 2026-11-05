@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateSignal } from '../js/lib/signals.js';
 import { TESTED_ACCURACY } from '../js/lib/predict.js';
-import { ruleBasedAnswer } from '../js/lib/analyst.js';
+import { ruleBasedAnswer, horizonChart } from '../js/lib/analyst.js';
 import { conversationalAnswer, termsIn, GLOSSARY } from '../js/lib/glossary.js';
 import { markdown } from '../js/ui.js';
 import { demoCandles } from '../js/lib/demo.js';
@@ -112,4 +112,12 @@ test('the language model gets valid data that keeps the comparison, scan and por
   assert.equal(JSON.parse(t).marketByTimeframe.frames.length, 3);
   // small data passes through unchanged
   assert.equal(fitJson({ a: 1 }), '{"a":1}');
+});
+
+test('the span a question names picks the chart it is answered on', () => {
+  assert.equal(horizonChart('Is ETH worth buying this week?'), '1d');
+  assert.equal(horizonChart('should I hold SOL for the next month'), '1d');
+  assert.equal(horizonChart('where will BTC be tomorrow'), '4h');
+  assert.equal(horizonChart('what should I buy today?'), '1h');
+  assert.equal(horizonChart('Is ETH a buy?'), null, 'no span named: the chart picked on the page');
 });
