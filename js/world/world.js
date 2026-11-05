@@ -1,17 +1,20 @@
 /**
- * The 3D layer behind every page, as on the portfolio (umer-78.github.io,
- * scripts/world.js): one full-screen canvas showing the market ring (ring.js).
+ * The 3D layer behind every page: one full-screen canvas showing the market
+ * as a trading floor (market.js): a 3D candlestick chart of real candles,
+ * the largest coins as tokens, a gold coin at the centre.
  *
  * It talks to the app only through window events: `cv:route` (a page opened,
- * from js/app.js) and `cv:tickers` (the exchange's live 24-hour moves).
+ * from js/app.js) and `cv:tickers` (the exchange's live 24-hour moves), and
+ * reads candles through the app's own market API.
  *
  * Progressive: without WebGL, or if three.js fails to load, the page keeps its
  * still gold-on-obsidian background. Frames are drawn only while something
- * moves: the Markets page's slow orbit while its headline is on screen, the
- * glide to a new page's view, a coin's light changing. With reduced motion
- * nothing moves on its own and a new page's view is a cut. Rendering pauses
- * while the tab is hidden, and steps down in resolution and glow if the device
- * cannot keep up.
+ * moves: the Markets page's slow orbit while its headline is on screen, a
+ * gentler motion at the top of other pages (24 frames a second, none once the
+ * page is scrolled into its panels), the glide to a new page's view, a token's
+ * light changing. With reduced motion nothing moves on its own, the scene is
+ * shown built, and a new page's view is a cut. Rendering pauses while the tab
+ * is hidden, and steps down in resolution and glow if the device cannot keep up.
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -19,9 +22,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { markets, isStable } from '../api/market.js';
+import { markets, isStable, getCandles } from '../api/market.js';
 import { money, pct } from '../format.js';
-import { createRing } from './ring.js';
+import { createMarket } from './market.js';
 import { ringCoins, ringSize, tickerChange } from './mapping.js';
 
 const root = document.documentElement;
@@ -85,7 +88,28 @@ function boot(canvas, coins, wide) {
   pmrem.dispose();
 
   const tip = document.getElementById('worldTip');
-  const ring = createRing({ envMap, quality: () => tier, pixelRatio: () => renderer.getPixelRatio() }, { coins, tip, money, pct });
+  const ring = createMarket({ envMap, quality: () => tier, pixelRatio: () => renderer.getPixelRatio() }, { coins, tip, money, pct });
+  if (motion.matches) ring.skipIntro();
+
+  // The chart's candles: Bitcoin's last hours, or on a coin's page that coin's.
+  // A request that comes back after the page changed again is dropped.
+  let wantChart = null;
+  async function chartFor(symbol) {
+    const sym = String(symbol || 'BTC').toUpperCase();
+    if (wantChart === sym && ring.chartSymbol === sym) return;
+    wantChart = sym;
+    try {
+      const list = await markets().catch(() => []);
+      const coin = list.find((c) => String(c.symbol).toUpperCase() === sym) || sym;
+      const { candles } = await getCandles(coin, '1h', 72);
+      if (wantChart !== sym || !candles?.length) return;
+      ring.setCandles(sym, candles);
+      needsRender = true;
+    } catch {
+      // a coin with no candles keeps the chart it had, or Bitcoin's
+      if (wantChart === sym && sym !== 'BTC' && ring.chartSymbol !== 'BTC') { wantChart = null; chartFor('BTC'); }
+    }
+  }
 
   // the glow on a desktop; a phone draws straight to the screen
   const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
@@ -98,6 +122,11 @@ function boot(canvas, coins, wide) {
   let width = 1;
   let height = 1;
   let needsRender = true;
+  // a live price moved the newest candle or a token's light: drawn at once
+  // where the world moves anyway, else at most every five seconds (behind a
+  // page's panels, or with reduced motion, nobody needs it sooner)
+  let tickDirty = false;
+  let lastDrawn = 0;
   let paused = false;
   let ready = false;
   let page = routeNow().name;
@@ -123,6 +152,7 @@ function boot(canvas, coins, wide) {
   resize();
   ring.show(page, routeNow().params, 0);
   checkHero();
+  chartFor(page === 'coin' ? routeNow().params[0] : 'BTC');
 
   // ---- quality steps down, never up, so it cannot flicker between the two
   let frames = 0;
@@ -152,16 +182,25 @@ function boot(canvas, coins, wide) {
   // ---- the loop: a frame only when something moves
   let last = performance.now();
   let time = 0;
+  // Moving on its own: the Markets page while its headline is on screen; any
+  // other page gently, while it is at its top (behind its panels, further
+  // down, the motion would only cost the battery).
+  const atTop = () => scrollY < innerHeight * 0.6;
   function loop(now) {
     requestAnimationFrame(loop);
-    const live = !motion.matches && page === 'markets' && heroVisible;
-    if (paused || document.hidden || (!live && !needsRender && !ring.gliding)) {
+    const live = !motion.matches && (page === 'markets' ? heroVisible : atTop());
+    const tickDue = tickDirty && (live || now - lastDrawn > 5000);
+    if (paused || document.hidden || (!live && !needsRender && !ring.gliding && !tickDue)) {
       last = now;
       return;
     }
-    // a phone draws the slow orbit at 30 frames a second, half the work for the
-    // same look; the time skipped counts at the next frame drawn
-    if (live && tier < 2 && !ring.gliding && now - last < 1000 / 30 - 3) return;
+    // a phone draws the slow orbit at 30 frames a second, other pages draw at
+    // 24: half the work or less for the same look; the time skipped counts at
+    // the next frame drawn
+    const gap = page === 'markets' ? (tier < 2 ? 1000 / 30 : 0) : 1000 / 24;
+    if (live && !ring.gliding && !needsRender && now - last < gap - 3) return;
+    tickDirty = false;
+    lastDrawn = now;
     // a frame's timestamp can precede the clock reading taken before it was requested, so never step backwards
     const dt = Math.max(0, Math.min((now - last) / 1000, 0.1));
     last = now;
@@ -169,7 +208,7 @@ function boot(canvas, coins, wide) {
     const moving = ring.update(motion.matches ? STILL : time, live || ring.gliding ? dt : 0, now);
     draw();
     needsRender = moving;
-    if (live) adapt(dt);
+    if (live && page === 'markets') adapt(dt);
     const hero = heroEl();
     if (hero) hero.style.cursor = tip && !tip.hidden ? 'pointer' : '';
     if (!ready) {
@@ -179,7 +218,7 @@ function boot(canvas, coins, wide) {
   }
   requestAnimationFrame(loop);
 
-  // ---- input: point at a monolith in the Markets page's headline to name it, click to open it
+  // ---- input: point at a token in the Markets page's headline to name it, click to open it
   const overHero = (e) => {
     const hero = heroEl();
     return Boolean(hero && heroVisible && e.target instanceof Element && e.target.closest('.hero') === hero && !e.target.closest('a, button, input, select, textarea, label'));
@@ -205,6 +244,7 @@ function boot(canvas, coins, wide) {
     page = e.detail?.name || 'markets';
     ring.show(page, e.detail?.params || [], motion.matches || tier === 0 ? 0 : GLIDE_MS);
     checkHero();
+    chartFor(page === 'coin' ? e.detail?.params?.[0] : 'BTC');
     needsRender = true;
   });
   // the exchange's stream: a coin's light follows its 24-hour move as it changes
@@ -212,9 +252,11 @@ function boot(canvas, coins, wide) {
     let changed = false;
     for (const t of e.detail || []) {
       const ch = tickerChange(t);
-      if (ch !== null && ring.setChange(String(t.s || '').replace(/USDT$/, ''), ch, +t.c)) changed = true;
+      const sym = String(t.s || '').replace(/USDT$/, '');
+      if (ch !== null && ring.setChange(sym, ch, +t.c)) changed = true;
+      if (ring.setTick(sym, +t.c)) changed = true;
     }
-    if (changed) needsRender = true;
+    if (changed) tickDirty = true;
   });
   // caps and moves for the coins the stream does not cover
   setInterval(() => {

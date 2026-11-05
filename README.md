@@ -14,12 +14,14 @@ computers alike.
 
 It wears the same design as the [portfolio](https://umer-78.github.io/): obsidian,
 ivory and champagne gold, Cormorant Garamond over Manrope, glass panels on a live
-3D world. The world is the market: one obsidian monolith per large coin in a ring
-around a sculpture of liquid gold. A monolith's height is its coin's market cap,
-the light in its seam the last 24 hours (jade for a rise, coral for a fall), and
-the gold ripples harder the more the market moved. Point at one on the Markets
-page to name it; click to open its chart. Each page looks at the ring from its
-own place, and a coin's page looks at that coin's monolith.
+3D world. The world is the market, as a trading floor: a 3D candlestick chart of
+real hourly candles stands in an arc behind everything (Bitcoin's, or on a coin's
+page that coin's; its newest candle moves with the live price), the largest coins
+stand in front of it as tokens with their tickers on them (size = market cap, rim
+= the last 24 hours, jade for a rise, coral for a fall), and a gold coin struck
+with ₿ turns at the centre, ringed by network nodes, over a terminal grid. Point
+at a token on the Markets page to name it; click to open its chart. Each page
+looks at the floor from its own place, and a coin's page lights its token.
 
 ## Features
 
@@ -250,9 +252,10 @@ If every source is unreachable, clearly-labelled demo data is shown instead.
   and update the hash in the same meta tag; `tests/world.test.mjs` fails until they match.
 - Without WebGL, or when three.js cannot load, `html` gets `no-webgl` and every page
   keeps a still gold-on-obsidian background; nothing else depends on the world. It
-  draws only while something moves (the Markets page's orbit while its headline is on
-  screen, a glide to a new page's view, a coin's light changing), pauses in a hidden
-  tab, and with reduced motion never moves on its own.
+  moves on its own on the Markets page while its headline is on screen, and gently
+  (24 frames a second) at the top of other pages; scrolled into a page's panels, or
+  with reduced motion, it draws only for a glide or a live price (at most every five
+  seconds), and it pauses in a hidden tab.
 
 - `pg_net` sits in the `public` schema because that is where Supabase installs it; the
   scheduled jobs call it through `private.call_cv()`.

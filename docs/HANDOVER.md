@@ -80,6 +80,23 @@ Umer picked these four, plus the Binance import which is DONE and live.
    depends on it, and `tools/deploy-backend.sh` refuses to deploy when they differ.
 5. Check `version.txt`, `js/app.js` BUILD and `sw.js` VERSION all match after deploy.
 
+### The 3D world rebuilt around the market's own content (2026-11-05)
+The first world (below) was the portfolio's gallery: monoliths around liquid gold. It
+did not read as crypto, so `js/world/market.js` replaces `ring.js`: a 3D candlestick
+chart of a coin's last 72 hourly candles on an arc behind everything (Bitcoin's; on a
+coin's page that coin's, fetched through `getCandles`; the newest candle follows the
+live price), its 20-candle average as a tube, its last price and five grid levels; the
+largest coins as tokens in two rows in front of it (ticker atlas on the face, size =
+market cap on a log scale, rim = 24-hour move); a gold coin struck with ₿ on a pedestal,
+ringed by network nodes; a terminal grid floor; data rising in jade and coral by how
+many coins rose. The chart and the token rows turn with the camera, so the front of the
+scene stays open for the page's headline. It builds itself on first show (candles rise
+left to right, tokens come up). Mapping and layout are tested in `tests/world.test.mjs`
+(`candleBars`, `ema`, `arcAngle`, `tokenSize`, `breadth`). Motion: live on the Markets
+hero; 24 frames a second at the top of other pages; otherwise a frame only for a glide
+or, at most every five seconds, a live price (measured: one frame in 5 s scrolled down
+or with reduced motion). The link preview (`og-image.png`) is rendered from this scene.
+
 ### The portfolio's design and a 3D market world (2026-10-24)
 The site now wears the portfolio's design (umer-78.github.io): one dark theme of obsidian,
 ivory and champagne gold (`css/app.css` tokens; the light theme and its switch are gone,

@@ -12,7 +12,7 @@ export async function render(el) {
       <p class="eyebrow">Live markets <span class="rule" aria-hidden="true"></span> ${esc(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }))}</p>
       <h1>Crypto prices <em>today</em></h1>
       <p class="lede" id="mkSummary">Live prices, market caps and 7-day trends for the top 250 coins.</p>
-      <p class="key-hint">Each monolith is one of the largest coins: its height is its market cap, its light the last 24 hours, jade for a rise and coral for a fall. Point at one to name it; click to open its chart.</p>
+      <p class="key-hint">Behind the prices: Bitcoin's last 72 hours as a 3D candle chart, its newest candle moving with the live price, and the largest coins as tokens. The bigger the token, the bigger the market cap; its rim is jade for a rise in the last 24 hours, coral for a fall. Point at a token to name it; click to open its chart.</p>
     </header>
     <div class="global-strip" id="globalStrip">${Array.from({ length: 5 }, () => `<div class="card">${skeleton(2, 16)}</div>`).join('')}</div>
     <div class="grid g4" style="margin-bottom:14px">
