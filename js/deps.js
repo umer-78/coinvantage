@@ -58,6 +58,7 @@ export const DEPS = {
     'config.js',
     'format.js',
     'lib/advice.js',
+    'lib/autotrader.js',
     'lib/barrier.js',
     'lib/compute.js',
     'lib/demo.js',

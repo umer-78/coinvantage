@@ -239,6 +239,19 @@ function marketMultiBlock(m) {
     out.push('_A coin that reads well on more than one timeframe is the safer call — one that only looks good on the 1h chart is a trade, not an investment._');
   }
 
+  // The one call with a tested record: what the AI trader's rule holds now.
+  if (m.rule) {
+    const r = m.rule, rec = r.record;
+    const sg = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`;
+    out.push(`\n### What the AI trader's tested rule holds now (${r.interval} chart)`);
+    if (r.coins.length) {
+      for (const c of r.coins.slice(0, 6)) out.push(`- **${c.coin}** — ${c.action === 'buy' ? 'bought on the last candle' : `in a trade since ${new Date(c.openedAt).toISOString().slice(0, 10)}`} at ${fmtNum(c.entry)}${Number.isFinite(c.openPct) && c.action !== 'buy' ? ` (${sg(c.openPct)} since)` : ''}; stop ${fmtNum(c.stop)}${c.target ? `, target ${fmtNum(c.target)}` : ', trailing stop'}`);
+    } else {
+      out.push(`- In none of the ${r.read} coins read: it buys only on its own entry signal in an uptrend, and sitting out is part of how it tested.`);
+    }
+    out.push(`- Its record: on ${rec.coins} coins over ${rec.from} → ${rec.to} it made ${sg(rec.perPeriodPct)} per ${rec.period} on average, before about ${rec.fillCost} points of spread and slippage, against ${sg(rec.holdPct)} for holding the same coins. What it did better than holding was falling less in bad stretches, not picking winners, and no rule called direction better than chance: these are its trades, not a forecast.`);
+  }
+
   if (m.avoid.length) {
     out.push('\n### Avoid or sell now');
     for (const a of m.avoid) out.push(`- **${a.coin}** — ${a.verdict} on the ${a.interval} chart (conviction ${a.conviction}/100)${a.topReason ? `: ${a.topReason}` : ''}`);

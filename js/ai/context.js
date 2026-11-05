@@ -11,6 +11,7 @@ import { isStable } from '../api/market.js';
 import { isTickerMention } from '../lib/tickers.js';
 import { horizonText } from '../format.js';
 import { load } from '../store.js';
+import { aiSignal, CHART_TESTED, bestTestedChart } from '../lib/autotrader.js';
 import { getNews, backendEnabled } from '../api/backend.js';
 
 const cache = new Map();
@@ -90,7 +91,10 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
         // Same candles and model as the coin page; CoinGecko and demo data are
         // skipped and counted, because the forecast was never tested on them.
         const res = await getCandles(coin, interval, 1500);
-        if (isTestedSource(res)) rows.push({ coin, signal: generateSignal(res.candles, { interval }), candles: res.candles });
+        // on a chart the AI trader was tested on, what its rule is doing in this
+        // coin now (closed candles only, as the trader reads them)
+        const ai = CHART_TESTED[interval]?.standard && isTestedSource(res) ? aiSignal(res.candles.slice(0, -1), interval, coin.symbol) : null;
+        if (isTestedSource(res)) rows.push({ coin, signal: generateSignal(res.candles, { interval }), candles: res.candles, ai });
         else skipped++;
       } catch { skipped++; }
       onStep?.(`Scanning the market… ${++done}/${list.length}`);
@@ -144,6 +148,17 @@ export function marketContext(rows, interval) {
     waitFor: r.advice.waitFor?.[0] || null,
     topReason: r.advice.reasons[0]?.text || null,
   });
+  // The AI trader's rule on this chart: the one call in the app with a tested
+  // record, so it is reported even when no reading clears the evidence bar.
+  const t = CHART_TESTED[interval];
+  const inTrade = rows.filter((r) => r.ai && (r.ai.action === 'buy' || r.ai.action === 'hold'));
+  const rule = t?.standard ? {
+    interval,
+    best: bestTestedChart()?.iv === interval,
+    coins: inTrade.map((r) => ({ coin: r.coin.symbol, action: r.ai.action, entry: r.ai.entry, stop: r.ai.stop, target: r.ai.target ?? null, openedAt: r.ai.openedAt, openPct: r.ai.openPct })),
+    read: rows.filter((r) => r.ai).length,
+    record: { perPeriodPct: (t.adopt ? t.own : t.standard).ret, holdPct: t.hold, period: t.block, coins: t.coins, from: t.from, to: t.to, fillCost: t.fillCost ?? 0 },
+  } : null;
   return {
     interval,
     horizonText: horizonText(interval, DEFAULT_HORIZON[interval] || 12),
@@ -152,6 +167,7 @@ export function marketContext(rows, interval) {
     buys: buys.slice(0, 6).map(shape),
     avoid: avoid.slice(0, 4).map(shape),
     waitingCount: wait.length,
+    rule,
   };
 }
 
@@ -201,6 +217,8 @@ export function marketContextMulti(byInterval) {
   return {
     frames,
     agree,
+    // the trader's rule on the chart that tested best, or the longest one read
+    rule: (frames.find((f) => f.rule?.best) || [...frames].reverse().find((f) => f.rule))?.rule || null,
     avoid: [...avoidAll.values()].slice(0, 5),
     scanned: frames[0]?.scanned || 0,
     intervals: frames.map((f) => f.interval),
