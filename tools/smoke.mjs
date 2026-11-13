@@ -74,7 +74,12 @@ for (const [name, hash] of ROUTES) {
 // Coin page tabs, including the new History & cycles study.
 current = 'coin tabs';
 await page.evaluate(() => { location.hash = '#/coin/BTC'; });
-await page.waitForTimeout(2500);
+// The coin page draws once its first market data arrives. From a CI runner the
+// first exchange is often geo-blocked and a fallback answers, which can take
+// longer than the fixed 2.5 s this used to sleep, and the tabs were then
+// reported "missing". Wait for the tabs themselves, with a generous limit.
+await page.waitForSelector('#tabs [data-tab="patterns"]', { timeout: 30000 }).catch(() => null);
+await page.waitForTimeout(1500);
 let histText = '';
 for (const tab of ['patterns', 'history', 'periods', 'backtest', 'exchanges', 'about']) {
   const btn = await page.$(`#tabs [data-tab="${tab}"]`);
