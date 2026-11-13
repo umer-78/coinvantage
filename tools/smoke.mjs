@@ -63,7 +63,13 @@ await page.waitForTimeout(1500);
 for (const [name, hash] of ROUTES) {
   current = name;
   await page.evaluate((h) => { location.hash = h; }, hash);
-  await page.waitForTimeout(1800);
+  // Pages that wait for market data draw when it arrives, and from a CI runner
+  // that is sometimes slower than the fixed 1.8 s this used to sleep, which
+  // failed runs whose pages were fine. Let the router clear the old page, then
+  // wait for this one to have content, up to a generous limit.
+  await page.waitForTimeout(300);
+  await page.waitForFunction(() => (document.querySelector('#view')?.textContent || '').trim().length >= 20, { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(600);
   const view = await page.$eval('#view', (el) => el.textContent.trim().length).catch(() => 0);
   if (view < 20) problems.push(`[${name}] rendered almost nothing (${view} chars)`);
   const crashed = await page.$eval('#view', (el) => el.innerHTML.includes('Something went wrong')).catch(() => false);
