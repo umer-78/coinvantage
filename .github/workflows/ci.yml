@@ -46,7 +46,9 @@ jobs:
   # rendering; this would have caught the Trading page breaking for anyone
   # without an AI account yet.
   smoke:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which this Playwright release cannot
+    # install a browser on ("does not support chromium on ubuntu26.04").
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
