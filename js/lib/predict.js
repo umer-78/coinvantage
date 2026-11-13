@@ -508,7 +508,12 @@ export function forecast(candles, { horizon = 12, window = 40, fast = false, int
     const r = trainIdx.map(fret);
     const sigH = (rollingSigma(closes, trainIdx[trainIdx.length - 1], 300) || 0.01) * Math.sqrt(H);
     const keep = r.map((v) => Math.abs(v) > 0.2 * sigH); // drop near-zero moves: they are noise
-    const Xf = X.filter((_, k) => keep[k]), yf = y.filter((_, k) => keep[k]);
+    // A market that sat still before it started moving (a fresh listing, a pair
+    // that was pegged or halted) can have every training sample fall under that
+    // bar. Training on an empty set threw and took the whole forecast with it,
+    // so with too few survivors the filter is skipped and every sample is used.
+    const enough = keep.filter(Boolean).length >= 50;
+    const Xf = enough ? X.filter((_, k) => keep[k]) : X, yf = enough ? y.filter((_, k) => keep[k]) : y;
     const lr = trainLogistic(Xf, yf);
     const gb = trainGbdt(Xf, yf, { rounds: fast ? 40 : 70, seed: seedBase + 3 });
     const knn = knnModel(X, y, r, Math.max(15, Math.round(Math.sqrt(X.length))));

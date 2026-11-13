@@ -94,6 +94,20 @@ test('forecast returns probabilities, calibrated range and accuracy report', () 
   assert.ok(f.ensemble.samples > 20);
 });
 
+test('forecast survives a market that sat still before it started moving', () => {
+  // Every early sample is a near-zero move, so the noise filter used to leave the
+  // first folds nothing to train on and the forecast threw instead of answering.
+  let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  let p = 100;
+  const c = Array.from({ length: 1500 }, (_, i) => {
+    p *= Math.exp((rnd() - 0.5) * (i < 1100 ? 1e-7 : 0.03));
+    return { t: i * 60000, o: p, h: p * 1.0005, l: p * 0.9995, c: p, v: 1 + rnd() };
+  });
+  const f = forecast(c, { horizon: 5, fast: true });
+  assert.ok(f.ok, f.reason);
+  assert.ok(f.probUp >= 0 && f.probUp <= 1);
+});
+
 test('analyst answers entry, exit, risk and forecast questions', () => {
   const c = demoCandles('bitcoin', '1h', 500);
   const signal = generateSignal(c);

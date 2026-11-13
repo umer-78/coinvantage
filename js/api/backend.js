@@ -281,11 +281,42 @@ export async function getCloudLearning() {
   return Object.fromEntries((data || []).filter((r) => r.summary).map((r) => [r.interval, { ...r.summary, updatedAt: r.updated_at }]));
 }
 
-export async function getAppSettings() {
-  const client = await sb();
-  if (!client) return {};
-  const { data } = await client.from('app_settings').select('key,value');
-  return Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+// The public settings (premium price, contact line) change rarely but three
+// places read them, and each used to send its own request and wait for it
+// before drawing anything. One request is now shared for five minutes, and the
+// last good answer is kept in this browser so a page can draw from it at once.
+const SETTINGS_KEY = 'cv:appSettings';
+const SETTINGS_TTL = 5 * 60 * 1000;
+let settingsReq = null;
+let settingsAt = 0;
+
+/** The settings this browser last received, or null on a first visit. */
+export function cachedAppSettings() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    return v && typeof v === 'object' ? v : null;
+  } catch { return null; }
+}
+
+/** Forget the shared request, so the next reader asks the server again (after an admin edit). */
+export function forgetAppSettings() { settingsReq = null; }
+
+export function getAppSettings() {
+  if (settingsReq && Date.now() - settingsAt < SETTINGS_TTL) return settingsReq;
+  settingsAt = Date.now();
+  const req = (async () => {
+    const client = await sb();
+    if (!client) return {};
+    const { data, error } = await client.from('app_settings').select('key,value');
+    // a failed read must not be remembered as "no settings"
+    if (error) { if (settingsReq === req) settingsReq = null; return cachedAppSettings() || {}; }
+    const out = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(out)); } catch { /* private mode or full storage */ }
+    return out;
+  })();
+  settingsReq = req;
+  req.catch(() => { if (settingsReq === req) settingsReq = null; });
+  return req;
 }
 
 // ---------------------------------------------------------------- analytics

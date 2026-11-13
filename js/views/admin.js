@@ -2,7 +2,7 @@
 // Every action is re-checked server-side — this page is convenience, not security.
 import { $, $$, bindTabs, toast, skeleton, modal, icon } from '../ui.js';
 import { esc, dateTime, compact } from '../format.js';
-import { auth, sb, isAdmin, callFn, getPosts, savePost, deletePost } from '../api/backend.js';
+import { auth, sb, isAdmin, callFn, getPosts, savePost, deletePost, forgetAppSettings } from '../api/backend.js';
 import { CONFIG } from '../config.js';
 
 export const title = 'Admin';
@@ -28,7 +28,8 @@ export async function render(el) {
     <div id="panel">${skeleton(6, 24)}</div>`;
 
   const panel = $('#panel', el);
-  const call = (action, extra = {}) => callFn('admin', { action, ...extra });
+  // an admin action may have changed the public settings: other pages must ask again
+  const call = (action, extra = {}) => callFn('admin', { action, ...extra }).finally(forgetAppSettings);
 
   const TABS = {
     // ------------------------------------------------------------ overview

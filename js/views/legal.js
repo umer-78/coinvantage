@@ -1,6 +1,6 @@
 // Terms, privacy policy and risk disclosure. Plain language, no filler.
 import { CONFIG } from '../config.js';
-import { getAppSettings } from '../api/backend.js';
+import { getAppSettings, cachedAppSettings } from '../api/backend.js';
 import { esc } from '../format.js';
 import { TESTED_ACCURACY, recheckOverall } from '../lib/predict.js';
 import { TESTED_TIMING, timingSwing } from '../lib/timing.js';
@@ -105,12 +105,21 @@ const PAGES = (contact) => ({
 });
 
 export async function render(el, [page = 'terms']) {
-  const settings = await getAppSettings().catch(() => ({}));
-  const pages = PAGES(settings.site?.contact || null);
-  const p = pages[page] || pages.terms;
-  el.innerHTML = `
+  // These pages are fixed text apart from one contact line. They used to stay
+  // blank until the settings request came back; they are now drawn at once from
+  // the contact this browser last saw, and redrawn only if the server differs.
+  let shown;
+  const draw = (contact) => {
+    if (contact === shown || (shown !== undefined && !el.isConnected)) return;
+    shown = contact;
+    const pages = PAGES(contact);
+    const p = pages[page] || pages.terms;
+    el.innerHTML = `
     <div class="page-head"><div><h1>${esc(p.h)}</h1></div>
       <div class="seg">${Object.entries(pages).map(([k, v]) => `<button data-p="${k}" class="${k === page ? 'on' : ''}">${esc(v.h.split(' ')[0])}</button>`).join('')}</div></div>
     <div class="card prose">${p.body}</div>`;
-  el.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/legal/${b.dataset.p}`; }));
+    el.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/legal/${b.dataset.p}`; }));
+  };
+  draw(cachedAppSettings()?.site?.contact || null);
+  getAppSettings().then((s) => draw(s.site?.contact || null)).catch(() => {});
 }
