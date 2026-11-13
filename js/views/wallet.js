@@ -2,7 +2,7 @@ import { markets, findCoin, getCandles, walletBalance, CHAINS, isStable, isTeste
 import { generateSignal, adviseHolding } from '../lib/signals.js';
 import { donut } from '../charts/small.js';
 import { $, $$, coinLogo, icon, toast, skeleton, modal } from '../ui.js';
-import { esc, usd, price, pct, amount, changeHtml, compact, money, tone } from '../format.js';
+import { esc, safeUrl, usd, price, pct, amount, changeHtml, compact, money, tone } from '../format.js';
 import { fx } from '../api/fx.js';
 import { load, save } from '../store.js';
 import { connectWallet, injectedWallet, walletLabel, onWalletChange } from '../api/connect.js';
@@ -224,7 +224,7 @@ export async function render(el) {
     const venues = venuesFor(symbol);
     modal(`<h3>Trade ${esc(symbol)}</h3>
       <p class="fine">Opens the ${esc(symbol)} market on an exchange you already use.</p>
-      <div class="sheet-grid mt">${venues.map((v) => `<a class="sheet-item" href="${esc(v.href)}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}</div>
+      <div class="sheet-grid mt">${venues.map((v) => `<a class="sheet-item" href="${esc(safeUrl(v.href, '#/exchanges'))}" target="_blank" rel="noopener noreferrer">${icon('exchanges', 18)}<span>${esc(v.name)}<br><small class="fine">${esc(v.pair)}</small></span></a>`).join('')}</div>
       <p class="fine mt">${esc(TRADE_DISCLAIMER)}</p>`);
   };
   el.addEventListener('click', (e) => {

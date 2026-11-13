@@ -3,6 +3,30 @@ import { now } from './api/clock.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+/**
+ * An address from outside the app (a news feed, CoinGecko, the backend) made
+ * safe to put in href/src: only absolute https:// addresses (or an in-app #/
+ * route) pass, so a feed cannot slip in javascript:, data: or a relative path
+ * that resolves inside the site. Anything else becomes `fallback`. Escape the
+ * result as usual: this checks the scheme, esc() still guards the attribute.
+ */
+export function safeUrl(u, fallback = '') {
+  const s = String(u ?? '').trim();
+  if (!s || s.length > 2048) return fallback;
+  if (/^#\/[A-Za-z0-9/_.-]*$/.test(s)) return s;
+  try {
+    const url = new URL(s);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : fallback;
+  } catch { return fallback; }
+}
+
+/** A finite number, or `fallback` for null, NaN, Infinity and non-numeric strings. */
+export const finite = (v, fallback = null) => {
+  if (v === null || v === undefined || v === '' || typeof v === 'boolean') return fallback;
+  const n = +v;
+  return Number.isFinite(n) ? n : fallback;
+};
+
 export function price(v) {
   if (v === null || v === undefined || !Number.isFinite(+v)) return '—';
   v = +v;

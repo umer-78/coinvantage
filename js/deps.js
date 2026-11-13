@@ -236,6 +236,7 @@ export const DEPS = {
     'lib/history.js',
     'lib/indicators.js',
     'lib/learncenter.js',
+    'lib/learnguide.js',
     'lib/learnpass.js',
     'lib/pooled.js',
     'lib/predict.js',

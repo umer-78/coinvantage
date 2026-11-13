@@ -263,6 +263,8 @@ async function askEndpoint(messages, { onText, signal }) {
     try {
       res = await fetch(`${ok.url}/chat/completions`, {
         method: 'POST', signal: ctl.signal,
+        // no cookies, no referrer, and no following a redirect to another host
+        credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store',
         headers: { 'content-type': 'application/json', ...(s.customKey ? { authorization: `Bearer ${s.customKey}` } : {}) },
         body: JSON.stringify({ model: s.customModel || 'default', messages, stream: true, temperature: 0.3, max_tokens: ANSWER_TOKENS }),
       });
@@ -275,7 +277,9 @@ async function askEndpoint(messages, { onText, signal }) {
       clearTimeout(timer);
     }
     if (!res.ok || !res.body) {
-      const detail = (await res.text().catch(() => '')).slice(0, 200);
+      // a short, plain-text reason only: the body can be anything, and an echo
+      // of the key or a page of HTML is no help in a status line
+      const detail = (await res.text().catch(() => '')).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
       customState.reached = false;
       customState.lastError = `endpoint answered ${res.status}${detail ? `: ${detail}` : ''}`;
       throw new Error(`AI endpoint error ${res.status} ${detail}`);
@@ -289,6 +293,7 @@ async function askEndpoint(messages, { onText, signal }) {
       const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
+      if (text.length > 20000) { ctl.abort(); break; } // a runaway stream: keep what came
       const lines = buf.split('\n'); buf = lines.pop();
       for (const line of lines) {
         const m = /^data:\s*(.*)$/.exec(line.trim());

@@ -73,3 +73,28 @@ test('storage returns what the caller expects or its fallback, never a value of 
   assert.throws(() => save('__proto__', 1));
   assert.equal(load('../x', 'fallback'), 'fallback');
 });
+
+test('outside addresses are limited to https before they reach an href or src', async () => {
+  globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} };
+  const { safeUrl, finite } = await import('../js/format.js');
+  assert.equal(safeUrl('https://example.com/a?b=1'), 'https://example.com/a?b=1');
+  assert.equal(safeUrl('#/coin/BTC'), '#/coin/BTC');
+  for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,x', 'http://example.com', '//evil.example', '/coinvantage/x', 'https://u:p@x.com', null, undefined, 42]) {
+    assert.equal(safeUrl(bad, '#'), '#', String(bad));
+  }
+  assert.equal(finite('1.5'), 1.5);
+  assert.equal(finite('abc', 0), 0);
+  assert.equal(finite(NaN), null);
+  assert.equal(finite(Infinity), null);
+  assert.equal(finite(true), null);
+});
+
+test('no view writes an outside link or image without checking its scheme', () => {
+  const dir = path.join(root, 'js/views');
+  for (const f of fs.readdirSync(dir)) {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    for (const m of src.matchAll(/(?:href|src)="\$\{esc\(([^)]*)\)\}"/g)) {
+      assert.match(m[1], /^safeUrl\(/, `${f}: ${m[0]}`);
+    }
+  }
+});
