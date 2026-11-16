@@ -13,6 +13,7 @@ import { horizonText } from '../format.js';
 import { load } from '../store.js';
 import { aiSignal, CHART_TESTED, bestTestedChart } from '../lib/autotrader.js';
 import { getNews, backendEnabled } from '../api/backend.js';
+import { candleCache } from '../lib/candlecache.js';
 
 const cache = new Map();
 export const DEFAULT_HORIZON = { '1s': 30, '5s': 24, '10s': 18, '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
@@ -75,10 +76,29 @@ export async function analyzeCoin(symbol, { interval = '4h', withForecast = true
 // "Which coin should I buy?" needs the whole market, not one chart. Scans the
 // top coins and returns a ranked verdict for each, same engine as the advice page.
 const scanCache = new Map();
+// A scan already running (a second question sent before the first answer) is joined, not repeated.
+const scanRuns = new Map();
+// After the first scan, each coin's chart is topped up with its new candles instead of
+// downloaded whole again: the same 1500-candle window, a fraction of the data and requests.
+const scanCandles = candleCache((coin, interval, n) => getCandles(coin, interval, n), { window: 1500, stepOf: (iv) => INTERVAL_MS[iv] });
 export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
   const key = `${interval}:${count}`;
   const hit = scanCache.get(key);
   if (hit && Date.now() - hit.at < 180e3) return hit.rows;
+  const running = scanRuns.get(key);
+  if (running) {
+    if (onStep) { running.listeners.add(onStep); onStep(running.last || 'Scanning the market…'); }
+    return running.promise;
+  }
+  const run = { listeners: new Set(onStep ? [onStep] : []), last: '' };
+  const step = (text) => { run.last = text; for (const fn of run.listeners) fn(text); };
+  run.promise = runScan(interval, count, step).finally(() => scanRuns.delete(key));
+  scanRuns.set(key, run);
+  return run.promise;
+}
+
+async function runScan(interval, count, onStep) {
+  const key = `${interval}:${count}`;
 
   const list = (await markets()).filter((c) => !isStable(c.symbol)).slice(0, count);
   const rows = [];
@@ -90,7 +110,7 @@ export async function scanMarket({ interval = '4h', count = 40, onStep } = {}) {
       try {
         // Same candles and model as the coin page; CoinGecko and demo data are
         // skipped and counted, because the forecast was never tested on them.
-        const res = await getCandles(coin, interval, 1500);
+        const res = await scanCandles(coin, interval);
         // on a chart the AI trader was tested on, what its rule is doing in this
         // coin now (closed candles only, as the trader reads them)
         const ai = CHART_TESTED[interval]?.standard && isTestedSource(res) ? aiSignal(res.candles.slice(0, -1), interval, coin.symbol) : null;

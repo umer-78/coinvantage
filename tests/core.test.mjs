@@ -1060,7 +1060,8 @@ test('the shape matcher is published as a picture, not as an edge it failed to e
   }
 
   // a failing score must change how the headline reads, not just add a footnote
-  const c = demoCandles('ethereum', '1d', 1200);
+  // (candles ending on a fixed day: demo candles follow the clock, and some days have no repeat at all)
+  const c = demoCandles('ethereum', '1d', 1200, Date.UTC(2026, 9, 2));
   const m = historyMatch(c, { interval: '1d' });
   const lost = analogVerdict(m, { ok: true, beatsBaseline: false, accuracyPct: 44, baselinePct: 53, tests: 60, confidentAccuracyPct: null }, { symbol: 'ETH', interval: '1d' });
   assert.match(lost.headline, /history rather than as a lean|not taking a side/i);

@@ -3,9 +3,12 @@ import { forecast } from './predict.js';
 import { backtest, generateSignal } from './signals.js';
 import { analyzeHistory } from './history.js';
 
-// A few workers, so a scan of many coins trains several forecasts at once
-// instead of one after another (one core is left for the page itself).
-const POOL = Math.max(1, Math.min(3, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+// A worker per spare core, so a scan of many coins trains its forecasts side by side
+// instead of a few at a time (one core is left for the page itself). Phones and other
+// devices with little memory keep two.
+const CORES = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2;
+const MEMORY_GB = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 8;
+const POOL = Math.max(1, Math.min(MEMORY_GB <= 4 ? 2 : 6, CORES - 1));
 let pool = null; // [{ w, pending: Map }] once started; false when workers cannot run here
 let seq = 0;
 
