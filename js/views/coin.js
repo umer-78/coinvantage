@@ -1322,7 +1322,8 @@ export async function render(el, [symParam]) {
     }
 
     if (st.tab === 'about') {
-      body.innerHTML = skeleton(4);
+      // said in words as well as shown, so a slow reference lookup is not an empty tab
+      body.innerHTML = `<p class="fine muted" role="status">Loading reference data for ${esc(coin.name)}…</p>${skeleton(4)}`;
       getCoinProfile(coin).then((p) => {
         if (st.tab !== 'about' || st.disposed) return;
         // A lookup that failed and a coin that genuinely has no supply cap used

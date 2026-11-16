@@ -92,6 +92,8 @@ for (const tab of ['patterns', 'history', 'periods', 'backtest', 'exchanges', 'a
   if (!btn) { problems.push(`[coin tabs] tab "${tab}" is missing`); continue; }
   await btn.click();
   await page.waitForTimeout(tab === 'history' ? 8000 : 2000);
+  // a tab still loading (the About tab waits on a reference lookup) gets more time before it is read
+  await page.waitForFunction(() => !document.querySelector('#tabBody .skel-wrap'), null, { timeout: 20000 }).catch(() => null);
   const txt = await page.$eval('#tabBody', (el) => el.textContent.trim()).catch(() => '');
   if (tab === 'history') histText = txt;
   if (txt.length < 30) problems.push(`[coin tabs] tab "${tab}" rendered ${txt.length} chars`);
