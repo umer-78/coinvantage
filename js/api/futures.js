@@ -4,6 +4,7 @@
 // and before the OKX step the whole futures page came up empty there.
 import { CONFIG } from '../config.js';
 import { getJson } from './http.js';
+import { refusedHere } from './reach.js';
 
 const F = CONFIG.FUTURES_REST;
 const OKX_REST = 'https://www.okx.com';
@@ -279,7 +280,8 @@ async function okxContractValue(instId) {
 export function liquidationStream(onEvent) {
   if (typeof WebSocket === 'undefined') return () => {};
   let ws = null, timer = null, watchdog = null, closed = false, retry = 0;
-  let source = 'binance', gotFrame = false;
+  // Straight to OKX where Binance futures refuse this region (reach.js).
+  let source = refusedHere('fstream.binance.com') ? 'okx' : 'binance', gotFrame = false;
   const recent = new Set();
 
   // The pill used to read "live · Binance" while the rows were coming from OKX,
@@ -344,7 +346,8 @@ export function liquidationStream(onEvent) {
   }
 
   function connectOkx() {
-    ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+    // port 443 rather than 8443, which networks allowing only web ports reset
+    ws = new WebSocket('wss://ws.okx.com/ws/v5/public');
     ws.onopen = () => {
       retry = 0;
       say('open');
@@ -404,6 +407,10 @@ export function liquidationStream(onEvent) {
     ws.onclose = () => {
       if (closed) return;
       clearTimeout(watchdog);
+      // Binance closed before sending anything: in a refused region the
+      // handshake fails at once, and retrying Binance only repeated that,
+      // because the watchdog is cleared here and never got to switch.
+      if (source === 'binance' && !gotFrame) { say('switching'); shut(); source = 'okx'; retry = 0; connect(); return; }
       say(retry >= 4 ? 'failed' : 'reconnecting');
       timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** retry++));
     };

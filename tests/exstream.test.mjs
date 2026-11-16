@@ -63,7 +63,7 @@ test('subscribes to the pair and interval the chart shows', () => withSockets(as
   assert.deepEqual(gate.payload, ['7d', 'XMR_USDT']);
   assert.deepEqual(htx, { sub: 'market.kasusdt.kline.60min', id: 'cv' });
   assert.deepEqual(okx.args, [{ channel: 'candle4H', instId: 'HYPE-USDT' }]);
-  assert.equal(FakeSocket.all[2].url, 'wss://ws.okx.com:8443/ws/v5/business');
+  assert.equal(FakeSocket.all[2].url, 'wss://ws.okx.com/ws/v5/business');
   stops.forEach((s) => s());
   assert.equal(streamCandles('gate', 'XMR', '1s', () => {}), null, 'no venue streams 1s candles');
 }));

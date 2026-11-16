@@ -1,11 +1,15 @@
 // fetch wrapper: timeout, in-memory + localStorage cache, per-host circuit breaker,
-// request spacing for rate-limited hosts (CoinGecko public API).
+// request spacing for rate-limited hosts (CoinGecko public API), and skipping
+// exchanges that refuse this region (see reach.js).
+import { REGION_GATED, noteRefusal, refusedHere } from './reach.js';
 
 const mem = new Map();
 const inflight = new Map();
 const hostDown = new Map();
 const hostFails = new Map();   // host -> network failures in a row
 const lastCall = new Map();
+const answered = new Set();    // region-gated hosts that answered in this page
+const probing = new Map();     // region-gated host -> its first request, still out
 const SPACING = { 'api.coingecko.com': 1500 };
 
 export class HttpError extends Error {
@@ -56,8 +60,30 @@ export function tidyHttpCache() {
   } catch { return 0; }
 }
 
-async function rawFetch(url, { timeout = 10000, method = 'GET', body, headers } = {}) {
-  const host = new URL(url).host;
+async function rawFetch(url, opts = {}) {
+  const { host, hostname } = new URL(url);
+  const refused = () => new HttpError(`${host} does not serve this region`, 451);
+  if (refusedHere(hostname)) throw refused();
+  // The first request to a host that may refuse this region goes out alone and
+  // the rest wait for its answer, so a refusal costs one request, not a dozen.
+  let release = null;
+  if (REGION_GATED.has(hostname) && !answered.has(hostname)) {
+    const first = probing.get(hostname);
+    if (first) {
+      await first;
+      if (refusedHere(hostname)) throw refused();
+    } else {
+      probing.set(hostname, new Promise((resolve) => { release = resolve; }));
+    }
+  }
+  try {
+    return await fetchOnce(url, host, hostname, opts);
+  } finally {
+    if (release) { probing.delete(hostname); release(); }
+  }
+}
+
+async function fetchOnce(url, host, hostname, { timeout = 10000, method = 'GET', body, headers } = {}) {
   if ((hostDown.get(host) || 0) > Date.now()) throw new HttpError(`${host} unavailable`, 503);
   const gap = SPACING[host];
   if (gap) {
@@ -67,9 +93,11 @@ async function rawFetch(url, { timeout = 10000, method = 'GET', body, headers } 
   }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
+  const started = Date.now();
   try {
     const res = await fetch(url, { method, body, headers, signal: ctrl.signal });
     hostFails.delete(host);   // it answered, so it is up
+    answered.add(hostname);
     if (res.status === 429) {
       hostDown.set(host, Date.now() + 20000);
       throw new HttpError(`${host} rate limit reached`, 429);
@@ -78,6 +106,15 @@ async function rawFetch(url, { timeout = 10000, method = 'GET', body, headers } 
     return await res.json();
   } catch (err) {
     if (err instanceof HttpError) throw err;
+    // A region refusal is unreadable (no CORS header) and comes while the
+    // device is online. Remembered, the host is skipped instead of asked again:
+    // for half a day when it came fast, as refusals do, and for half an hour
+    // when it was slow, which may have been a bad connection instead.
+    if (err?.name !== 'AbortError' && REGION_GATED.has(hostname) && !answered.has(hostname)
+        && globalThis.navigator?.onLine !== false) {
+      noteRefusal(hostname, { forMs: Date.now() - started < 4000 ? undefined : 30 * 60e3 });
+      throw new HttpError(`${host} does not serve this region`, 451);
+    }
     // Three failures in a row take a host out for 15 s. It used to be one: on a
     // slow connection a single timed-out request made every coin on that
     // exchange fail for 15 s — no chart, no forecast, coins skipped by the AI.
@@ -128,7 +165,13 @@ export async function getJsonAny(bases, path, opts = {}) {
   let lastErr, stale;
   for (const b of bases) {
     try { return await getJson(b + path, { ...opts, key: opts.key || path }); }
-    catch (e) { lastErr = e; if (e.staleValue !== undefined) stale = e.staleValue; }
+    catch (e) {
+      lastErr = e;
+      if (e.staleValue !== undefined) stale = e.staleValue;
+      // A 4xx answer ("invalid symbol") is the same from every mirror; asking
+      // the next one only adds a failed request. Rate limits and refusals are not.
+      if (e.status >= 400 && e.status < 500 && e.status !== 429 && e.status !== 451) break;
+    }
   }
   if (stale !== undefined) return stale;
   throw lastErr;

@@ -24,7 +24,10 @@ const VENUES = {
       ? [m.tick.id * 1e3, m.tick.open, m.tick.high, m.tick.low, m.tick.close, m.tick.amount] : null),
   },
   okx: {
-    url: 'wss://ws.okx.com:8443/ws/v5/business', // candle channels live here, not on /public
+    // candle channels live here, not on /public. Port 443, not the documented
+    // 8443: networks that allow only web ports (offices, some mobile carriers)
+    // reset 8443 outright, and OKX serves the same feed on both.
+    url: 'wss://ws.okx.com/ws/v5/business',
     subscribe: (sym, bar) => ({ op: 'subscribe', args: [{ channel: `candle${bar}`, instId: `${sym}-USDT` }] }),
     ping: 'ping', // OKX closes a socket that sends nothing for 30 s
     // data: [[ts ms, o, h, l, c, base volume, ...]]

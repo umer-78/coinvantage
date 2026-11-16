@@ -1,6 +1,7 @@
 // Binance WebSocket hub: one combined connection, dynamic subscribe/unsubscribe,
 // automatic reconnect with backoff and endpoint fallback.
 import { CONFIG } from '../config.js';
+import { refusedHere } from './reach.js';
 
 class LiveHub extends EventTarget {
   constructor() {
@@ -41,7 +42,10 @@ class LiveHub extends EventTarget {
 
   ensure() {
     if (this.ws || typeof WebSocket === 'undefined') return;
-    const base = CONFIG.BINANCE_WS[this.urlIndex % CONFIG.BINANCE_WS.length];
+    // Skip a stream this region is refused (reach.js); the mirror always serves.
+    const usable = CONFIG.BINANCE_WS.filter((u) => !refusedHere(new URL(u).hostname));
+    const list = usable.length ? usable : CONFIG.BINANCE_WS;
+    const base = list[this.urlIndex % list.length];
     const ws = new WebSocket(`${base}/stream`);
     this.ws = ws;
     ws.onopen = () => {
