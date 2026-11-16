@@ -209,8 +209,13 @@ export function modal(html, { onClose, wide = false } = {}) {
   // A link inside the dialog (or the back button) opens another page; the
   // dialog used to stay on top of it, covering the page it had just opened.
   window.addEventListener('hashchange', close);
-  // move focus into the dialog: the first real control, or the close button
-  setTimeout(() => { (focusables().find((x) => !x.classList.contains('modal-x')) || wrap.querySelector('.modal-x'))?.focus(); }, 0);
+  // move focus into the dialog: the control marked for it, else the first real
+  // control that is not a link inside the text (focus on a link mid-sentence
+  // drew a ring around it and skipped the dialog's own buttons), else the close button
+  setTimeout(() => {
+    const items = focusables().filter((x) => !x.classList.contains('modal-x'));
+    (wrap.querySelector('[data-autofocus]') || items.find((x) => !(x.tagName === 'A' && x.closest('p'))) || items[0] || wrap.querySelector('.modal-x'))?.focus();
+  }, 0);
   // name the dialog after its heading, so a screen reader announces what opened
   const box = wrap.querySelector('.modal'), heading = box.querySelector('h1, h2, h3');
   if (heading) { heading.id ||= `dlg-${Math.random().toString(36).slice(2, 9)}`; box.setAttribute('aria-labelledby', heading.id); }

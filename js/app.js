@@ -425,7 +425,7 @@ function riskGate() {
     <p>Signals, forecasts and AI answers are educational estimates built from public market data. They are often wrong. Crypto is volatile and you can lose everything you put in.</p>
     <p class="fine">Measured accuracy of the forecast engine is published on every coin page and on the <a href="#/track">track record</a> page — read it before you rely on anything here.</p>
     <div class="row mt" style="gap:8px">
-      <button class="btn primary" id="ok">${esc(t('I understand'))}</button>
+      <button class="btn primary" id="ok" data-autofocus>${esc(t('I understand'))}</button>
       <a class="btn ghost" href="#/legal/risk" id="more">${esc(t('Risk Disclosure'))}</a>
     </div>`, { onClose: () => save('riskAck', true) });
   $('#ok', m.el).addEventListener('click', () => { save('riskAck', true); m.close(); });
@@ -536,7 +536,7 @@ setTimeout(() => {
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261116-142506";
+export const BUILD = "20261116-145625";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
