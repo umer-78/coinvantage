@@ -655,7 +655,10 @@ export async function render(el, [symParam]) {
     card.innerHTML = `
       <div class="card-h"><h3>${icon('bolt', 16)} Trade signal · ${st.interval}</h3><span class="fine">${INTERVAL_LABEL[st.interval]} candles</span></div>
       ${aiSignalHtml()}
-      <div class="fine" style="margin-bottom:4px"><b>Chart reading</b> — what the indicators say now, not a trade call</div>
+      <div class="fine" style="margin-bottom:4px"><b>Bigger picture</b> — the same reading on the tested charts${UNMEASURED.includes(st.interval) ? `, since the ${esc(st.interval)} chart only shows moves of seconds` : ''}</div>
+      <div class="mtf">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
+      ${conf ? `<p class="combined mt">All timeframes together: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). Below: the ${esc(st.interval)} chart alone.</p>` : ''}
+      <div class="fine mt" style="margin-bottom:4px"><b>Chart reading · ${esc(st.interval)}</b> — what the indicators say now, not a trade call</div>
       <div class="verdict">
         <div><div class="big ${sig.tone}">${sig.text}</div><div class="fine">Indicator agreement ${sig.score > 0 ? '+' : ''}${sig.score} / 100 — not a probability</div></div>
         <div style="flex:1"><div class="scorebar"><i style="left:${pos}%"></i></div><div class="row spread fine" style="margin-top:4px"><span>Strong fall</span><span>No clear trend</span><span>Strong rise</span></div></div>
@@ -667,8 +670,6 @@ export async function render(el, [symParam]) {
         <p class="fine" style="margin:6px 0 0">Conventional strength meter for how far the indicators are extended. The measured record is separate: ${(() => { const b = upRateFor(st.interval, sig.score); return b ? `on ${esc(st.interval)}, readings like this were followed by a higher price <b>${b.upRatePct}%</b> of the time` : `how often readings like this were followed by a higher price has not been measured on ${esc(st.interval)} (it was measured on 15m, 1h, 4h and 1d)`; })()} — a high score means the move is extended, not that it will continue.</p>
       </div>
       ${warnings.length ? `<div class="risk-list mt">${warnings.map((w) => `<div class="risk-item ${w.level}">${icon('info', 14)}<span>${esc(w.text)}</span></div>`).join('')}</div>` : ''}
-      ${conf ? `<p class="combined mt">Standing view across all timeframes: <b class="${conf.tone}">${conf.text}</b> (${conf.score > 0 ? '+' : ''}${conf.score}). The panel below reads the ${st.interval} chart only.</p>` : ''}
-      <div class="mtf mt">${['15m', '1h', '4h', '1d'].map((iv) => { const s = mtfCache[iv]; return `<div${iv === st.interval ? ' class="on"' : ''}><div class="k">${iv}</div><div class="v ${s?.ok ? s.tone : 'flat'}">${s?.ok ? s.text : '—'}</div></div>`; }).join('')}</div>
       ${plan ? `
         <h3 class="mt" style="margin-bottom:8px">${esc(plan.title)}</h3>
         <p class="fine" style="margin:0 0 8px">${(() => {

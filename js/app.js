@@ -536,7 +536,7 @@ setTimeout(() => {
 // `version.txt` is rewritten by the deploy script, fetched with no-store so the
 // check itself can never be answered from cache, and the reload is guarded by a
 // session flag so a bad deploy cannot put the page in a refresh loop.
-export const BUILD = "20261116-145625";
+export const BUILD = "20261117-102529";
 
 // A build stamp is exactly what the deploy script writes: 20260916-130124.
 // Anything else — an HTML error page, a proxy notice, an offline fallback — is
@@ -616,6 +616,10 @@ if (location.protocol === 'https:') {
 
   const chatBtn = $('#chatBtn');
   chatBtn.innerHTML = `${icon('ai', 18)}<span>Quick chat</span>`;
+  chatBtn.setAttribute('aria-label', 'Open quick chat');
+  // past the top of a page it shrinks to its icon, so it covers less of what is read
+  const compactChat = () => chatBtn.classList.toggle('compact', scrollY > 160 && chatPanel.hidden);
+  addEventListener('scroll', compactChat, { passive: true });
 
   // Toggle chat panel (its own button; the theme button only changes the theme)
   chatInput.maxLength = 120;
@@ -623,6 +627,7 @@ if (location.protocol === 'https:') {
     chatPanel.hidden = !chatPanel.hidden;
     chatBtn.setAttribute('aria-expanded', String(!chatPanel.hidden));
     chatBtn.setAttribute('aria-label', chatPanel.hidden ? 'Open quick chat' : 'Close quick chat');
+    compactChat();
     if (chatPanel.hidden) { chatInput.value = ''; chatBtn.focus(); }
     else setTimeout(() => chatInput.focus(), 50);
   };

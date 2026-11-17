@@ -137,6 +137,9 @@ function boot(canvas, coins, wide) {
     const was = heroVisible;
     heroVisible = page === 'markets' && scrollY < innerHeight * 0.55;
     if (heroVisible && !was) needsRender = true;
+    // Behind panels the world steps back: on every page but the Markets
+    // headline, and on Markets once the headline has scrolled away.
+    root.classList.toggle('world-rest', !heroVisible);
   };
 
   function resize() {

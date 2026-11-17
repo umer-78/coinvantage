@@ -10,7 +10,7 @@
   color-scheme: dark;
   --bg: #070708;
   /* glass over the world; the solid steps are what charts and inputs sit on */
-  --glass: rgba(11, 10, 9, 0.84); --glass-strong: rgba(10, 9, 9, 0.9);
+  --glass: rgba(11, 10, 9, 0.95); --glass-strong: rgba(10, 9, 9, 0.96);
   --surface: #0f0e0c; --surface-2: rgba(255, 246, 225, 0.045); --surface-3: rgba(255, 246, 225, 0.09);
   --line: rgba(214, 180, 108, 0.16); --line-strong: rgba(214, 180, 108, 0.4); --line-soft: rgba(214, 180, 108, 0.09);
   --border: var(--line); --border-strong: var(--line-strong);
@@ -85,7 +85,7 @@ p { margin: 0 0 8px; }
 .ticker::-webkit-scrollbar { display: none; }
 .ticker a { display: inline-flex; gap: 6px; align-items: baseline; }
 .ticker b { font-weight: 600; }
-#view { padding: 22px 24px 40px; outline: none; max-width: 1480px; width: 100%; margin: 0 auto; }
+#view { padding: 22px 24px 96px; outline: none; max-width: 1480px; width: 100%; margin: 0 auto; }
 .foot { padding: 18px 24px 90px; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); }
 .bottombar { display: none; }
 
@@ -614,7 +614,11 @@ body { background: transparent; }
 
 /* ============================================================ quick chat */
 .chat-fab { position: fixed; right: 20px; bottom: 20px; z-index: 45; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: 99px; border: 0; background: var(--accent); color: var(--accent-ink); font: 700 14px var(--font); box-shadow: var(--shadow-lg); cursor: pointer; }
-.chat-fab svg { width: 18px; height: 18px; }
+.chat-fab svg { width: 18px; height: 18px; flex: none; }
+/* while reading further down a page the button shrinks to its icon, so it covers less text */
+.chat-fab { transition: width .25s var(--ease, ease), padding .25s var(--ease, ease); overflow: hidden; }
+.chat-fab.compact { width: 48px; padding: 0; justify-content: center; }
+.chat-fab.compact span { display: none; }
 .chat-panel { position: fixed; right: 20px; bottom: 76px; z-index: 46; width: min(380px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 140px)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden; }
 .chat-panel[hidden] { display: none; }
 .chat-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border); }
@@ -724,8 +728,9 @@ body { background: transparent; font-size: 14px; line-height: 1.5; letter-spacin
 /* the world behind every page, and the film grain over it */
 #world { position: fixed; inset: 0; width: 100%; height: 100vh; height: 100lvh; z-index: 0; display: block; opacity: 0; transition: opacity 1.4s var(--ease); pointer-events: none; }
 html.webgl #world { opacity: 1; }
-/* behind a page of panels the world steps back, so it never competes with what is read */
-html.webgl:not([data-page="markets"]) #world { opacity: 0.72; }
+/* behind a page of panels the world steps back, so it never competes with what is read:
+   every page but the Markets headline, and Markets once its headline has scrolled away */
+html.webgl.world-rest #world { opacity: 0.3; }
 .page-head h1, .page-head p { text-shadow: 0 2px 18px rgba(7, 7, 8, 0.9); }
 /* small text straight on the world, not on a panel (a page's status line), gets a dark halo so the bright gold never washes it out */
 html.webgl #view :is(p, .fine, .muted, small, label):not(:is(.card, .advice-card, .plan-card, .modal, .banner, .hero, .page-head) *) { color: var(--text-2); text-shadow: 0 0 3px #070708, 0 0 7px #070708, 0 0 14px rgba(7, 7, 8, 0.9); }

@@ -39,7 +39,7 @@ const AUTOLEARN_KEY = 'traderAutoLearn';
 export async function render(el) {
   // prices: newest known price per coin. priceFrom says where it came from
   // (a live tick, or the latest candle when no tick has arrived yet).
-  const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false, noExchange: [] };
+  const st = { disposed: false, charts: [], prices: {}, priceFrom: {}, running: false, noExchange: [], hold: {} };
   // each check after the first asks only for the candles that are new
   const candlesFor = candleCache(getCandles, { window: 500, stepOf: (iv) => INTERVAL_MS[iv] });
   // How far back a held coin's missing candles are fetched (5m: 20 days).
@@ -393,6 +393,8 @@ export async function render(el) {
         // close is a real, recent price — use it until a tick replaces it.
         const lastPx = r.candles[r.candles.length - 1]?.c;
         if (Number.isFinite(lastPx) && st.priceFrom[sym] !== 'live') { st.prices[sym] = lastPx; st.priceFrom[sym] = 'candle'; }
+        // kept for the Return card's yardstick: what holding this coin made since the account began
+        if (r.source !== 'coingecko' && !r.lowRes) st.hold[sym] = r.candles; else delete st.hold[sym];
         // Only coins with real exchange candles are traded. One without them
         // gets sparse price samples from CoinGecko (FIGR_HELOC, a tokenised
         // home loan, was traded that way: 12 trades, nearly all losses), so it
@@ -921,6 +923,24 @@ export async function render(el) {
     });
   }
 
+  // Holding the same coins over the same time, in equal parts: the yardstick
+  // for the account's return (a trader that sits in cash in a falling market
+  // can be down and still well ahead of simply holding).
+  function holdLine() {
+    const since = Math.min(state.startedAt, state.firstBarAt ?? state.startedAt);
+    const vals = cfg.universe.map((sym) => {
+      const c = st.hold[sym];
+      // only where the candles reach back to the account's first day
+      if (!c?.length || c[0].t > since) return NaN;
+      const first = c.find((k) => k.t >= since), last = c[c.length - 1];
+      const now = Number.isFinite(st.prices[sym]) ? st.prices[sym] : last.c;
+      return first && first.o > 0 ? now / first.o - 1 : NaN;
+    }).filter(Number.isFinite);
+    if (vals.length < Math.min(3, cfg.universe.length)) return '';
+    const h = (vals.reduce((a, b) => a + b, 0) / vals.length) * 100;
+    return `<span class="s fine">holding the same ${vals.length} coin${vals.length === 1 ? '' : 's'}: <b class="${h >= 0 ? 'up' : 'down'}">${pct(h)}</b></span>`;
+  }
+
   function draw() {
     if (!state) { $('#body', el).innerHTML = `${backupCard()}${myDemoCard()}${realCard()}<div class="mt">${verdictCard()}</div>${earningsCard()}${startCard()}`; wireBackup(); wireMyDemo(); wireReal(); wireExports(); drawRealChart(); syncRunButtons(); syncSessionChip(); return; }
     const s = stats(state, marks());
@@ -938,7 +958,7 @@ export async function render(el) {
       ${earningsCard()}
       <div class="grid g4">
         <div class="card"><div class="stat"><span class="k">Balance now</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${money(s.equity)}</span><span class="s fine">started at ${money(s.startingBalance)}</span></div></div>
-        <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}${s.since < s.liveSince - 60e3 ? ` · replayed until ${dateTime(s.liveSince)}` : ''}</span></div></div>
+        <div class="card"><div class="stat"><span class="k">Return</span><span class="v ${s.returnPct >= 0 ? 'up' : 'down'}">${pct(s.returnPct)}</span><span class="s fine">since ${dateTime(s.since, false)}${s.since < s.liveSince - 60e3 ? ` · replayed until ${dateTime(s.liveSince)}` : ''}</span>${holdLine()}</div></div>
         <div class="card"><div class="stat"><span class="k">Win rate</span><span class="v">${s.winRate === null ? '—' : `${s.winRate}%`}</span><span class="s fine">${s.wins}W / ${s.losses}L${s.profitFactor ? ` · PF ${s.profitFactor}` : ''}</span></div></div>
         <div class="card"><div class="stat"><span class="k">Max drawdown</span><span class="v ${s.maxDrawdownPct > 0 ? 'down' : 'flat'}">${pct(-s.maxDrawdownPct, 1)}</span><span class="s fine">${s.openCount} open · ${s.trades} closed</span></div></div>
       </div>
