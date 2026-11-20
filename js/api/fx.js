@@ -44,12 +44,18 @@ export async function initCurrency() {
 }
 
 export async function setCurrency(code, notify = true) {
+  // Only a currency the app lists: its code and symbol are written into page
+  // markup next to every price, so they come from the list, never from the
+  // request (a stored setting or the selector's value).
+  const entry = CONFIG.CURRENCIES.find((c) => c[0] === code);
+  if (!entry) return false;
+  const [known, symbol] = entry;
   const all = await rates();
-  const rate = code === 'USD' ? 1 : all[code];
+  const rate = known === 'USD' ? 1 : all[known];
   if (!rate) return false;
-  fx.code = code; fx.symbol = SYMBOLS[code] || `${code} `; fx.rate = rate; fx.updated = Date.now();
-  settings.set({ currency: code });
-  if (notify) window.dispatchEvent(new CustomEvent('cv:currency', { detail: { code } }));
+  fx.code = known; fx.symbol = symbol; fx.rate = rate; fx.updated = Date.now();
+  settings.set({ currency: known });
+  if (notify) window.dispatchEvent(new CustomEvent('cv:currency', { detail: { code: known } }));
   return true;
 }
 

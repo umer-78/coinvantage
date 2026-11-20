@@ -7,6 +7,9 @@ import assert from 'node:assert/strict';
 
 globalThis.window ??= new EventTarget(); // the store announces its writes
 const { closeAtTime } = await import('../js/api/market.js');
+// which exchange a request went to, by host name (not by substring)
+const onHost = (u, domain) => { try { const h = new URL(u).hostname; return h === domain || h.endsWith(`.${domain}`); } catch { return false; } };
+
 
 const H = 3600e3;
 const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -65,8 +68,8 @@ test('a coin read on another exchange is graded from that exchange at that momen
   globalThis.fetch = async (url) => {
     const u = String(url);
     calls.push(u);
-    if (u.includes('okx.com') && u.includes('history-candles') && u.includes(`after=${at + 1}`)) return json({ code: '0', data: [[String(at), '3', '3', '3', '3.1', '9']] });
-    if (u.includes('okx.com')) {
+    if (onHost(u, 'okx.com') && u.includes('history-candles') && u.includes(`after=${at + 1}`)) return json({ code: '0', data: [[String(at), '3', '3', '3', '3.1', '9']] });
+    if (onHost(u, 'okx.com')) {
       const end = Math.floor(Date.now() / D) * D;
       return json({ code: '0', data: Array.from({ length: 300 }, (_, k) => [String(end - k * D), '3', '3', '3', '3', '9']) });
     }

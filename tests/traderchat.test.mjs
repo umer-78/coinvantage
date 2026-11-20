@@ -19,7 +19,7 @@ test('before it has started, it says so and how to start it', () => {
   assert.match(a.text, /has not started yet/);
   assert.match(a.text, /\[Trading\]\(#\/trader\)/);
   const t = CHART_TESTED['1h'].adopt ? CHART_TESTED['1h'].own : CHART_TESTED['1h'].standard; // the rules the chart trades
-  assert.match(a.text, new RegExp(`${pct(t.ret).replace(/[+.]/g, '\\$&')} per ${CHART_TESTED['1h'].block}`), 'the chart\'s tested result, gain or loss');
+  assert.ok(a.text.includes(`${pct(t.ret)} per ${CHART_TESTED['1h'].block}`), 'the chart\'s tested result, gain or loss');
   assert.match(a.text, /Not financial advice/);
 });
 

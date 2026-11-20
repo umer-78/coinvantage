@@ -194,8 +194,8 @@ jobs:
       - name: Download candles
         env:
           # 5m and 15m go back ~100 days so their verdict is not decided by one
-          # week; 1m ~21 days
-          PLAN: '{"1m":30000,"5m":30000,"15m":12000,"1h":4000,"4h":3500,"1d":2200}'
+          # week; 1m ~21 days; second charts ~7 hours of 1s candles; every week
+          PLAN: '{"1s":4000,"5s":4000,"10s":2400,"1m":30000,"5m":30000,"15m":12000,"1h":4000,"4h":3500,"1d":2200,"1w":1000}'
         run: node tools/fetch-klines.mjs klines.json
 
       - name: Range calibration, fitted on older candles and checked on newer ones
@@ -372,8 +372,9 @@ jobs:
           name: timing
           path: timing.txt
 
-  # The forecast's release test re-run on fresh candles: every coin, six charts,
-  # 10 forecasts per coin and chart, split over twenty runners.
+  # The forecast's release test re-run on fresh candles: every coin, all ten
+  # charts (1s to 1w; the second charts only for coins on Binance, as in the
+  # app), 10 forecasts per coin and chart, split over twenty runners.
   engine-data:
     if: github.event_name == 'schedule' || inputs.job == 'engine' || inputs.job == 'all'
     runs-on: ubuntu-latest
@@ -384,7 +385,7 @@ jobs:
           node-version: "22"
       - name: Download candles
         env:
-          PLAN: '{"1m":4000,"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200}'
+          PLAN: '{"1s":2500,"5s":2500,"10s":1500,"1m":4000,"5m":4000,"15m":4000,"1h":4000,"4h":3500,"1d":2200,"1w":1000}'
         run: node tools/fetch-klines.mjs klines.json
       - uses: actions/upload-artifact@v4
         with:

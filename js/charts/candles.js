@@ -167,7 +167,6 @@ export class CandleChart {
   setProjection(p, meta = {}) {
     this.projection = p;
     this.projMeta = meta || {};
-    this.projPaths = p?.length ? samplePaths(p, this.projMeta.seed || '', this.w < 520 ? 9 : 14) : null;
     // make room on the right for the forecast fan unless the user has scrolled back
     if (p?.length && this.opts.projection && this.offset <= 0) this.offset = -(p.length + 3);
     // the fan opens out from the last candle; with reduced motion it is simply there
@@ -592,15 +591,6 @@ export class CandleChart {
         ctx.stroke();
       }
       ctx.setLineDash([]);
-      // possible paths with the measured spread
-      if (this.projPaths) {
-        ctx.globalAlpha = 0.3;
-        for (const path of this.projPaths) {
-          ctx.beginPath(); ctx.moveTo(x0, y(p0));
-          for (let k = 0; k < upto; k++) ctx.lineTo(this.xOf(n + k), y(path[k]));
-          ctx.stroke();
-        }
-      }
       ctx.globalAlpha = 1;
       if (!this.projMeta.leanRemoved) {
         ctx.setLineDash([5, 4]); ctx.lineWidth = 2;
@@ -653,8 +643,6 @@ export class CandleChart {
 
     // price axis
     ctx.fillStyle = col.bg; ctx.fillRect(this.plotW, 0, L.axisW, this.h);
-    ctx.fillStyle = col.text; ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    for (const t of ticks) ctx.fillText(fmtPrice(t), this.plotW + 6, y(t));
     const lastC = candles[n - 1];
     // the 80% range at the forecast's end, on the axis
     if (proj && this.projReveal >= 1) {
@@ -663,9 +651,11 @@ export class CandleChart {
     }
     tags.push({ y: y(lastC.c), text: fmtPrice(lastC.c), color: lastC.c >= lastC.o ? col.up : col.down, solid: true });
     const lastTagY = y(lastC.c);
-    for (const tg of tags) {
-      if (tg.y < 0 || tg.y > main.h) continue;
-      if (!tg.solid && Math.abs(tg.y - lastTagY) < 18) continue;
+    const shownTags = tags.filter((tg) => tg.y >= 0 && tg.y <= main.h && (tg.solid || Math.abs(tg.y - lastTagY) >= 18));
+    // grid prices first, leaving out any a tag would half-cover
+    ctx.fillStyle = col.text; ctx.font = '11px system-ui'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (const t of ticks) if (!shownTags.some((tg) => Math.abs(tg.y - y(t)) < 15)) ctx.fillText(fmtPrice(t), this.plotW + 6, y(t));
+    for (const tg of shownTags) {
       ctx.fillStyle = tg.color; ctx.fillRect(this.plotW + 1, tg.y - 9, L.axisW - 2, 18);
       ctx.fillStyle = tg.ink || '#fff'; ctx.font = '600 11px system-ui'; ctx.fillText(tg.text, this.plotW + 5, tg.y);
     }

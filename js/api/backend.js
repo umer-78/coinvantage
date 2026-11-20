@@ -329,7 +329,11 @@ export async function trackPageView(path) {
     const client = await sb();
     if (!client) return;
     let sid = sessionStorage.getItem('cv-sid');
-    if (!sid) { sid = Math.random().toString(36).slice(2, 14); sessionStorage.setItem('cv-sid', sid); }
+    if (!sid) {
+      const b = crypto.getRandomValues(new Uint8Array(6));
+      sid = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+      sessionStorage.setItem('cv-sid', sid);
+    }
     const w = window.innerWidth;
     await client.from('page_views').insert({
       path: path.slice(0, 120),

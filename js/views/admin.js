@@ -121,7 +121,7 @@ export async function render(el) {
       const refs = {};
       for (const v of vs) {
         if (!v.referrer) continue;
-        try { const h = new URL(v.referrer).hostname.replace(/^www\./, ''); if (h && !h.includes('github.io')) refs[h] = (refs[h] || 0) + 1; } catch { /* ignore */ }
+        try { const h = new URL(v.referrer).hostname.replace(/^www\./, ''); if (h && h !== 'github.io' && !h.endsWith('.github.io')) refs[h] = (refs[h] || 0) + 1; } catch { /* ignore */ }
       }
       const topRefs = Object.entries(refs).sort((a, b) => b[1] - a[1]).slice(0, 8);
 

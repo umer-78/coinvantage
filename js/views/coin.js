@@ -40,6 +40,9 @@ const INTERVALS = ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w']
 // letting a number imply an accuracy nobody checked.
 // Charts the forecast engine was never tested on (1m and 5m were, and scored below their baseline).
 const UNMEASURED = ['1s', '5s', '10s'];
+// Charts the AI trader leaves alone: a typical move there is smaller than the
+// fees on a trade, and its rules were tested on 15m and slower charts only.
+const AI_SITS_OUT = ['1s', '5s', '10s', '1m', '5m'];
 
 export async function render(el, [symParam]) {
   const sym = (symParam || 'BTC').toUpperCase();
@@ -99,7 +102,7 @@ export async function render(el, [symParam]) {
             <span class="fine" id="drawHint">Tap two points on the chart to place a trend line.</span>
           </div>
           <div class="chart-box" id="chart"></div>
-          <p class="fine" style="margin:6px 4px 0">Scroll or pinch to zoom · drag to pan · double-click to reset. Gold fan = the forecast's price range (inner: half of outcomes in testing, outer: 80%); thin lines = possible paths with that spread, not predictions.</p>
+          <p class="fine" style="margin:6px 4px 0">Scroll or pinch to zoom · drag to pan · double-click to reset. Gold fan = the forecast's price range: the inner band held half of the outcomes in testing, the outer one 8 in 10.</p>
         </div>
         <div class="card" id="summaryCard" hidden></div>
       </div>
@@ -527,6 +530,16 @@ export async function render(el, [symParam]) {
   function aiSignalHtml() {
     // only on real exchange candles: on demo or CoinGecko data its trades would be invented
     if (!st.tested) return `<div class="ai-signal fine" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px"><b>AI signal</b> — none here: ${esc(coin.symbol)} has no exchange candles on this chart (only CoinGecko's line or demo data), and the rules were only tested on exchange candles.</div>`;
+    if (AI_SITS_OUT.includes(st.interval)) {
+      const bt = st.backtest?.ok && st.backtestIv === st.interval ? st.backtest : null;
+      const why = bt && bt.tradeCount >= 5
+        ? ` On these candles its rule would have made ${bt.tradeCount} trades and ${bt.totalReturnPct >= 0 ? '+' : '−'}${Math.abs(bt.totalReturnPct).toFixed(1)}% after fees, which is why.`
+        : '';
+      return `<div class="ai-signal" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">
+        <div class="row spread"><b>AI signal · ${esc(st.interval)}</b><span class="chip" style="font-weight:700">SITS OUT</span></div>
+        <p style="margin:6px 0 0">The AI trader works on 15m and slower charts. A typical move on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart is smaller than the fees on a trade, so it does not trade here.${why}</p>
+        <p class="fine" style="margin:6px 0 0">Its reading on the charts it does trade is right below.</p></div>`;
+    }
     const closed = st.candles.slice(0, -1); // decided on closed candles only
     const key = `${st.interval}|${closed.length}|${closed.at(-1)?.t}`;
     if (aiSig.key !== key) aiSig = { key, v: aiSignal(closed, st.interval, coin.symbol) };
@@ -641,7 +654,8 @@ export async function render(el, [symParam]) {
     const meter = signalMeter(sig.score);
     const meterTone = meter.tone === 'up' ? 'up' : meter.tone === 'down' ? 'down' : 'flat';
     const warnings = riskWarnings({
-      signal: sig, forecast: st.fcView || st.forecast, backtest: st.backtest, interval: st.interval,
+      // the AI's signal card already says why it sits out on short charts
+      signal: sig, forecast: st.fcView || st.forecast, backtest: AI_SITS_OUT.includes(st.interval) ? null : st.backtest, interval: st.interval,
       trust: directionTrustFor(st.interval, st.ledger || loadLedger()).trust,
       anomalies: st.anomalies || [],
       noEdgeTimeframe: (TESTED_ACCURACY.noEdge || []).includes(st.interval) || (['1s', '5s', '10s', '1m', '5m', '1w'].includes(st.interval)),
@@ -1072,8 +1086,11 @@ export async function render(el, [symParam]) {
     // this page prints in the trade plan, instead of a fixed pair of numbers.
     st.backtest = await runBacktest(st.candles.slice(-1000), { interval: iv });
     if (st.disposed || iv !== st.interval) return;
+    st.backtestIv = iv;
     remember(coin.symbol, iv, { backtest: st.backtest });
-    if (st.backtest.ok) chart.setMarkers(st.backtest.trades.flatMap((t) => [{ t: t.entryTime, side: 'buy' }, { t: t.exitTime, side: 'sell' }]).concat(st.backtest.openTrade ? [{ t: st.backtest.openTrade.entryTime, side: 'buy' }] : []));
+    // no trade markers where the AI does not trade
+    if (AI_SITS_OUT.includes(iv)) chart.setMarkers([]);
+    else if (st.backtest.ok) chart.setMarkers(st.backtest.trades.flatMap((t) => [{ t: t.entryTime, side: 'buy' }, { t: t.exitTime, side: 'sell' }]).concat(st.backtest.openTrade ? [{ t: st.backtest.openTrade.entryTime, side: 'buy' }] : []));
     if (st.tab === 'backtest') drawTab();
   }
 

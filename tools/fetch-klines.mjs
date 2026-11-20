@@ -59,9 +59,46 @@ async function htxRows(c, iv, total) {
   return r.data.map((k) => [k.id * 1000, +k.open, +k.high, +k.low, +k.close, +k.amount, null]).reverse();
 }
 const plan = process.env.PLAN ? JSON.parse(process.env.PLAN) : { '15m': 4000, '1h': 4000, '4h': 3500, '1d': 2200 };
+// Second charts, as the app builds them (js/api/market.js getCandles): only for
+// coins that trade on Binance, from its 1s candles, 5s and 10s bucketed from
+// those on clock boundaries. One download of 1s candles per coin serves all three.
+const SECOND_FACTOR = { '1s': 1, '5s': 5, '10s': 10 };
+const secondsNeeded = Math.max(0, ...Object.entries(plan).filter(([iv]) => SECOND_FACTOR[iv]).map(([iv, n]) => n * SECOND_FACTOR[iv]));
+const secondsCache = new Map();
+async function binanceSeconds(c) {
+  if (secondsCache.has(c)) return secondsCache.get(c);
+  let rows = [], end = Date.now() - 2000;
+  while (rows.length < secondsNeeded) {
+    const lim = Math.min(1000, secondsNeeded - rows.length);
+    const r = await getJson(`https://data-api.binance.vision/api/v3/klines?symbol=${encodeURIComponent(c)}USDT&interval=1s&limit=${lim}&endTime=${end}`);
+    if (!Array.isArray(r) || !r.length) break;
+    rows = r.map((k) => [k[0], +k[1], +k[2], +k[3], +k[4], +k[5], +k[9]]).concat(rows);
+    end = r[0][0] - 1;
+    if (r.length < lim) break;
+  }
+  secondsCache.set(c, rows);
+  return rows;
+}
+function bucketSeconds(rows, factor) {
+  if (factor === 1) return rows;
+  const size = factor * 1000, out = [];
+  for (const r of rows) {
+    const t = Math.floor(r[0] / size) * size, last = out[out.length - 1];
+    if (last && last[0] === t) { last[2] = Math.max(last[2], r[2]); last[3] = Math.min(last[3], r[3]); last[4] = r[4]; last[5] += r[5]; last[6] += r[6]; last[7]++; }
+    else out.push([t, r[1], r[2], r[3], r[4], r[5], r[6], 1]);
+  }
+  return out.filter((b) => b[7] === factor).map((b) => b.slice(0, 7)); // whole buckets only
+}
 const out = {};
 for (const [iv, total] of Object.entries(plan)) {
   for (const c of coins) {
+    if (SECOND_FACTOR[iv]) {
+      if (venueOf[c] && venueOf[c] !== 'binance') continue; // no second charts for these coins in the app
+      const rows = bucketSeconds(await binanceSeconds(c), SECOND_FACTOR[iv]).slice(-total);
+      if (rows.length) out[`${c}:${iv}`] = rows;
+      console.log(c, iv, rows.length);
+      continue;
+    }
     if (venueOf[c] === 'gate' || venueOf[c] === 'htx') {
       const rows = (venueOf[c] === 'gate' ? await gateRows(c, iv, total) : await htxRows(c, iv, total))
         .filter((k) => k.slice(1, 5).every((x) => Number.isFinite(x) && x > 0));

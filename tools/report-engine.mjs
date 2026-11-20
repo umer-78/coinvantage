@@ -10,7 +10,7 @@ import { TESTED_ACCURACY } from '../js/lib/predict.js';
 const rows = process.argv.slice(2).flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')));
 const out = { measuredOn: new Date().toISOString().slice(0, 10), tests: rows.length, byInterval: {} };
 const pct = (v) => +(v * 100).toFixed(1);
-for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
+for (const iv of ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w']) {
   const r = rows.filter((x) => x.iv === iv);
   if (!r.length) continue;
   const hit = r.filter((x) => (x.p >= 0.5 ? 1 : 0) === x.y).length / r.length;

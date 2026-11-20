@@ -174,7 +174,8 @@ export async function getCoinProfile(coin) {
     const r = await stale(getJson(`${CONFIG.COINGECKO}/coins/${encodeURIComponent(coin.id)}?localization=false&tickers=false&community_data=false&developer_data=false&sparkline=false`, { ttl: 30 * 60e3, persist: true, key: `cg:coin:${coin.id}` }));
     const md = r.market_data || {};
     return {
-      description: (r.description?.en || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 1400),
+      // tags out, then any stray angle bracket a nested tag left behind
+      description: (r.description?.en || '').replace(/<[^>]*>/g, '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 1400),
       categories: (r.categories || []).filter(Boolean).slice(0, 6),
       homepage: r.links?.homepage?.find(Boolean) || null,
       explorer: r.links?.blockchain_site?.find(Boolean) || null,

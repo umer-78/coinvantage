@@ -27,15 +27,18 @@ import { _internals } from '../js/lib/predict.js';
 
 const { rollingSigma, empiricalBandQuantiles } = _internals;
 const raw = JSON.parse(readFileSync(process.argv[2] || 'klines.json', 'utf8'));
-const H = { '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 }; // DEFAULT_HORIZON in js/ai/context.js
+const H = { '1s': 30, '5s': 24, '10s': 18, '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7, '1w': 4 }; // DEFAULT_HORIZON in js/ai/context.js
 const FACTORS = [0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2];
-const WINDOW = 1500;
+// the candles the coin page gives the forecast on each chart (js/api/market.js
+// MAX_BARS for second charts; a weekly chart rarely has more than ~450)
+const WINDOWS = { '1s': 1000, '5s': 1000, '10s': 600, '1w': 200 };
 const NORMAL = { q05: -1.6449, q10: -1.2816, q25: -0.6745, q75: 0.6745, q90: 1.2816, q95: 1.6449 };
 const r1 = (v) => +v.toFixed(1);
 
 const out = { measuredOn: new Date().toISOString().slice(0, 10), charts: {} };
 for (const iv of Object.keys(H)) {
-  const keys = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length > WINDOW + 200);
+  const WINDOW = WINDOWS[iv] || 1500;
+  const keys = Object.keys(raw).filter((k) => k.endsWith(`:${iv}`) && raw[k].length > WINDOW + (iv === '1w' ? 60 : 200));
   if (!keys.length) continue;
   const h = H[iv];
   const halves = [[], []];

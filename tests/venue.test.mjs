@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 
 globalThis.window ??= new EventTarget(); // the store announces its writes
 const { exchangeCandles, looksPegged, isStable } = await import('../js/api/market.js');
+// which exchange a request went to, by host name (not by substring)
+const onHost = (u, domain) => { try { const h = new URL(u).hostname; return h === domain || h.endsWith(`.${domain}`); } catch { return false; } };
+
 
 const H = 3600e3;
 function okxRows(n, price) {
@@ -22,7 +25,7 @@ function mockNet(okxHas, { offline = false } = {}) {
     const u = String(url);
     calls.push(u);
     if (offline) throw new TypeError('Failed to fetch');
-    if (u.includes('okx.com')) return json(okxHas ? { code: '0', data: okxRows(300, 2) } : { code: '51001', data: [] });
+    if (onHost(u, 'okx.com')) return json(okxHas ? { code: '0', data: okxRows(300, 2) } : { code: '51001', data: [] });
     if (u.includes('huobi')) return json({ status: 'error', 'err-msg': 'invalid symbol' });
     throw new TypeError('Failed to fetch');
   };

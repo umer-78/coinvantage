@@ -16,7 +16,7 @@ import { getNews, backendEnabled } from '../api/backend.js';
 import { candleCache } from '../lib/candlecache.js';
 
 const cache = new Map();
-export const DEFAULT_HORIZON = { '1s': 30, '5s': 24, '10s': 18, '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7 };
+export const DEFAULT_HORIZON = { '1s': 30, '5s': 24, '10s': 18, '1m': 15, '5m': 12, '15m': 8, '1h': 12, '4h': 6, '1d': 7, '1w': 4 };
 
 export function remember(symbol, interval, patch) {
   const key = `${symbol}:${interval}`;

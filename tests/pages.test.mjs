@@ -32,5 +32,5 @@ test('every address in the sitemap is a real page search engines can index, with
       assert.ok(views.includes(route), `${rel}: route ${route} is a page`);
     }
   }
-  assert.match(fs.readFileSync(path.join(root, 'robots.txt'), 'utf8'), new RegExp(`Sitemap: ${SITE}sitemap.xml`));
+  assert.ok(fs.readFileSync(path.join(root, 'robots.txt'), 'utf8').includes(`Sitemap: ${SITE}sitemap.xml`));
 });
