@@ -39,3 +39,10 @@ test('the market list shows each symbol once, the biggest first', async () => {
   const rows = [{ symbol: 'BTC', rank: 1 }, { symbol: 'ZEC', name: 'Zcash', rank: 11 }, { symbol: 'zec', name: 'Zcash Token', rank: 243 }, { symbol: '' }, { symbol: 'ETH', rank: 2 }];
   assert.deepEqual(uniqueBySymbol(rows).map((r) => r.name || r.symbol), ['BTC', 'Zcash', 'ETH']);
 });
+
+test('a coin description keeps its words and loses every tag', async () => {
+  const { htmlToText } = await import('../js/api/market.js');
+  const out = htmlToText('Bitcoin is <a href="x">money</a>.<<script>script>alert(1)<</script>/script>');
+  assert.ok(!/[<>]/.test(out), out);
+  assert.match(out, /Bitcoin is .*money/);
+});
