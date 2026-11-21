@@ -533,3 +533,25 @@ test('a chart changes when it sells only where two exit tests in a row cleared t
   // your own rules stay yours
   assert.equal(rulesForChart({ ...DEFAULT_CONFIG, strategy: 'custom', custom: { signalExitBars: 2 } }, '15m').signalExitBars, 2);
 });
+
+test('the AI opens new trades only on charts where its tested rules made money in most periods', async () => {
+  const { profitGuard, profitGuardText, CHART_TESTED, DEFAULT_CONFIG, earningsByChart } = await import('../js/lib/autotrader.js');
+  for (const row of earningsByChart(DEFAULT_CONFIG)) {
+    const x = CHART_TESTED[row.chart];
+    const want = row.net > 0 && x.up * 2 > CHART_TESTED.blocks;
+    const g = profitGuard({ ...DEFAULT_CONFIG, interval: row.chart });
+    assert.equal(g.trades, want, row.chart);
+    if (!want) assert.match(profitGuardText(g), new RegExp(`no new trades on ${row.chart}`));
+  }
+  // an untested chart has nothing measured to trade on; your own rules are yours
+  assert.equal(profitGuard({ ...DEFAULT_CONFIG, interval: '30m' }).trades, false);
+  assert.equal(profitGuard({ ...DEFAULT_CONFIG, strategy: 'custom', interval: '15m' }).trades, true);
+  // the chart an account starts on is one the AI trades
+  assert.equal(profitGuard(DEFAULT_CONFIG).trades, true, DEFAULT_CONFIG.interval);
+});
+
+test('a sitting-out account opens nothing but still closes what it holds', async () => {
+  const { entryBlocker, blockerText } = await import('../js/lib/autotrader.js');
+  assert.equal(entryBlocker({ sitOut: true }, { symbol: 'BTC' }, 0, 99), 'sitout');
+  assert.match(blockerText('sitout', {}, 0), /no new trades/);
+});

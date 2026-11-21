@@ -916,9 +916,14 @@ test('a timeframe with no measured edge can never be sold as a confident call', 
   assert.ok(TESTED_ACCURACY.noEdge.length, 'the table must record which timeframes failed');
   const weak = TESTED_ACCURACY.noEdge[0];
   const strong = ['1m', '5m', '15m', '1h', '4h', '1d'].find((iv) => !TESTED_ACCURACY.noEdge.includes(iv));
-  // every listed timeframe must genuinely be at or below its own baseline
+  // every listed timeframe must genuinely lack an edge: at or below its
+  // baseline in the release test where it had one, and either at or below it
+  // in the latest re-test or still not trusted (trust 0) after it
   for (const iv of TESTED_ACCURACY.noEdge) {
-    assert.ok(TESTED_ACCURACY[iv] <= TESTED_ACCURACY.baseline[iv], `${iv} is listed as no-edge but beats its baseline`);
+    if (typeof TESTED_ACCURACY[iv] === 'number') assert.ok(TESTED_ACCURACY[iv] <= TESTED_ACCURACY.baseline[iv], `${iv} is listed as no-edge but beat its baseline in the release test`);
+    const r = TESTED_ACCURACY.recheck?.[iv];
+    assert.ok(r, `${iv} is listed as no-edge with no test behind it`);
+    assert.ok(r.hit <= r.baseline || (TESTED_ACCURACY.directionTrust[iv] ?? 0) === 0, `${iv} is listed as no-edge but beat its baseline and is trusted`);
   }
   // and an accuracy may never be published without the number it had to beat
   for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {

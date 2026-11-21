@@ -854,36 +854,58 @@ export const TESTED_ACCURACY = {
   bandsAll: { band50: 48.4, band80: 78.5, band90: 87.5, before: { band50: 45.1, band80: 71.7 } },
   // How far the direction lean can be trusted: the logit shrink s that best
   // calibrated probUp on these same 1,440 tests (shown = sigmoid(s·logit p)).
-  // 0 means the lean carried no information on that chart. Charts that were
-  // never tested (1s, 5s, 10s, 1w) are absent, and absent counts as 0.
+  // 0 means the lean carried no information on that chart. Since the
+  // 2026-11-20 re-test every chart has a measured value, and every one is 0.
   // The release test gave 1m 0.90, 5m 0.41, 15m 0.38. Re-runs on fresh
   // candles (recheck, below) found almost nothing on those three, and each
   // chart keeps the smallest so far, as set before the re-runs.
-  directionTrust: { '1m': 0, '5m': 0, '15m': 0, '1h': 0, '4h': 0, '1d': 0 },
+  directionTrust: { '1s': 0, '5s': 0, '10s': 0, '1m': 0, '5m': 0, '15m': 0, '1h': 0, '4h': 0, '1d': 0, '1w': 0 },
   // The same test re-run on fresh candles (tools/evaluate-engine.mjs and
-  // tools/report-engine.mjs, Evaluate workflow job "engine") on every coin the
-  // app can trade (tools/universe.json): 5,710 forecasts, ten per coin and
-  // chart, 106 coins (fewer on 1h, 4h and 1d, where recent listings have too
-  // little history). hit/baseline in %, trust as above. Two runs 90 minutes
-  // apart (both 2026-10-15; these figures are the later one) found no edge on
-  // any chart, nor did the 2026-10-12 run (12 coins, 240 per chart). How far
-  // they moved shows how few independent tests they hold: on 1m the hit rate
-  // went 47.5% → 53.1% and the 80% range 68.5% → 83.6%, because a chart's ten
-  // test moments are the same for every coin and crypto moves together.
+  // tools/report-engine.mjs, Evaluate workflow job "engine", run 44798305953)
+  // on every coin the app can trade (tools/universe.json), now on all ten
+  // charts: 8,514 forecasts, ten per coin and chart (second charts: the 78
+  // coins Binance lists; fewer coins on 1h, 4h, 1d and 1w, where recent
+  // listings have too little history). hit/baseline in %, trust as above. No
+  // chart beat its baseline, as in the 2026-10-15 and 2026-10-12 runs. A
+  // chart's ten test moments are shared by every coin and crypto moves
+  // together, so these are far fewer independent tests than they look.
   recheck: {
-    measuredOn: '2026-10-15', tests: 5710, coins: 106,
-    '1m': { hit: 53.1, baseline: 56.2, trust: 0, band50: 50.6, band80: 83.6, n: 1060, coins: 106 },
-    '5m': { hit: 48.1, baseline: 54.1, trust: 0, band50: 51.1, band80: 81.9, n: 1060, coins: 106 },
-    '15m': { hit: 46.6, baseline: 58.6, trust: 0, band50: 50.0, band80: 82.5, n: 1060, coins: 106 },
-    '1h': { hit: 48.0, baseline: 66.0, trust: 0, band50: 49.7, band80: 79.7, n: 1030, coins: 103 },
-    '4h': { hit: 47.3, baseline: 67.2, trust: 0, band50: 51.5, band80: 75.5, n: 990, coins: 99 },
-    '1d': { hit: 59.0, baseline: 63.3, trust: 0, band50: 52.0, band80: 77.1, n: 510, coins: 51 },
+    measuredOn: '2026-11-20', tests: 8514, coins: 106,
+    '1s': { hit: 53.7, baseline: 57.4, trust: 0, band50: 39.9, band80: 72.9, n: 780, coins: 78 },
+    '5s': { hit: 52.1, baseline: 53.6, trust: 0, band50: 47.2, band80: 76.2, n: 780, coins: 78 },
+    '10s': { hit: 50.3, baseline: 51.0, trust: 0, band50: 46.3, band80: 77.2, n: 780, coins: 78 },
+    '1m': { hit: 54.9, baseline: 57.1, trust: 0, band50: 40.3, band80: 73.5, n: 1060, coins: 106 },
+    '5m': { hit: 54.4, baseline: 50.6, trust: 0, band50: 51.4, band80: 79.7, n: 1060, coins: 106 },
+    '15m': { hit: 53.5, baseline: 57.0, trust: 0, band50: 42.7, band80: 77.6, n: 1060, coins: 106 },
+    '1h': { hit: 48.0, baseline: 65.4, trust: 0, band50: 48.0, band80: 82.3, n: 1040, coins: 104 },
+    '4h': { hit: 53.0, baseline: 53.0, trust: 0, band50: 51.4, band80: 79.3, n: 1000, coins: 100 },
+    '1d': { hit: 54.1, baseline: 62.9, trust: 0, band50: 60.2, band80: 87.3, n: 510, coins: 51 },
+    '1w': { hit: 48.2, baseline: 52.9, trust: 0, band50: 48.2, band80: 77.0, n: 444, coins: 51 },
   },
 
   // Timeframes where the model scored at or below the do-nothing baseline.
-  noEdge: ['1m', '5m', '15m', '1h', '4h', '1d'],
+  noEdge: ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'],
   beatsBaselineOverall: false,
   caveat: 'Crypto moves together, so even ten forecasts on each of 106 coins in one market window are far fewer independent tests than they look.',
+  // Is there any simple rule that calls the direction better than chance?
+  // tools/evaluate-direction.mjs on real exchange candles for 106 coins:
+  // about a hundred candidate rules per chart (momentum, reversal, trend and
+  // fade against moving averages, BTC's last move), the best picked on the
+  // older half of each chart's dates and kept only if, on the newer half, it
+  // is right at least 52% of the time, 2 points more than always naming that
+  // half's commoner direction, with a t-statistic of at least 2 across dates.
+  // None passed. Each chart's entry is its picked rule on the newer half.
+  directionRules: {
+    measuredOn: '2026-11-21', coins: 106, passed: [],
+    '1s': { rule: 'rev 24 1', hit: 45.3, majority: 55.2, t: -1.83, calls: 1246, coins: 78 },
+    '5s': { rule: 'trend 200 0', hit: 46.2, majority: 51.5, t: -4.52, calls: 5409, coins: 78 },
+    '10s': { rule: 'mom 168 0.5', hit: 41.5, majority: 53.6, t: -4.78, calls: 2216, coins: 78 },
+    '15m': { rule: 'fade 20 2', hit: 54.6, majority: 52.5, t: 1.85, calls: 9510, coins: 106 },
+    '1h': { rule: 'rev 24 1', hit: 51.1, majority: 52.4, t: 1.59, calls: 5459, coins: 106 },
+    '4h': { rule: 'rev 72 1', hit: 50.1, majority: 53.6, t: -0.11, calls: 9782, coins: 106 },
+    '1d': { rule: 'rev 72 1', hit: 51, majority: 54.1, t: 0.85, calls: 3072, coins: 99 },
+    '1w': { rule: 'fade 100 1', hit: 48.8, majority: 56.7, t: -0.27, calls: 1030, coins: 43 },
+  },
 };
 
 /**
@@ -894,7 +916,7 @@ export const TESTED_ACCURACY = {
  */
 export function recheckOverall(r = TESTED_ACCURACY.recheck) {
   let n = 0, hit = 0, base = 0;
-  for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
+  for (const iv of ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w']) {
     const x = r?.[iv];
     if (!(x?.n > 0)) continue;
     n += x.n; hit += x.hit * x.n; base += x.baseline * x.n;

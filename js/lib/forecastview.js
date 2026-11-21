@@ -14,13 +14,11 @@ import { directionReliable, summarizeForecast, TESTED_ACCURACY } from './predict
  * How much wider the centred range is drawn on each chart (log distance from
  * today's price × the factor). A factor is fitted on the older half of each
  * series and kept only where it helps the newer half (tools/evaluate-bands.mjs).
- * On 24 coins (2026-10-13) the daily 80% range held 75.8% of the newer half and
- * 5% wider held 77.4%, so 1d was drawn 5% wider. On 106 coins (two runs,
- * 2026-10-15) the daily range held 81.0% of the newer half as drawn and 82.4%
- * wider, further from 80%, so it is drawn as measured again. No chart is
- * widened.
+ * On 106 coins (2026-11-20, Evaluate run 44798322187) only 10s passed: its 80%
+ * range held 74.0% of the newer half as drawn and 76.5% drawn 5% wider. Every
+ * other chart was already as close to 80% as the fitted factor got it.
  */
-export const RANGE_WIDEN = {};
+export const RANGE_WIDEN = { '10s': 1.05 };
 
 /** The forecast with its lean taken out: centred on today's price, same spread (× `widen`). */
 export function withoutLean(f, widen = 1) {
@@ -73,22 +71,26 @@ export function forecastForDisplay(f, interval, trust) {
  */
 export const FORECAST_TESTED = {
   measuredOn: '2026-10-12', tests: 1440, coins: 12, perChart: 240,
-  // Centred ranges, re-measured 2026-10-15 by tools/evaluate-bands.mjs on every
-  // coin the app can trade (Evaluate job "bands", run 38801349761): every
-  // non-overlapping horizon, the engine's own range functions; 1m over ~21
-  // days, 5m and 15m over ~100. The forecast re-check above (ten forecasts a
-  // coin and chart) put the 1m 80% range at 69.9% in one run and 83.3% in the
-  // next, 90 minutes later: its ten test moments are shared by every coin, so
-  // it is far too few to judge a range by. These are 160,000 1m ranges.
+  // Centred ranges, re-measured 2026-11-20 by tools/evaluate-bands.mjs on every
+  // coin the app can trade (Evaluate job "bands", run 44798322187), all ten
+  // charts: every non-overlapping horizon, the engine's own range functions.
+  // Second charts use the 78 coins Binance lists. 10s is drawn 5% wider
+  // (RANGE_WIDEN) and its figures are the newer half, which the width was not
+  // fitted on. A forecast re-check of ten forecasts a coin and chart is far
+  // too few to judge a range by: these are up to 200,000 ranges a chart.
   centred: {
-    '1m': { band50: 50.2, band80: 79.7, band90: 89.4, tests: 161733, coins: 106 },
-    '5m': { band50: 49.9, band80: 79.6, band90: 89.5, tests: 199483, coins: 106 },
-    '15m': { band50: 49.3, band80: 79.3, band90: 89.5, tests: 124373, coins: 105 },
-    '1h': { band50: 49.0, band80: 79.0, band90: 89.1, tests: 20875, coins: 103 },
-    '4h': { band50: 48.7, band80: 79.6, band90: 89.7, tests: 29096, coins: 98 },
-    '1d': { band50: 50.5, band80: 80.1, band90: 89.5, tests: 4375, coins: 47 },
+    '1s': { band50: 51.3, band80: 77.5, band90: 87.4, tests: 7800, coins: 78 },
+    '5s': { band50: 48.8, band80: 78, band90: 88.4, tests: 9750, coins: 78 },
+    '10s': { band50: 46.8, band80: 76.5, band90: 87.4, tests: 3838, coins: 78, widen: 1.05, asDrawnBefore: { band50: 44.8, band80: 74, band90: 85.9 } },
+    '1m': { band50: 49.9, band80: 79.5, band90: 89.4, tests: 161733, coins: 106 },
+    '5m': { band50: 49.9, band80: 79.8, band90: 89.7, tests: 201042, coins: 106 },
+    '15m': { band50: 49.6, band80: 79.4, band90: 89.4, tests: 126324, coins: 106 },
+    '1h': { band50: 47.3, band80: 77.8, band90: 88.4, tests: 21143, coins: 104 },
+    '4h': { band50: 48.1, band80: 78.9, band90: 89.3, tests: 29765, coins: 99 },
+    '1d': { band50: 50.6, band80: 81.3, band90: 91, tests: 4428, coins: 47 },
+    '1w': { band50: 46, band80: 75.5, band90: 84.1, tests: 1932, coins: 47 },
   },
-  centredMeasuredOn: '2026-10-15',
+  centredMeasuredOn: '2026-11-20',
   // Re-measured twice on 2026-10-15 on every coin the app can trade (106; 5,710
   // forecasts each, ten per coin and chart, the runs 90 minutes apart). The
   // call is shown only on charts where it separated big moves from small ones

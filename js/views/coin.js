@@ -20,7 +20,7 @@ import { getNews, backendEnabled, getAiRecord } from '../api/backend.js';
 import { aiRecordStats, shareText } from '../lib/airecord.js';
 import { logActivity, logForecastShown } from '../api/activity.js';
 import { tradeSummary } from '../lib/summary.js';
-import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE, rulesForChart, rulesFor, rulesInWords, entryBlocker, blockerText, PER_COIN_RULES, aiSignal, CHART_TESTED } from '../lib/autotrader.js';
+import { newState, openManual, closeManual, equity, DEFAULT_CONFIG, DEMO_NOTICE, rulesForChart, rulesFor, rulesInWords, entryBlocker, blockerText, PER_COIN_RULES, aiSignal, CHART_TESTED, profitGuard, profitGuardText } from '../lib/autotrader.js';
 import { forecastForDisplay, forecastFacts, moveSizeCall, FORECAST_TESTED } from '../lib/forecastview.js';
 import { fx } from '../api/fx.js';
 import {
@@ -33,16 +33,24 @@ import {
 export const title = (p) => (p[0] || 'Coin').toUpperCase();
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const SERIES = ['--series-1', '--series-2', '--series-3', '--series-5', '--series-7', '--series-4'];
-// Every timeframe the chart offers. The second and minute charts exist for
-// watching price move right now; the forecast engine was never measured on them.
+// Every timeframe the chart offers. Since 2026-11-20 the forecast has a
+// measured record on all ten (TESTED_ACCURACY.recheck, FORECAST_TESTED.centred).
 const INTERVALS = ['1s', '5s', '10s', '1m', '5m', '15m', '1h', '4h', '1d', '1w'];
-// Timeframes the forecast engine was never measured on — say so rather than
-// letting a number imply an accuracy nobody checked.
-// Charts the forecast engine was never tested on (1m and 5m were, and scored below their baseline).
+// Charts whose candles cover only seconds: the "bigger picture" row points to
+// the slower charts instead.
 const UNMEASURED = ['1s', '5s', '10s'];
+
+/** What the search for a simple direction rule found on this chart (TESTED_ACCURACY.directionRules). */
+function ruleSearchText(iv) {
+  const d = TESTED_ACCURACY.directionRules, x = d?.[iv];
+  if (!x) return '';
+  return ` A search of about a hundred simple direction rules on real candles from ${x.coins} coins (${d.measuredOn}) found none that beat chance on later data on ${iv}: the best one was right ${x.hit}% of the time there, against ${x.majority}% for always naming the commoner direction.`;
+}
 // Charts the AI trader leaves alone: a typical move there is smaller than the
 // fees on a trade, and its rules were tested on 15m and slower charts only.
 const AI_SITS_OUT = ['1s', '5s', '10s', '1m', '5m'];
+// ...and the slower ones where its tested rules did not make money (profitGuard)
+const aiSitsOut = (iv) => AI_SITS_OUT.includes(iv) || !profitGuard(DEFAULT_CONFIG, iv).trades;
 
 export async function render(el, [symParam]) {
   const sym = (symParam || 'BTC').toUpperCase();
@@ -540,6 +548,14 @@ export async function render(el, [symParam]) {
         <p style="margin:6px 0 0">The AI trader works on 15m and slower charts. A typical move on the ${esc(INTERVAL_LABEL[st.interval] || st.interval)} chart is smaller than the fees on a trade, so it does not trade here.${why}</p>
         <p class="fine" style="margin:6px 0 0">Its reading on the charts it does trade is right below.</p></div>`;
     }
+    // slower charts where its tested rules did not make money: it sits out there too
+    const guard = profitGuard(DEFAULT_CONFIG, st.interval);
+    if (!guard.trades) {
+      return `<div class="ai-signal" style="border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px">
+        <div class="row spread"><b>AI signal · ${esc(st.interval)}</b><span class="chip" style="font-weight:700">SITS OUT</span></div>
+        <p style="margin:6px 0 0">${esc(profitGuardText(guard))}</p>
+        <p class="fine" style="margin:6px 0 0">Its reading on the other charts is right below.</p></div>`;
+    }
     const closed = st.candles.slice(0, -1); // decided on closed candles only
     const key = `${st.interval}|${closed.length}|${closed.at(-1)?.t}`;
     if (aiSig.key !== key) aiSig = { key, v: aiSignal(closed, st.interval, coin.symbol) };
@@ -655,13 +671,13 @@ export async function render(el, [symParam]) {
     const meterTone = meter.tone === 'up' ? 'up' : meter.tone === 'down' ? 'down' : 'flat';
     const warnings = riskWarnings({
       // the AI's signal card already says why it sits out on short charts
-      signal: sig, forecast: st.fcView || st.forecast, backtest: AI_SITS_OUT.includes(st.interval) ? null : st.backtest, interval: st.interval,
+      signal: sig, forecast: st.fcView || st.forecast, backtest: aiSitsOut(st.interval) ? null : st.backtest, interval: st.interval,
       trust: directionTrustFor(st.interval, st.ledger || loadLedger()).trust,
       anomalies: st.anomalies || [],
       noEdgeTimeframe: (TESTED_ACCURACY.noEdge || []).includes(st.interval) || (['1s', '5s', '10s', '1m', '5m', '1w'].includes(st.interval)),
       // Say which kind of "no edge": tested and lost to the baseline, or never tested.
       noEdgeText: TESTED_ACCURACY.recheck?.[st.interval]
-        ? `In the latest test (${TESTED_ACCURACY.recheck.measuredOn}, ${TESTED_ACCURACY.recheck[st.interval].n ?? 240} forecasts on ${st.interval} across ${TESTED_ACCURACY.recheck[st.interval].coins ?? 12} coins) the forecast engine called the direction right ${TESTED_ACCURACY.recheck[st.interval].hit}% of the time against ${TESTED_ACCURACY.recheck[st.interval].baseline}% for always naming the commoner direction, so it has no measured edge on this chart and no direction is shown.`
+        ? `In the latest test (${TESTED_ACCURACY.recheck.measuredOn}, ${TESTED_ACCURACY.recheck[st.interval].n ?? 240} forecasts on ${st.interval} across ${TESTED_ACCURACY.recheck[st.interval].coins ?? 12} coins) the forecast engine called the direction right ${TESTED_ACCURACY.recheck[st.interval].hit}% of the time against ${TESTED_ACCURACY.recheck[st.interval].baseline}% for always naming the commoner direction, ${TESTED_ACCURACY.recheck[st.interval].hit > TESTED_ACCURACY.recheck[st.interval].baseline ? 'ahead of it in this run but not in the runs before, so it is not counted as an edge' : 'so it has no measured edge on this chart'}, and no direction is shown.${ruleSearchText(st.interval)}`
         : typeof TESTED_ACCURACY[st.interval] === 'number'
         ? `In the release test (${TESTED_ACCURACY.testsPerInterval} forecasts on ${st.interval}) the forecast engine was right ${TESTED_ACCURACY[st.interval]}% of the time against a ${TESTED_ACCURACY.baseline[st.interval]}% baseline, so it has no measured edge on this chart. A probability shown here is background, not a reason to act.`
         : `The forecast engine has never been tested on the ${st.interval} chart, so it has no measured accuracy here. A probability shown here is background, not a reason to act.`,
@@ -865,7 +881,7 @@ export async function render(el, [symParam]) {
   // The direction's measured record on this chart: the latest test where it exists.
   function directionTestedText() {
     const r = TESTED_ACCURACY.recheck?.[st.interval];
-    if (r) return `Direction in the latest test (${TESTED_ACCURACY.recheck.measuredOn}): right ${r.hit}% of the time on ${esc(st.interval)}, against ${r.baseline}% for always naming the commoner direction.`;
+    if (r) return `Direction in the latest test (${TESTED_ACCURACY.recheck.measuredOn}): right ${r.hit}% of the time on ${esc(st.interval)}, against ${r.baseline}% for always naming the commoner direction.${ruleSearchText(st.interval)}`;
     if (typeof TESTED_ACCURACY[st.interval] === 'number') return `Direction in the release test: right ${TESTED_ACCURACY[st.interval]}% of the time on ${esc(st.interval)}, against ${TESTED_ACCURACY.baseline[st.interval]}% for always naming the commoner direction.`;
     return `The direction was never tested on ${esc(st.interval)}.`;
   }
@@ -1089,7 +1105,7 @@ export async function render(el, [symParam]) {
     st.backtestIv = iv;
     remember(coin.symbol, iv, { backtest: st.backtest });
     // no trade markers where the AI does not trade
-    if (AI_SITS_OUT.includes(iv)) chart.setMarkers([]);
+    if (aiSitsOut(iv)) chart.setMarkers([]);
     else if (st.backtest.ok) chart.setMarkers(st.backtest.trades.flatMap((t) => [{ t: t.entryTime, side: 'buy' }, { t: t.exitTime, side: 'sell' }]).concat(st.backtest.openTrade ? [{ t: st.backtest.openTrade.entryTime, side: 'buy' }] : []));
     if (st.tab === 'backtest') drawTab();
   }

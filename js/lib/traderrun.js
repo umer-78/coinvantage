@@ -3,7 +3,7 @@
 // every signed-in account whose AI is on, with the page closed
 // (supabase/functions/cv/trader.ts, which uses a byte-identical copy). One
 // copy of the steps means the account trades the same either way.
-import { DEFAULT_CONFIG, PER_COIN_RULES, rulesForChart, replayAll, logCheck } from './autotrader.js';
+import { DEFAULT_CONFIG, PER_COIN_RULES, rulesForChart, replayAll, logCheck, profitGuard } from './autotrader.js';
 import { reviewTrades, decideChanges } from './tradelearn.js';
 
 // Saved settings used to include the strategy's own numbers (stop, target…),
@@ -89,7 +89,9 @@ export function reviewStep(state, cfg, lessons, { now = Date.now() } = {}) {
  * or 'cloud'.
  */
 export function checkAccount(state, cfg, { bySymbol, failed = [], lessons = [], autoLearn = true, by = 'page', now = Date.now() } = {}) {
-  const runCfg = runConfig(cfg, state, lessons);
+  // no new buys on a chart where the tested rules did not make money (profitGuard)
+  const guard = profitGuard(cfg, state?.interval || cfg.interval);
+  const runCfg = { ...runConfig(cfg, state, lessons), sitOut: !guard.trades };
   const held = heldOffList(cfg, state);
   const tradesBefore = state.closed.length;
   const openBefore = new Set(Object.values(state.open).map((p) => `${p.symbol}:${p.openedAt}`));
@@ -110,6 +112,7 @@ export function checkAccount(state, cfg, { bySymbol, failed = [], lessons = [], 
     kind: 'check', by, coins: cfg.universe.length - failed.length, failed: failed.slice(0, 40), candles: processed,
     passed: passedUp.length ? { syms: passedUp.map((x) => x.sym).slice(0, 8), n: passedUp.length, why: passedUp.some((x) => x.why === 'nocash') ? 'nocash' : 'full' } : null,
     opened, closed, best: best ? { sym: best.sym, score: Math.round(best.score) } : null, bar: runCfg.entryScore,
+    sitOut: guard.trades ? null : { why: guard.why, best: guard.best || null },
   });
   const { changes } = autoLearn ? reviewStep(state, cfg, lessons, { now }) : { changes: [] };
   return { results, processed, opened, closed, changes, runCfg };

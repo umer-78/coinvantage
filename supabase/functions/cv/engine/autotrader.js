@@ -371,6 +371,36 @@ export function bestTestedChart() {
 }
 
 /**
+ * Whether the AI opens new trades on a chart with its tested rules: only where
+ * those rules made money once real fills are counted AND gained in most of the
+ * test periods. Today that is the daily chart alone (15m lost in every period,
+ * 1h on average, 4h in two periods of three). Elsewhere it sits out: no new
+ * buys, while a trade already open is still taken to its stop or target. An
+ * untested chart has nothing measured to trade on. Your own rules ('custom')
+ * are traded as you set them.
+ */
+export function profitGuard(cfg, interval = cfg?.interval) {
+  if (cfg?.strategy === 'custom') return { trades: true };
+  const x = CHART_TESTED[interval];
+  const best = bestTestedChart();
+  const bestOk = best && best.net > 0 && best.up * 2 > (CHART_TESTED.blocks || 3) ? best.iv : null;
+  if (!x?.standard) return { trades: false, why: 'untested', chart: interval, best: bestOk };
+  const row = earningsByChart({ ...DEFAULT_CONFIG, ...cfg }).find((r) => r.chart === interval);
+  const periods = CHART_TESTED.blocks || 3, up = x.up ?? 0;
+  if (row && row.net > 0 && up * 2 > periods) return { trades: true, net: row.net, up, periods };
+  return { trades: false, why: 'lost', chart: interval, net: row ? row.net : null, worst: row ? row.worst : null, up, periods, best: bestOk };
+}
+
+/** The guard's decision in one sentence. */
+export function profitGuardText(g) {
+  if (!g || g.trades) return '';
+  const where = g.best && g.best !== g.chart ? ` It trades the ${g.best} chart, the only tested one where its rules made money in most periods.` : ' No tested chart clears that bar right now.';
+  return g.why === 'untested'
+    ? `The AI opens no new trades on ${g.chart}: its rules were never tested there, so there is no measured profit to trade on.${where}`
+    : `The AI opens no new trades on ${g.chart}: its tested rules there ${g.net !== null && g.net < 0 ? `lost ${Math.abs(g.net)}% a period on average once real fills are counted` : 'did not make money in most periods'}, with gains in ${g.up} of ${g.periods} test periods.${where}`;
+}
+
+/**
  * Plain warnings about a set of trader settings, before they are used:
  * what was never tested, what risks a lot, what cannot work as set.
  */
@@ -384,6 +414,8 @@ export function settingsWarnings(cfg) {
     const top = bestTestedChart();
     out.push(`On ${cfg.interval} the tested rules lost ${Math.abs(lost.net)}% a period (${lost.block}) on average once real fills are counted (spread and slippage, ${lost.fillCost} points a period). ${top ? `${top.iv} made the most of the tested charts: about +${top.month}% a month after that cost.` : ''}`);
   }
+  const guard = profitGuard(cfg, cfg.interval);
+  if (!guard.trades) out.push(profitGuardText(guard));
   if (cfg.strategy === 'custom') out.push('Your own rules have no published test. Use "Test these settings" to see how they did on recent candles before you rely on them.');
   if (cfg.riskPct > 2) out.push(`Risking ${cfg.riskPct}% a trade means ten losing trades in a row, which happens, cost about ${Math.round((1 - (1 - cfg.riskPct / 100) ** 10) * 100)}% of the account.`);
   if ((cfg.maxPositionPct ?? 25) > 25) out.push(`Up to ${cfg.maxPositionPct}% in one coin; the tests allowed 25%. A coin that barely moves gets a close stop, so the risk setting can put up to ${cfg.maxPositionPct}% of the account into it, and the fee takes a bigger bite of each trade.${cfg.maxPositionPct > 50 ? ' One trade can then take all the cash, so the AI holds one coin at a time and passes up the other coins\' buy signals.' : ''}`);
@@ -731,6 +763,7 @@ const wantsExit = (cfg, score) => (cfg.entryMode === 'pullback' ? score >= -cfg.
  * because the trader asks it on every candle of every replay.
  */
 export function entryBlocker(cfg, s, i, score) {
+  if (cfg.sitOut) return 'sitout';
   const { ind } = s, c = s.candles[i];
   if (!wantsEntry(cfg, score, ind, i, c)) return 'signal';
   if ((cfg.trendFilter || cfg.entryMode === 'pullback') && !(ind.ema200[i] && c.c > ind.ema200[i] && ind.ema50[i] > ind.ema200[i])) return 'trend';
@@ -758,6 +791,7 @@ export function blockerText(code, cfg, score, { rsi = null } = {}) {
     adx: `the trend is weak (ADX under ${cfg.minAdx})`,
     rsi: `RSI is above ${cfg.maxEntryRsi}`,
     excluded: 'its self-review stopped trading this coin after a run of losses',
+    sitout: 'the AI opens no new trades on this chart: its tested rules did not make money here in most test periods',
   }[code] || code;
 }
 
