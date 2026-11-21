@@ -33,3 +33,9 @@ test('the cloud trader reads every chart the page offers', () => {
   const step = src.match(/export const STEP_MS[^=]*=\s*\{([^}]+)\}/)[1];
   for (const iv of TRADER_CHARTS) assert.match(step, new RegExp(`'${iv}':`), `server STEP_MS has ${iv}`);
 });
+
+test('the market list shows each symbol once, the biggest first', async () => {
+  const { uniqueBySymbol } = await import('../js/api/market.js');
+  const rows = [{ symbol: 'BTC', rank: 1 }, { symbol: 'ZEC', name: 'Zcash', rank: 11 }, { symbol: 'zec', name: 'Zcash Token', rank: 243 }, { symbol: '' }, { symbol: 'ETH', rank: 2 }];
+  assert.deepEqual(uniqueBySymbol(rows).map((r) => r.name || r.symbol), ['BTC', 'Zcash', 'ETH']);
+});

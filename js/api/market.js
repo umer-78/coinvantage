@@ -106,11 +106,27 @@ export async function getMarkets() {
     return true;
   };
   for (const r of rows) if (looksPegged(r.sparkline)) PEGGED.add(String(r.symbol).toLowerCase());
-  return rows.filter(looksReal).map((r) => {
+  return uniqueBySymbol(rows.filter(looksReal)).map((r) => {
     const pair = `${r.symbol}USDT`;
     const binance = !isStable(r.symbol) && set.has(pair) && !seen.has(pair) ? pair : null;
     if (binance) seen.add(pair);
     return { ...r, binance };
+  });
+}
+
+/**
+ * One row per symbol, the biggest first (the feeds come sorted by market cap):
+ * CoinPaprika lists "Zcash" (rank 11) and "Zcash Token" (rank 243) both as
+ * ZEC, and coin pages are found by symbol, so the second row opened the first
+ * coin's page under another name.
+ */
+export function uniqueBySymbol(rows) {
+  const seen = new Set();
+  return rows.filter((r) => {
+    const k = String(r?.symbol || '').toUpperCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
   });
 }
 
