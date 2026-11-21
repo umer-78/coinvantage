@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/umer-78/coinvantage/actions/workflows/ci.yml/badge.svg)](https://github.com/umer-78/coinvantage/actions/workflows/ci.yml)
 
+[![CoinVantage: the live app](.github/preview.jpg)](https://umer-78.github.io/coinvantage/)
+
 **Live demo:** https://umer-78.github.io/coinvantage/
 
 An installable website for live crypto markets: prices, Binance-style charts,
